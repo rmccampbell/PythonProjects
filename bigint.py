@@ -165,6 +165,8 @@ class BigInt:
         m, n = len(self.data), len(other.data)
         if n == 0:
             raise ZeroDivisionError()
+        elif n == 1:
+            return self._idivmod(other.data[0])
         if m < n or self < other:
             return BigInt(), self
         a, b = self.data[-1], other.data[-1]
@@ -187,7 +189,14 @@ class BigInt:
             return Q - Q2, m
 
     def _idivmod(self, other):
-        
+        data1 = self.data
+        Q = bytearray(len(data1))
+        r = 0
+        for i in reversed(range(len(data1))):
+            r = (r << 8) | data1[i]
+            q = Q[i] = r // other
+            r -= q * other
+        return BigInt(_strip(Q)), BigInt(r)
 
     def __floordiv__(self, other):
         return self.__divmod__(other)[0]
