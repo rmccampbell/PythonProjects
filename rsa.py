@@ -1,0 +1,13 @@
+def mod_inv(e, n):
+    r0, r1, s0, s1, t0, t1 = e, n, 1, 0, 0, 1
+    while r1:
+        r0, (q, r1) = r1, divmod(r0, r1)
+        s0, s1 = s1, s0 - q*s1
+        t0, t1 = t1, t0 - q*t1
+    return s0
+
+def encrypt(s, e, n):
+    return [pow(ord(c), e, n) for c in s]
+
+def decrypt(s, d, n):
+    return ''.join(chr(pow(c, d, n)) for c in s)
