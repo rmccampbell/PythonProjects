@@ -22,7 +22,8 @@ def shebang(fname, num='', text=None, add=False, change=False, remove=False,
                 num = str(num)
     shebang_text = (text or '#!/usr/bin/env python' + num) + '\n'
 
-    with open(fname, 'r+') as file:
+    mode = 'r+' if add or change or remove else 'r'
+    with open(fname, mode) as file:
         firstline, rest = file.readline(), file.read()
         if pattern.match(firstline):
             if remove:

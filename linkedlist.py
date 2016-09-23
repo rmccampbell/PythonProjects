@@ -17,6 +17,20 @@ class LinkedList:
     def head(self):
         return self.next
 
+    def __bool__(self):
+        return self.next is not None
+
+    def __repr__(self):
+        return 'LinkedList([%s])' % ', '.join(map(repr, self))
+
+    def __len__(self):
+        n = 0
+        node = self.next
+        while node:
+            n += 1
+            node = node.next
+        return n
+
     def __iter__(self):
         node = self.next
         while node:
@@ -34,12 +48,6 @@ class LinkedList:
         while node.next:
             node = node.next
         return node
-
-    def __bool__(self):
-        return self.next is not None
-
-    def __repr__(self):
-        return 'LinkedList([%s])' % ', '.join(map(repr, self))
 
     def insert(self, value, node=None):
         node = node or self
@@ -90,21 +98,21 @@ class LinkedList:
         self.next = prev
         return self
 
-    @classmethod
-    def merge(cls, l1, l2):
-        l3 = cls()
-        n1 = l1.next
-        n2 = l2.next
-        n3 = None
-        while n1 or n2:
-            if (n1 and not n2) or (n1 and n1.data <= n2.data):
-                val = n1.data
-                n1 = n1.next
-            else:
-                val = n2.data
-                n2 = n2.next
-            n3 = l3.insert(val, n3)
-        return l3
+
+def merge(l1, l2):
+    l3 = LinkedList()
+    n1 = l1.next
+    n2 = l2.next
+    n3 = None
+    while n1 or n2:
+        if n1 and (not n2 or n1.data <= n2.data):
+            val = n1.data
+            n1 = n1.next
+        else:
+            val = n2.data
+            n2 = n2.next
+        n3 = l3.insert(val, n3)
+    return l3
 
 
 def add(l1, l2):

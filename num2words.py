@@ -58,6 +58,10 @@ def words2num(s):
     last_type = ''
     last_thousand = 0
     x = 0
+    try:
+        return int(s.replace(',', ''))
+    except ValueError:
+        pass
     for w in l:
         if w in ones_map:
             if last_type == 'ones' or x % 10:

@@ -2,18 +2,20 @@
 import functools, itertools, inspect, random, threading, time
 from functools import partial, total_ordering
 from collections import Iterable, Iterator
-from itertools import islice, groupby
+from itertools import islice, groupby, chain, combinations
 try:
     from itertools import zip_longest
 except ImportError:
     from itertools import izip_longest as zip_longest
 
 
-class Marker(object):
+class Sentinel(object):
     def __init__(self, repr):
         self._repr = repr
     def __repr__(self):
         return self._repr
+
+_none = Sentinel('<none>')
 
 
 class NonStrIter(Iterable):
@@ -21,10 +23,10 @@ class NonStrIter(Iterable):
     def __subclasshook__(cls, C):
         if cls is NonStrIter:
             return (any("__iter__" in B.__dict__ for B in C.__mro__) and
-                    not issubclass(C, (str, bytes)))
+                    not issubclass(C, (str, bytes, bytearray)))
         return NotImplemented
 
-uncopyable = (Iterator, range, dict, type({}.keys()), type({}.values()),
+_uncopyable = (Iterator, range, dict, type({}.keys()), type({}.values()),
               type({}.items()))
 
 
@@ -35,7 +37,8 @@ if hasattr(inspect, 'signature'):
         """Same as functools.update_wrapper, but inserts signature in docstring."""
         functools.update_wrapper(wrapper, wrapped, assigned, updated)
         try:
-            sigstr = str(inspect.signature(wrapper))
+            name = getattr(wrapper, '__name__', '')
+            sigstr = name + str(inspect.signature(wrapper))
         except ValueError:
             return wrapper
         if not wrapper.__doc__:
@@ -117,21 +120,47 @@ def autocurrying(func): #, reverse=False):
 ##autocurrying = autocurrying(autocurrying)
 
 
-@autocurrying
-def recursion(func, init, n):
-    """Evaluates func recursively n times with initial value. If
-    arguments are not supplied, returns a new function accepting remaining args."""
+def repeat(func, init, n):
+    """Evaluates func recursively n times with initial value"""
     for i in range(n):
         init = func(init)
     return init
 
-def n_recursion(func, n):
-    """Returned function evaluates func recursively a predefined number of
-    times"""
+def repeated(func, n):
+    """Returned function evaluates func recursively n times"""
     f = lambda x: x
     for i in range(n):
         f = (lambda f: lambda x: func(f(x)))(f)
     return f
+
+def iterfunc(func, init, cond=None, stop=_none):
+    cond = cond or bool
+    while init != stop if stop is not _none else cond(init):
+        yield init
+        init = func(init)
+
+
+def trycall(func, default=None, exc=Exception, args=(), kwargs=None):
+    try:
+        return func(*args, **(kwargs or {}))
+    except exc:
+        return default
+
+def trywrap(func, default=None, exc=Exception):
+    def f(*args, **kwargs):
+        try:
+            return func(*args, **kwargs)
+        except exc:
+            return default
+    return update_wrapper_signature(f, func)
+
+
+def tryiter(func, exc=Exception):
+    try:
+        while True:
+            yield func()
+    except exc:
+        pass
 
 
 def typechecking(func):
@@ -219,15 +248,6 @@ def all_eq(it):
     first = next(it, None)
     return all(o == first for o in it)
 
-##def is_sorted(it):
-##    it = iter(it)
-##    prev = next(it, None)
-##    for o in it:
-##        if o < prev:
-##            return False
-##        prev = o
-##    return True
-
 def is_sorted(seq):
     return all(seq[i] <= seq[i+1] for i in range(len(seq) - 1))
 
@@ -240,17 +260,23 @@ def num_runs(it):
 def num_changes(it):
     return max(0, num_runs(it) - 1)
 
-_none = Marker('<none>')
-def chunk(seq, size=2, fill=_none, dofill=True):
-    """Groups input iterator into equally sized chunks"""
-    it = iter(seq)
-    if dofill:
-        if fill is _none:
-            return zip(*(it,)*size)
-        return zip_longest(*(it,)*size, fillvalue=fill)
-    return chunk_nofill(seq, size)
+def unique(it):
+    seen = set()
+    seen_add = seen.add
+    for x in it:
+        if x not in seen:
+            seen_add(x)
+            yield x
 
-def chunk_nofill(seq, size=2):
+def chunk(seq, size=2, fill=_none, partial=False):
+    """Groups input iterator into equally sized chunks"""
+    if partial:
+        return chunk_partial(seq, size)
+    if fill is _none:
+        return zip(*(iter(seq),)*size)
+    return zip_longest(*(iter(seq),)*size, fillvalue=fill)
+
+def chunk_partial(seq, size=2):
     it = iter(seq)
     chunk = tuple(islice(it, size))
     while chunk:
@@ -265,6 +291,21 @@ def flatten(lst, tp=(list, tuple)):
 def iflatten(it, tp=NonStrIter):
     return (b for a in it for b in
             (iflatten(a, tp) if isinstance(a, tp) else (a,)))
+
+def deepcopy(lst, tp=(list, tuple), conv=None):
+    tp = tp or NonStrIter
+    if not isinstance(lst, tp):
+        raise TypeError
+    c = conv or (type(lst) if not isinstance(lst, _uncopyable) else list)
+    return c(deepcopy(o, tp, conv) if isinstance(o, tp) else o for o in lst)
+
+def deepmap(func, lst, tp=(list, tuple)):
+    tp = tp or NonStrIter
+    if not isinstance(lst, tp):
+        raise TypeError
+    c = type(lst) if not isinstance(lst, _uncopyable) else list
+    return c(
+        deepmap(func, o, tp) if isinstance(o, tp) else func(o) for o in lst)
 
 
 def binsearch(seq, obj):
@@ -321,12 +362,12 @@ def merge(left, right):
     result = []
     i, j = 0, 0
     while i < len(left) and j < len(right):
-        if left[i] > right[j]:
-            result.append(right[j])
-            j += 1
-        else:
+        if left[i] < right[j]:
             result.append(left[i])
             i += 1
+        else:
+            result.append(right[j])
+            j += 1
     result += left[i:]
     result += right[j:]
     return result
@@ -367,18 +408,18 @@ def merge3(left, right):
 ##    return seq
 
 def quicksort(seq):
-    if len(seq) > 1:
-        pivot = seq[len(seq) // 2]
-        less, eq, more = [], [], []
-        for o in seq:
-            if o < pivot:
-                less.append(o)
-            elif o > pivot:
-                more.append(o)
-            else:
-                eq.append(o)
-        return less + eq + more
-    return seq
+    if len(seq) <= 1:
+        return seq
+    pivot = seq[len(seq) // 2]
+    less, eq, more = [], [], []
+    for o in seq:
+        if o < pivot:
+            less.append(o)
+        elif o > pivot:
+            more.append(o)
+        else:
+            eq.append(o)
+    return quicksort(less) + eq + quicksort(more)
 
 def quicksort2(array, start=0, end=None):
     if end is None:
@@ -396,8 +437,8 @@ def quicksort2(array, start=0, end=None):
                 array[left], array[right] = array[right], array[left]
                 left += 1
                 right -= 1
-        quicksort(array, start, right)
-        quicksort(array, left, end)
+        quicksort2(array, start, right)
+        quicksort2(array, left, end)
     return array
 
 def radixsort(lst, d=None):
@@ -416,6 +457,20 @@ def radixsort(lst, d=None):
         ret.extend(l)
     return ret
 
+def distribsort(a):
+    a2 = [None]*2*len(a)
+    for x in a:
+        i = 2*x
+        while i < len(a2) and a2[i] is not None and a2[i] <= x:
+            i += 1
+        while i < len(a2) and a2[i] is not None:
+            x, a2[i] = a2[i], x
+            i += 1
+        if i >= len(a2):
+            a2.extend([None]*(i - len(a2) + 2))
+        a2[i] = x
+    return [x for x in a2 if x is not None]
+
 def sleepsort(l):
     l2 = []
     def run(i):
@@ -431,14 +486,14 @@ def bogosort(l):
     return l
 
 def bogo_is_sorted(l):
-	if len(l) <= 1:
-		return True
-	l2 = l[:]
-	while True:
-		l2[:-1] = bogobogosort(l2[:-1])
-		if l2[-1] >= l2[-2]:
-			return l2 == l
-		random.shuffle(l2)
+    if len(l) <= 1:
+        return True
+    l2 = l[:]
+    while True:
+        l2[:-1] = bogobogosort(l2[:-1])
+        if l2[-1] >= l2[-2]:
+            return l2 == l
+        random.shuffle(l2)
 
 def bogobogosort(l):
     while not bogo_is_sorted(l):
@@ -446,33 +501,46 @@ def bogobogosort(l):
     return l
 
 
-def deepcopy(lst, tp=(list, tuple), conv=None):
-    tp = tp or NonStrIter
-    if not isinstance(lst, tp):
-        raise TypeError
-    c = conv or (type(lst) if not isinstance(lst, uncopyable) else list)
-    return c(deepcopy(o, tp, conv) if isinstance(o, tp) else o for o in lst)
-
-def deepmap(func, lst, tp=(list, tuple)):
-    tp = tp or NonStrIter
-    if not isinstance(lst, tp):
-        raise TypeError
-    c = type(lst) if not isinstance(lst, uncopyable) else list
-    return c(
-        deepmap(func, o, tp) if isinstance(o, tp) else func(o) for o in lst)
+class view:
+    def __init__(self, seq, start=0, stop=None, step=1):
+        self.seq = seq
+        n = len(seq)
+        if start < 0:
+            start += n
+        self.start = min(max(0, start), n)
+        if stop is None:
+            stop = n
+        if stop < 0:
+            stop += n
+        self.stop = min(max(self.start, stop), n)
+        self.step = step
+    def __len__(self):
+        return (self.stop - self.start - 1) // self.step + 1
+    def __iter__(self):
+        seq = self.seq
+        for i in range(self.start, self.stop, self.step):
+            yield seq[i]
+    def __getitem__(self, i):
+        if isinstance(i, slice):
+            return view(self.seq, self.start + self.step*i.start,
+                                  self.stop + self.step*i.stop,
+                                  self.step * i.step)
+        if i < 0:
+            i += len(self)
+        if not 0 <= i < self.stop:
+            raise IndexError
+        return self.seq[self.start + self.step*i]
+    def __repr__(self):
+        return '<view({})>'.format(self.seq[self.start: self.stop: self.step])
 
 
 def iindex(it, idx):
     if isinstance(idx, slice):
-        return islice(it, idx.start, idx.stop, idx.step)
+        return list(islice(it, idx.start, idx.stop, idx.step))
     if idx < 0:
         raise IndexError
-    it = iter(it)
     try:
-        o = next(it)
-        for i in range(idx):
-            o = next(it)
-        return o
+        return next(islice(it, idx, None))
     except StopIteration:
         raise IndexError
 
@@ -525,3 +593,113 @@ def nones_last(x):
 
 def nones_first(x):
     return x if x is not None else FIRST
+
+
+class CompByKey:
+    def __eq__(self, other):
+        return self._key() == other
+    def __ne__(self, other):
+        return self._key() != other
+    def __lt__(self, other):
+        return self._key() < other
+    def __gt__(self, other):
+        return self._key() > other
+    def __le__(self, other):
+        return self._key() <= other
+    def __ge__(self, other):
+        return self._key() >= other
+
+def cmp(x, y):
+    return -1 if x < y else 1 if x > y else 0
+
+class CompByCmp:
+    def __eq__(self, other):
+        return self._cmp(other) == 0
+    def __ne__(self, other):
+        return self._cmp(other) != 0
+    def __lt__(self, other):
+        return self._cmp(other) < 0
+    def __gt__(self, other):
+        return self._cmp(other) > 0
+    def __le__(self, other):
+        return self._cmp(other) <= 0
+    def __ge__(self, other):
+        return self._cmp(other) >= 0
+
+
+def count(start=0, stop=None, step=1):
+    if stop is None:
+        return itertools.count(start, step)
+    return range(start, stop, step)
+
+def dovetail_i(n, i):
+    l = [0]*n
+    for j in range(i.bit_length()):
+        if i>>j & 1:
+            l[j%n] |= 1<<(j//n)
+    return tuple(l)
+
+def dovetail(n, m=None):
+    for i in count(0, m):
+        yield dovetail_i(n, i)
+
+def dovetail2(n, m=None, lim=None):
+    x = 0
+    i = 0
+    while x != lim and i != m:
+        for tup in itertools.product(range(x+1), repeat=n):
+            if i == m:
+                break
+            if max(tup) == x:
+                i += 1
+                yield tup
+        x += 1
+
+def subset_i(i):
+    l = []
+    for j in range(i.bit_length()):
+        if i>>j & 1:
+            l.append(j)
+    return l
+
+def subsets(m=None):
+    for i in count(0, m):
+        yield subset_i(i)
+
+def strings(alphabet, n=None, m=None):
+    j = 0
+    for i in count(0, n):
+        for s in itertools.product(alphabet, repeat=i):
+            if j == m:
+                break
+            yield s
+            j += 1
+        if j == m:
+            break
+
+def multisets(m=None):
+    for i in count(0, m):
+        a, b = dovetail_i(2, i)
+        s = subset_i(a)
+        b += len(s)
+        for ss in itertools.product(s, repeat=b):
+            yield ss
+
+##def multiset_i(i):
+##    s = subset_i(i)
+##    l = []
+##    for a in s:
+##        b, n = dovetail_i(2, a)
+##        l.extend([b]*(n+1))
+##    return l
+##
+##def multisets(m=None):
+##    x = 0
+##    while m is None or i < m:
+##        yield multiset_i(i)
+##        x += 1
+
+def powerset(iterable):
+    "powerset([1,2,3]) --> () (1,) (2,) (3,) (1,2) (1,3) (2,3) (1,2,3)"
+    s = list(iterable)
+    return chain.from_iterable(combinations(s, r) for r in range(len(s)+1))

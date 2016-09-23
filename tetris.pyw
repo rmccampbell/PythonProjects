@@ -1,10 +1,12 @@
-#!/usr/bin/env python3
+#!/usr/bin/python
 
 import sys, os, pygame, random
 from pygame import Color
 from pygame.locals import *
 
-HSFILE = os.path.join(os.path.dirname(sys.argv[0]), 'tetris_highscore.txt')
+DIR = os.path.dirname(sys.argv[0])
+HSFILE = os.path.join(DIR, 'tetris_highscore.txt')
+FONTFILE = os.path.join(DIR, 'bauhaus-93.ttf')
 
 FPS = 60
 
@@ -16,69 +18,44 @@ SHEIGHT = 400
 WIDTH = 10
 HEIGHT = 20
 
-I = 1
-O = 2
-T = 3
-S = 4
-Z = 5
-J = 6
-L = 7
-
-TYPES = {
-    I: dict(
+TYPES = [
+    None,
+    dict( # I
         color = Color('cyan'),
-        shape = [[1],
-                 [1],
-                 [1],
-                 [1]],
         blocks = [(0, -2), (0, -1), (0, 0), (0, 1)],
         yoff = 1
     ),
-    O: dict(
+    dict( # O
         color = Color('yellow'),
-        shape = [[1, 1],
-                 [1, 1]],
         blocks = [(0, 0), (1, 0), (0, 1), (1, 1)],
         yoff = 1
     ),
-    T: dict(
+    dict( # T
         color = Color('purple'),
-        shape = [[0, 1, 0],
-                 [1, 1, 1]],
         blocks = [(0, -1), (-1, 0), (0, 0), (1, 0)],
         yoff = 0
     ),
-    S: dict(
+    dict( # S
         color = Color('green'),
-        shape = [[0, 1, 1],
-                 [1, 1, 0]],
         blocks = [(0, -1), (1, -1), (-1, 0), (0, 0)],
         yoff = 0
     ),
-    Z: dict(
+    dict( # Z
         color = Color('red'),
-        shape = [[1, 1, 0],
-                 [0, 1, 1]],
         blocks = [(-1, -1), (0, -1), (0, 0), (1, 0)],
         yoff = 0
     ),
-    J: dict(
+    dict( # J
         color = Color('blue'),
-        shape = [[0, 1],
-                 [0, 1],
-                 [1, 1]],
         blocks = [(0, -1), (0, 0), (-1, 1), (0, 1)],
         yoff = 1
     ),
-    L: dict(
+    dict( # L
         color = Color('orange'),
-        shape = [[1, 0],
-                 [1, 0],
-                 [1, 1]],
         blocks = [(0, -1), (0, 0), (0, 1), (1, 1)],
         yoff = 1
     ),
-}
+]
 
 class Shape:
     def __init__(self, type, game):
@@ -95,12 +72,6 @@ class Shape:
         if self.check_collisions():
             self.rotate(-dir)
 
-    def move_down(self):
-        self.y += 1
-        if self.check_collisions():
-            self.y -= 1
-            self.lock()
-
     def move_left(self):
         self.x -= 1
         if self.check_collisions():
@@ -110,6 +81,19 @@ class Shape:
         self.x += 1
         if self.check_collisions():
             self.x -= 1
+
+    def move_down(self):
+        self.y += 1
+        if self.check_collisions():
+            self.y -= 1
+            self.lock()
+
+    def drop(self):
+        self.y += 1
+        while not self.check_collisions():
+            self.y += 1
+        self.y -= 1
+        self.lock()
 
     def check_collisions(self):
         for x, y in self.blocks:
@@ -146,16 +130,18 @@ class Shape:
 class Game:
     def __init__(self):
         pygame.init()
-        self.screen = pygame.display.set_mode((SWIDTH, SHEIGHT))
         pygame.display.set_caption('Tetris')
+        self.screen = pygame.display.set_mode((SWIDTH, SHEIGHT))
         fonts = pygame.font.get_fonts()
-        if 'bauhaus93' in fonts:
-            font = 'bauhaus93'
+        if os.path.exists(FONTFILE):
+            typ, font, s1, s2, s3 = pygame.font.Font, FONTFILE, 28, 34, 56
+        elif 'bauhaus93' in fonts:
+            typ, font, s1, s2, s3 = pygame.font.SysFont, 'bauhaus93', 28, 34, 56
         else:
-            font = 'impact'
-        self.font = pygame.font.SysFont(font, 28)
-        self.font2 = pygame.font.SysFont(font, 34)
-        self.font3 = pygame.font.SysFont(font, 56)
+            typ, font, s1, s2, s3 = pygame.font.SysFont, 'impact', 36, 44, 72
+        self.font = typ(font, s1)
+        self.font2 = typ(font, s2)
+        self.font3 = typ(font, s3)
 
     def start(self):
         self.is_over = False
@@ -228,11 +214,12 @@ class Game:
         hscore = max(self.rounds, hscore)
         open(HSFILE, 'w').write(str(hscore))
 
-        blur = pygame.Surface((SWIDTH - 80, SHEIGHT))
-        blur.fill((255, 255, 255))
-        blur.set_alpha(191)
-        self.screen.blit(blur, (40, 0))
-        colors = ['red', 'orange', 'yellow', 'green', 'cyan', 'blue', 'purple']
+        fade = pygame.Surface((SWIDTH - 80, SHEIGHT))
+        fade.fill((255, 255, 255))
+        fade.set_alpha(210)
+        self.screen.blit(fade, (40, 0))
+
+        colors = ['red', 'orange', 'green', 'blue', 'purple']
         c1, c2, c3 = map(Color, random.sample(colors, 3))
         msg = self.font2.render('Game Over', True, c1)
         self.screen.blit(msg, ((SWIDTH - msg.get_width()) // 2,
@@ -240,7 +227,7 @@ class Game:
         scoretxt = self.font.render('Score: %s' % self.rounds, True, c2)
         self.screen.blit(scoretxt,
                          ((SWIDTH - scoretxt.get_width()) // 2,
-                          (SHEIGHT - scoretxt.get_height()) // 2 + 0))
+                          (SHEIGHT - scoretxt.get_height()) // 2))
         hscoretxt = self.font.render('Highscore: %s' % hscore, True, c3)
         self.screen.blit(hscoretxt,
                          ((SWIDTH - hscoretxt.get_width()) // 2,
@@ -281,8 +268,10 @@ class Game:
                         self.shape.move_right()
                     elif e.key == K_DOWN:
                         self.shape.move_down()
-                    elif e.key == K_SPACE:
+                    elif e.key == K_UP:
                         self.shape.rotate()
+                    elif e.key == K_SPACE:
+                        self.shape.drop()
 
     def quit(self):
         self.running = False

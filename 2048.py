@@ -26,20 +26,20 @@ grid_fmt_u = '''\
 grid_fmt_a = '''\
  _______________________________
 |       |       |       |       |
-|       |       |       |       |
 | {:^5} | {:^5} | {:^5} | {:^5} |
+|       |       |       |       |
 |_______|_______|_______|_______|
 |       |       |       |       |
-|       |       |       |       |
 | {:^5} | {:^5} | {:^5} | {:^5} |
+|       |       |       |       |
 |_______|_______|_______|_______|
 |       |       |       |       |
-|       |       |       |       |
 | {:^5} | {:^5} | {:^5} | {:^5} |
+|       |       |       |       |
 |_______|_______|_______|_______|
 |       |       |       |       |
-|       |       |       |       |
 | {:^5} | {:^5} | {:^5} | {:^5} |
+|       |       |       |       |
 |_______|_______|_______|_______|
 '''
 
@@ -121,12 +121,16 @@ def move_right(grid):
 
 def main():
     grid = [[0]*4 for i in range(4)]
-
     x, y = random.randrange(4), random.randrange(4)
     grid[y][x] = 2 if random.random() < .9 else 4
     while True:
         print('\n' * H)
         print(grid_fmt.format(*[i or '' for r in grid for i in r]))
+        gridcp = [r[:] for r in grid]
+        if not (move_up(gridcp) or move_down(gridcp) or
+                move_left(gridcp) or move_right(gridcp)):
+            print('Game over!')
+            break
         moved = False
         k = msvcrt.getch()
         if msvcrt.kbhit():

@@ -2,7 +2,7 @@
 import sys, pygame, math, re, argparse
 from pygame.locals import *
 
-__all__ = ['Grapher', 'main', 'parse_expr', 'test_equality']
+__all__ = ['Grapher', 'main', 'preprocess', 'test_equality']
 
 DISPLAY = (500, 500)
 WINDOW = (50, 50, 400, 400)
@@ -19,7 +19,7 @@ POL_RES = 8000
 PAR_RES = 1000
 IMP_RES = 1
 
-def parse_expr(expr):
+def preprocess(expr):
     # fix exponents
     parsed = expr.replace('^', '**')
 
@@ -177,8 +177,8 @@ class Grapher:
         par_res = kwargs.get('par_res', self.par_res)
         imp_res = kwargs.get('imp_res', self.imp_res)
 
-        # parse equation
-        eq = parse_expr(eq)
+        # preprocess equation
+        eq = preprocess(eq)
 
         # handle parametric functions
         try:
@@ -187,11 +187,11 @@ class Grapher:
             pass
         else:
             xexpr, yexpr = split_parametric(expr1, expr2)
-            return self._graph_parametric(xexpr, yexpr, tmax, par_res)
+            return self.graph_parametric(xexpr, yexpr, tmax, par_res)
 
         # handle non-parametric
         try:
-            left, right = map(str.strip, eq.split('=', 1))
+            left, right = map(str.strip, re.split(r'==?', eq, 1))
         except ValueError:
             right = eq.strip()
             if 'theta' in right:
@@ -200,16 +200,16 @@ class Grapher:
                 left = 'y'
 
         if left == 'r':
-             return self._graph_polar(right, turns, pol_res)
+             return self.graph_polar(right, turns, pol_res)
 
         # equations not in "y=" form are automatically implicit
         elif implicit or left != 'y':
-            return self._graph_implicit(left, right, imp_res)
+            return self.graph_implicit(left, right, imp_res)
 
         else:
-            return self._graph_function(right, res)
+            return self.graph_function(right, res)
 
-    def _graph_function(self, expr, res=RES):
+    def graph_function(self, expr, res=RES):
         code = compile(expr, '<string>', 'eval')
         #pixels = pygame.surfarray.pixels3d(self.surface)
         wx, wy, ww, wh = self.window
@@ -220,7 +220,7 @@ class Grapher:
             # get pixel x and coordinate x
             px = i / res
             x = (px * bw / ww) + bx
-            self.ns.update(x=x, t=x)
+            self.ns.update(x=x, t=x, n=x)
 
             # get y value(s)
             ys = []
@@ -246,16 +246,18 @@ class Grapher:
                 if 0 <= py < wh:
                     self.surface.set_at((int(px), int(py)), self.color)
                     #pixels[px, py] = self.color[:3]
-                    pygame.display.update((wx + px, wy + py, 1, 1))
+                    #pygame.display.update((wx + px, wy + py, 1, 1))
+                    if i % 100 == 0:
+                        pygame.display.flip()
 
             # check user input
             if self.check_events():
                 break
 
-        del self.ns['x'], self.ns['t']
+        del self.ns['x'], self.ns['t'], self.ns['n']
         pygame.display.flip()
 
-    def _graph_polar(self, expr, turns=TURNS, res=POL_RES):
+    def graph_polar(self, expr, turns=TURNS, res=POL_RES):
         code = compile(expr, '<string>', 'eval')
         wx, wy, ww, wh = self.window
         bx, by, bw, bh = self.bounds
@@ -279,7 +281,9 @@ class Grapher:
                 py = wh - (y - by) * wh / bh
                 if 0 <= px < ww and 0 <= py < wh:
                     self.surface.set_at((int(px), int(py)), self.color)
-                    pygame.display.update((wx + px, wy + py, 1, 1))
+                    if i % 100 == 0:
+                        pygame.display.flip()
+                    #pygame.display.update((wx + px, wy + py, 1, 1))
 
             # check user input
             if self.check_events():
@@ -288,7 +292,7 @@ class Grapher:
         del self.ns['theta']
         pygame.display.flip()
 
-    def _graph_parametric(self, xexpr, yexpr, tmax=TMAX, tres=PAR_RES):
+    def graph_parametric(self, xexpr, yexpr, tmax=TMAX, tres=PAR_RES):
         xcode = compile(xexpr, '<string>', 'eval')
         ycode = compile(yexpr, '<string>', 'eval')
         wx, wy, ww, wh = self.window
@@ -311,7 +315,9 @@ class Grapher:
                 py = wh - (y - by) * wh / bh
                 if 0 <= px < ww and 0 <= py < wh:
                     self.surface.set_at((int(px), int(py)), self.color)
-                    pygame.display.update((wx + px, wy + py, 1, 1))
+                    if i % 100 == 0:
+                        pygame.display.flip()
+                    #pygame.display.update((wx + px, wy + py, 1, 1))
 
             # check user input
             if self.check_events():
@@ -320,7 +326,7 @@ class Grapher:
         del self.ns['t']
         pygame.display.flip()
 
-    def _graph_implicit(self, left, right, res=IMP_RES):
+    def graph_implicit(self, left, right, res=IMP_RES):
         # compile expressions into code
         leftc = compile(left, '<string>', 'eval')
         rightc = compile(right, '<string>', 'eval')

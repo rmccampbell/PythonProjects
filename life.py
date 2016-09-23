@@ -6,29 +6,35 @@ import numpy as np
 import argparse
 
 FPS = 30
-TPSS = [2, 10, 40]
+TPS = [2, 10, 30]
 
 BGCOLOR = (239, 239, 239)
 COLOR0 = (255, 255, 255)
 COLOR1 = (0, 0, 0)
 
-INIT_FACTOR = .09
+SEED_FACTOR = .09
 
-PIX = 5
+PIX = 4
 WIDTH = 500
 HEIGHT = 500
 SWIDTH = 150
-SHEIGHT = 130
+SHEIGHT = 150
 
 SCRLSPD = 10
 
 class Life:
     def __init__(self, seed=None, w=None, h=None, xoff=0, yoff=0,
-                 nowrap=False, pause=False):
-        if seed is None:
-            w = w or WIDTH
-            h = h or HEIGHT
-            self.board = np.random.random((w, h)) < INIT_FACTOR
+                 screen=(SWIDTH, SHEIGHT), wrap=False, pause=False):
+        if isinstance(seed, str):
+            try:
+                seed = float(seed)
+            except ValueError:
+                pass
+        elif seed is None:
+            seed = SEED_FACTOR
+        if isinstance(seed, float):
+            w, h = w or WIDTH, h or HEIGHT
+            self.board = np.random.random((w, h)) < seed
         else:
             if isinstance(seed, str):
                 if os.path.splitext(seed)[1] in ('.png', '.bmp'):
@@ -38,16 +44,18 @@ class Life:
             self.board = temp = np.asarray(seed, bool)
             if w and h:
                 self.board = np.zeros((w, h), bool)
-                w1, h1 = temp.shape
-                self.board[xoff: xoff+w1, yoff: yoff+h1] = temp[:w, :h]
+                w0, h0 = temp.shape
+                if xoff < 0: xoff += w
+                if yoff < 0: yoff += h
+                self.board[xoff: xoff+w0, yoff: yoff+h0] = temp[:w-xoff, :h-yoff]
         self.width, self.height = self.board.shape
         if self.width == 0 or self.height == 0:
             raise ValueError('seed has 0 size')
-        self.swidth, self.sheight = SWIDTH, SHEIGHT
+        self.swidth, self.sheight = screen
         self.scrollx = 0
         self.scrolly = 0
-        self.tps = TPSS[1]
-        self.wrap = not nowrap
+        self.tps = TPS[1]
+        self.wrap = wrap
         self.paused = pause
 
         pygame.init()
@@ -65,18 +73,18 @@ class Life:
             redraw = False
             step = False
 
-            scrl = SCRLSPD
             for event in pygame.event.get():
                 if event.type == QUIT:
                     self.running = False
                 elif event.type == KEYDOWN:
+                    scrl = SCRLSPD
                     if event.mod & KMOD_CTRL:
                         scrl *= 10
                     if event.key == K_ESCAPE or \
                        event.key == K_F4 and event.mod & KMOD_ALT:
                         self.running = False
                     elif event.key == K_SPACE:
-                        self.tps = TPSS[(TPSS.index(self.tps) + 1) % len(TPSS)]
+                        self.tps = TPS[(TPS.index(self.tps) + 1) % len(TPS)]
                     elif event.key == K_RETURN:
                         step = True
                     elif event.key == K_p:
@@ -96,26 +104,27 @@ class Life:
                                                self.width - self.swidth), 0)
                         redraw = True
                     elif event.key == K_HOME:
-                        if event.mod & KMOD_CTRL:
-                            self.scrolly = 0
-                        else:
-                            self.scrollx = 0
+                        self.scrollx = 0
+                        redraw = True
+                    elif event.key == K_PAGEUP:
+                        self.scrolly = 0
                         redraw = True
                     elif event.key == K_END:
-                        if event.mod & KMOD_CTRL:
-                            self.scrolly = max(self.height - self.sheight, 0)
-                        else:
-                            self.scrollx = max(self.width - self.swidth, 0)
+                        self.scrollx = max(self.width - self.swidth, 0)
+                        redraw = True
+                    elif event.key == K_PAGEDOWN:
+                        self.scrolly = max(self.height - self.sheight, 0)
                         redraw = True
                 elif event.type == VIDEORESIZE:
-                    self.swidth = event.w // PIX
-                    self.sheight = event.h // PIX
-                    self.scrolly = max(min(self.scrolly,
-                                           self.height - self.sheight), 0)
-                    self.scrollx = max(min(self.scrollx,
-                                           self.width - self.swidth), 0)
-                    pygame.display.set_mode(
-                        (PIX*self.swidth, PIX*self.sheight), RESIZABLE)
+                    self.swidth = sw = int(round(event.w / PIX))
+                    self.sheight = sh = int(round(event.h / PIX))
+                    if abs(sw - self.width) < 5:
+                        self.swidth = sw = self.width
+                    if abs(sh - self.height) < 5:
+                        self.sheight = sh = self.height
+                    self.scrolly = max(min(self.scrolly, self.height - sh), 0)
+                    self.scrollx = max(min(self.scrollx, self.width - sw), 0)
+                    pygame.display.set_mode((PIX*sw, PIX*sh), RESIZABLE)
                     redraw = True
 
             if i >= FPS//self.tps or step:
@@ -125,7 +134,6 @@ class Life:
                     redraw = True
             if redraw:
                 self.display()
-
             i += 1
 
     def tick(self):
@@ -163,24 +171,25 @@ def parsetxt(file):
     lines = [line.rstrip('\n') for line in file]
     width = max(map(len, lines)) if lines else 0
     seed = [[c != ' ' for c in row.ljust(width)] for row in lines]
-    return np.array(seed, int, ndmin=2).astype(bool).T.copy()
+    return np.array(seed, bool, ndmin=2).T.copy()
 
 def parseimg(file):
     from PIL import Image
-    im = Image.open(file)
-    #im = im.convert('1', dither=Image.NONE)
-    im = im.convert('L')
-    a = (~np.array(im)//128).astype(bool).T
-    return a
+    im = Image.open(file).convert('L')
+    return (np.array(im) < 128).T.copy()
 
 
-def run(seed=None, w=None, h=None, xoff=0, yoff=0, nowrap=False, pause=False):
-    Life(seed, w, h, xoff, yoff, nowrap, pause).run()
+def run(seed=None, w=None, h=None, xoff=0, yoff=0, screen=(SWIDTH, SHEIGHT),
+        nowrap=False, pause=False):
+    Life(seed, w, h, xoff, yoff, screen, nowrap, pause).run()
 
 
 if __name__ == '__main__':
-    p = argparse.ArgumentParser()
-    p.add_argument('-n', '--nowrap', action='store_true')
+    p = argparse.ArgumentParser(
+        usage='%(prog)s [-s W H] [-w] [-p] [file] [w] [h] [xoff] [yoff]')
+    p.add_argument('-s', '--screen', metavar=('W', 'H'), type=int, nargs=2,
+                   default=[SWIDTH, SHEIGHT])
+    p.add_argument('-w', '--wrap', action='store_true')
     p.add_argument('-p', '--pause', action='store_true')
     p.add_argument('args', nargs='*')
     ns = p.parse_args()
@@ -188,7 +197,7 @@ if __name__ == '__main__':
 
     file, w, h, xoff, yoff = None, None, None, 0, 0
     if len(args) == 4 or len(args) > 5:
-        sys.exit('error: wrong number of arguments')
+        p.error('wrong number of arguments')
     if len(args) == 5:
         xoff, yoff = map(int, args[3:])
         del args[3:]
@@ -197,6 +206,6 @@ if __name__ == '__main__':
     if len(args) in (2, 3):
         w, h = map(int, args[-2:])
     try:
-        run(file, w, h, xoff, yoff, nowrap=ns.nowrap, pause=ns.pause)
+        run(file, w, h, xoff, yoff, ns.screen, ns.wrap, ns.pause)
     finally:
         pygame.display.quit()

@@ -1,78 +1,92 @@
 from __future__ import print_function
 import sys, os, glob, io, codecs, contextlib
 
-PY3 = sys.version_info[0] >= 3
+_PY3 = sys.version_info[0] >= 3
 
 ERRORS = 'replace'
 
-def printerr(msg, *args):
-    print(msg.format(*args), file=sys.stderr)
+PROGNAME = os.path.basename(sys.argv[0] or sys.executable)
+
+def printerr(msg='{prog}: {error}', *args, **kwargs):
+    etype, error, tb = sys.exc_info()
+    kwargs.update(prog=PROGNAME, error=error, etype=etype and etype.__name__)
+    print(msg.format(*args, **kwargs), file=sys.stderr)
 
 @contextlib.contextmanager
-def autoclose(file):
+def safeclose(file):
     yield file
-    if file not in {sys.stdin, sys.stdout, sys.stderr,
-                    sys.stdin.buffer, sys.stdout.buffer, sys.stderr.buffer}:
+    if not file.closed and file.fileno() > 2:
         file.close()
+    elif hasattr(file, '_changed_encoding') and file.buffer:
+        file.detach()
 
-def getfiles(paths, mode='r', encoding=None, errors=ERRORS,
-             default=None, stdio=True):
+def chars(file):
+    return chunk(file, 1)
+
+def chunk(file, blocksize=8192):
+    s = file.read(blocksize)
+    while s:
+        yield s
+        s = file.read(blocksize)
+
+def getfiles(paths=None, mode='r', encoding=None, errors=ERRORS,
+             default='-', stdio=True, recursive=True):
     """Return an iterator yielding file objects matching glob patterns."""
     openf = stdopen if stdio else guess_open
-    if paths:
-        for path in paths:
-            if not isinstance(path, str):
-                yield path
-                continue
-            files = glob.glob(path)
-            if files:
-                for file in files:
-                    #if os.path.isfile(file):
-                    try:
-                        yield openf(file, mode, encoding=encoding, errors=errors)
-                    except IOError as e:
-                        printerr("error: {}", e)
-            else:
-                try:
-                    yield openf(path, mode, encoding=encoding, errors=errors)
-                except IOError as e:
-                    printerr("error: '{}' does not match any files.", path)
-                    #printerr("error: {}", e)
-    elif default:
-        if isinstance(default, str):
-            yield openf(default, mode, encoding=encoding, errors=errors)
-        else:
-            yield default
+    if not stdio and default == '-':
+        default = None
+    if paths is None:
+        paths = sys.argv[1:]
+    if not paths:
+        paths = (default,) if default else ()
+    for path in paths:
+        if not isinstance(path, str):
+            yield path
+            continue
+        for file in expandpaths([path], recursive):
+            try:
+                f = openf(file, mode, encoding=encoding, errors=errors)
+                with safeclose(f):
+                    yield f
+            except IOError:
+                printerr()
 
-def expandpaths(paths):
+def expandpaths(paths, recursive=True):
     """Return a list of paths expanded from glob patterns."""
+    if sys.version_info >= (3, 5):
+        return [file for path in paths for file in
+                glob.glob(path, recursive=recursive) or (path,)]
     return [file for path in paths for file in glob.glob(path) or (path,)]
 
 def stdopen(file, mode='r', encoding=None, errors=ERRORS):
     """Open a file, or return stdin or stdout for '-'"""
     if file == '-':
-        md = mode.strip('bt')
-        if md == 'r':
+        mod = mode.strip('bt')
+        if mod == 'r':
             file = sys.stdin
-        elif md in ('w', 'a'):
+        elif mod in ('w', 'a'):
             file = sys.stdout
         else:
             raise ValueError("mode '{}' not allowed for '-'".format(mode))
-        if 'b' in mode and PY3:
-            return file.buffer
+        if _PY3:
+            if 'b' in mode:
+                file = file.buffer
+            elif encoding and encoding != '-':
+                file = change_encoding(file, encoding, errors)
         return file
     else:
         return guess_open(file, mode, encoding=encoding, errors=errors)
 
 def guess_open(file, mode='r', encoding=None, errors=ERRORS):
-    if not PY3:
+    if not _PY3:
         return open(file, mode)
-    if (not encoding and 'r' in mode and 'b' not in mode
-        and os.path.exists(file)):
-        f = open(file, 'rb')
-        if f.seekable() and not f.isatty():
-            encoding = detect_enc(f)
-        f.close()
+    if (not encoding and 'b' not in mode and ('r' in mode or 'a' in mode)
+        and os.path.isfile(file)):
+        with open(file, 'rb') as f:
+            if f.seekable() and not f.isatty():
+                encoding = detect_enc(f)
+    elif encoding == '-':
+        encoding = None
     if 'b' in mode:
         errors = None
     return open(file, mode, encoding=encoding, errors=errors)
@@ -86,25 +100,32 @@ def detect_enc(file):
         return 'utf-8-sig'
     return None
 
-def set_errorhandler(errors=ERRORS):
-    stdout = sys.stdout
+def change_encoding(file, encoding=None, errors=ERRORS):
+    encoding = encoding or file.encoding
+    errors = errors or file.errors
     codecs.lookup_error(errors)
+    newfile = io.TextIOWrapper(file.buffer, encoding, errors,
+                               line_buffering=file.line_buffering)
+    newfile.mode = file.mode
+    newfile._changed_encoding = True
+    return newfile
+
+def set_encoding(encoding=None, errors=ERRORS):
+    stdout = sys.stdout
     try:
-        sys.stdout = io.TextIOWrapper(stdout.buffer, stdout.encoding, errors,
-                                      line_buffering=stdout.line_buffering)
-        sys.stdout.mode = stdout.mode
+        sys.stdout = change_encoding(stdout, encoding, errors)
     except AttributeError:
         pass
     return stdout
 
-def reset_errorhandler(stdout=None):
+def reset_encoding(stdout=None):
     stdout = stdout or sys.__stdout__
     if stdout and sys.stdout is not stdout:
         sys.stdout.detach()
         sys.stdout = stdout
 
 @contextlib.contextmanager
-def errorhandler(errors=ERRORS):
-    stdout = set_errorhandler(errors)
+def stdout_encoding(encoding=None, errors=ERRORS):
+    stdout = set_encoding(encoding, errors)
     yield
-    reset_errorhandler(stdout)
+    reset_encoding(stdout)

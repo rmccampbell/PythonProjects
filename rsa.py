@@ -7,7 +7,7 @@ def mod_inv(e, n):
     return s0
 
 def encrypt(s, e, n):
-    return [pow(ord(c), e, n) for c in s]
+    return [pow(c, e, n) for c in s]
 
 def decrypt(s, d, n):
-    return ''.join(chr(pow(c, d, n)) for c in s)
+    return bytes(pow(c, d, n) for c in s)

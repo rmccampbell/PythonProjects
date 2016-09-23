@@ -1,9 +1,12 @@
 """A bunch of classes I made."""
 
 import sys, types, collections, itertools, re, math, operator, inspect
-import functools, io, textwrap, functools2
-from functools2 import typechecking, autocurrying, Marker
+import functools, io, textwrap, enum, reprlib
+import functools2
+from functools2 import typechecking, autocurrying, Sentinel
 from implicitself import implicit_self, implicit_this
+
+_none = Sentinel('<none>')
 
 
 class HashlessMap(collections.MutableMapping):
@@ -67,9 +70,13 @@ class HashlessMap(collections.MutableMapping):
     def __iter__(self):
         yield from self._keys
 
+    @reprlib.recursive_repr()
     def __repr__(self):
         return 'HashlessMap({})'.format(list(self.items()))
-        #return 'HashlessMap([{}])'.format(',  '.join(map(repr, self.items())))
+
+    def __str__(self):
+        return '{{{}}}'.format(
+            ', '.join('{!r}: {!r}'.format(k, v) for k, v in self.items()))
 
     def keys(self):
         return HashlessMapKeys(self)
@@ -162,8 +169,8 @@ class AutoDict(dict):
         self[key] = value
         return value
 
-AutoDefDict = lambda *args, **kwargs:\
-              collections.defaultdict(AutoDefDict, *args, **kwargs)
+def AutoDefDict(*args, **kwargs):
+    return collections.defaultdict(AutoDefDict, *args, **kwargs)
 
 class AutoDictNS(DictNS, AutoDict, AutoAttr):
     pass
@@ -297,32 +304,38 @@ def bits_to_int(bits):
     return num
 
 class Bits(collections.Sequence):
-    def __init__(self, value, endian='big'):
+    def __init__(self, value, length=None, endian='big'):
+        if isinstance(value, str):
+            self.value = int(value, 2)
         if isinstance(value, int):
             if value < 0:
-                raise ValueError("Unsigned integers only")
+                raise ValueError("unsigned integers only")
             self.value = value
-        elif isinstance(value, str):
-            self.value = int(value, 2)
+            l = value.bit_length()
         elif isinstance(value, collections.ByteString):
             self.value = int.from_bytes(value, endian)
+            l = 8 * len(value)
         else:
             self.value = 0
             for i, bit in enumerate(value):
                 self.value |= bool(bit) << i
+            l = len(value)
+        self.length = length if length is not None else l
 
     def __len__(self):
-        return self.value.bit_length()
+        return self.length
 
     def __getitem__(self, idx):
-        l = len(self)
+        l = self.length
         if idx < 0:
             idx += l
+        if idx < 0 or idx >= l:
+            raise IndexError('bit index out of range')
         return self.value >> idx & 1
 
     def __iter__(self):
         num = self.value
-        for i in range(len(self)):
+        for i in range(self.length):
             yield num >> i & 1
 
     def __int__(self):
@@ -333,7 +346,7 @@ class Bits(collections.Sequence):
 
     def __eq__(self, other):
         if isinstance(other, Bits):
-            return self.value == other.value
+            return self.value == other.value and self.length == other.length
         return False
 
     def __repr__(self):
@@ -363,6 +376,10 @@ class WrapperProxy(IterProxy):
             return getattr(self._iter, name)
         except AttributeError:
             return self.each(name)
+    def __getitem__(self, index):
+        if isinstance(index, slice):
+            return type(self)(self._iter[index])
+        return self._iter[index]
     def __repr__(self):
         return 'WrapperProxy({})'.format(self._iter)
 
@@ -372,10 +389,12 @@ class ListProxy(list, IterProxy):
 
 
 
-class NullType:
+class PropagatingNone:
+    _inst = None
     def __new__(cls):
-        try: return Null
-        except NameError: return super().__new__(cls)
+        if cls._inst is None:
+            cls._inst = super().__new__(cls)
+        return cls._inst
     def __eq__(self, other):
         return other == None
     def __hash__(self):
@@ -387,7 +406,7 @@ class NullType:
     def __call__(self, *args, **kwargs):
         return self
 
-Null = NullType()
+PNone = PropagatingNone()
 
 
 
@@ -520,7 +539,7 @@ class InheritingDictMeta(type):
                 typ = vars(base)['_dicttype']
             except KeyError:
                 continue
-            if not typ in dicttypes:
+            if typ not in dicttypes:
                 dicttypes.append(typ)
 
         if not dicttypes:
@@ -679,15 +698,39 @@ class JavaClass(metaclass=JavaClassMeta):
 
 
 class AbstractSet:
-    def __init__(self, condition):
-        if callable(condition):
-            self.condition = condition
-        elif isinstance(collections.Container, condition):
-            self.condition = condition.__contains__
+    def __init__(self, predicate):
+        if isinstance(predicate, AbstractSet):
+            self.predicate = predicate.predicate
+        elif callable(predicate):
+            self.predicate = predicate
+        elif isinstance(predicate, collections.Container):
+            self.predicate = predicate.__contains__
         else:
             raise TypeError('argument must be callable or container')
     def __contains__(self, obj):
-        return self.condition(obj)
+        return self.predicate(obj)
+    def __invert__(self):
+        pred = self.predicate
+        return AbstractSet(lambda obj: not pred(obj))
+    def __and__(self, other):
+        pred1 = self.predicate
+        pred2 = AbstractSet(other).predicate
+        return AbstractSet(lambda obj: pred1(obj) and pred2(obj))
+    def __or__(self, other):
+        pred1 = self.predicate
+        pred2 = AbstractSet(other).predicate
+        return AbstractSet(lambda obj: pred1(obj) or pred2(obj))
+    def __xor__(self, other):
+        pred1 = self.predicate
+        pred2 = AbstractSet(other).predicate
+        return AbstractSet(lambda obj: pred1(obj) ^ pred2(obj))
+    def __sub__(self, other):
+        pred1 = self.predicate
+        pred2 = AbstractSet(other).predicate
+        return AbstractSet(lambda obj: pred1(obj) and not pred2(obj))
+
+russels_set = AbstractSet(lambda obj: isinstance(obj, collections.Container)
+                          and obj not in obj)
 
 
 
@@ -715,14 +758,16 @@ class Frange(collections.Sequence):
     def __len__(self):
         return math.ceil((self.stop - self.start) / self.step)
     def __getitem__(self, index):
+        if index < 0:
+            index += len(self)
         value = self.start + self.step * index
-        if value > self.stop:
+        if value < self.start or value >= self.stop:
             raise IndexError(index)
         return value
     def __contains__(self, value):
         if value < self.start or value >= self.stop:
             return False
-        return not (value - self.start) % self.step
+        return (value - self.start) % self.step == 0
 
 
 
@@ -770,42 +815,64 @@ class SearchableDict(collections.OrderedDict):
 
 
 class Attr:
-    def __init__(self, name, field=None):
+    def __init__(self, name, field=None, readonly=False, deletable=False):
         self.name = name
         self.field = field or '_' + name
+        self.readonly = readonly
+        self.deletable = deletable
     def __get__(self, obj, typ):
         if obj is None:
             return self
         try:
             return vars(obj)[self.field]
         except KeyError:
-            raise AttributeError(self.name) from None
+            raise AttributeError("'{}' is unset".format(self.name)) from None
     def __set__(self, obj, val):
+        if self.readonly:
+            raise AttributeError("can't set '{}'".format(self.name))
         vars(obj)[self.field] = val
     def __delete__(self, obj):
+        if not self.deletable:
+            raise AttributeError("can't delete '{}'".format(self.name))
         try:
             del vars(obj)[self.field]
         except KeyError:
-            raise AttributeError(self.name) from None
-
-
-class ROAttr(Attr):
-    def __set__(self, obj, val):
-        raise AttributeError("'{}' is read only".format(self.name))
-    def __delete__(self, obj, val):
-        raise AttributeError("'{}' is read only".format(self.name))
+            raise AttributeError("'{}' is unset".format(self.name)) from None
 
 
 class TypedAttr(Attr):
-    def __init__(self, name, typ, field=None):
-        super().__init__(name, field)
+    def __init__(self, name, typ, field=None, deletable=False):
+        super().__init__(name, field, deletable=deletable)
         self.typ = typ
     def __set__(self, obj, val):
-        if isinstance(val, self.typ):
-            super().__set__(obj, val)
-        else:
-            raise TypeError("'{}' must be of type '{}'".format(
+        if not isinstance(val, self.typ):
+            raise TypeError("'{}' must be of type {}".format(
                             self.name, self.typ.__name__))
+        super().__set__(obj, val)
+
+
+
+class TypedDict(dict):
+    def __init__(self, *args, **kwargs):
+        self._types = dict(*args, **kwargs)
+    def __setitem__(self, key, value):
+        if key in self._types:
+            typ = self._types[key]
+            if not isinstance(value, typ):
+                raise TypeError("'{}' must be of type '{}'"
+                                .format(key, typ.__name__))
+        super().__setitem__(key, value)
+
+
+
+class TypedAttrs:
+    def __setattr__(self, name, value):
+        if name in self._types:
+            typ = self._types[name]
+            if not isinstance(value, typ):
+                raise TypeError("'{}' must be of type '{}'"
+                                .format(name, typ.__name__))
+        super().__setattr__(name, value)
 
 
 
@@ -855,11 +922,12 @@ class MultiList(MultiSeq, collections.MutableSequence):
             index -= len(seq)
         raise IndexError
     def insert(self, index, value):
-        if index >= len(self):
+        l = len(self)
+        if index >= l:
             self.append(value)
             return
         if index < 0:
-            index += len(self)
+            index += l
         for seq in self.containers:
             if index <= len(seq):
                 seq.insert(index, value)
@@ -1020,9 +1088,8 @@ class BinTree:
 
     @classmethod
     def from_list(cls, lst, types=(list, tuple)):
-        return cls(
-            *(cls.from_list(n, types) if isinstance(n, types) else n
-              for n in lst))
+        return cls(*(cls.from_list(n, types) if isinstance(n, types) else n
+                     for n in lst))
 
     @classmethod
     def from_list2(cls, lst, types=(list, tuple)):
@@ -1041,6 +1108,12 @@ class BinTree:
         node = cls(data, cls.parse(inpt, typ), cls.parse(inpt, typ))
         inpt.next_char(']')
         return node
+
+    @classmethod
+    def from_heap(cls, heap, i=0):
+        if i >= len(heap):
+            return None
+        return cls(heap[i], cls.from_heap(heap, 2*i+1), cls.from_heap(heap, 2*i+2))
 
     def __iter__(self):
         yield self.left
@@ -1136,14 +1209,14 @@ class BinTree:
                     textwrap.indent(str(self.right), ' '*4))
         return repr(self)
 
-    def print_no_branches(self, indent=0):
+    def simple_print(self, indent=0):
         if self.left:
             self.left.print_no_branches(indent + 1)
         print('\t' * indent + str(self.data))
         if self.right:
             self.right.print_no_branches(indent + 1)
 
-    def print_tree(self, side=None, prefix=''):
+    def print_tree(self, side='', prefix=''):
         lprefix = prefix + ('|   ' if side == 'r' else '    ')
         if self.left:
             self.left.print_tree('l', lprefix)
@@ -1157,10 +1230,8 @@ class BinTree:
             self.right.print_tree('r', rprefix)
 
 
-def heap2tree(heap, i=0):
-    if i >= len(heap):
-        return None
-    return BinTree(heap[i], heap2tree(heap, 2*i+1), heap2tree(heap, 2*i+2))
+def heap2tree(heap):
+    return BinTree.from_heap(heap)
 
 
 
@@ -1253,30 +1324,6 @@ def __{0}__(self, other):
 
 
 
-class TypedDict(dict):
-    def __init__(self, *args, **kwargs):
-        self._types = dict(*args, **kwargs)
-    def __setitem__(self, key, value):
-        if key in self._types:
-            typ = self._types[key]
-            if not isinstance(value, typ):
-                raise TypeError("'{}' must be of type '{}'"
-                                .format(key, typ.__name__))
-        super().__setitem__(key, value)
-
-
-
-class TypedAttrs:
-    def __setattr__(self, name, value):
-        if name in self._types:
-            typ = self._types[name]
-            if not isinstance(value, typ):
-                raise TypeError("'{}' must be of type '{}'"
-                                .format(name, typ.__name__))
-        super().__setattr__(name, value)
-
-
-
 class IDProxy:
     def __init__(self, obj):
         if isinstance(obj, IDProxy):
@@ -1323,15 +1370,21 @@ class IDSet(collections.MutableSet, set):
         return (o._obj for o in set.__iter__(self))
     def copy(self):
         return IDSet(self)
+    union = collections.Set.__or__
+    update = collections.MutableSet.__ior__
+    intersection = collections.Set.__and__
+    intersection_update = collections.MutableSet.__iand__
+    difference = collections.Set.__sub__
+    difference_update = collections.MutableSet.__isub__
+    symmetric_difference = collections.Set.__xor__
+    symmetric_difference_update = collections.MutableSet.__ixor__
+    issubset = collections.Set.__le__
+    issuperset = collections.Set.__ge__
 
 
 
 def struct(name, fields, defaults=()):
-    if isinstance(fields, str):
-        fields = fields.replace(',', ' ').split()
-    fields = tuple(fields)
-
-    templ = r'''\
+    templ = '''\
 from collections import OrderedDict
 
 class {name}:
@@ -1357,7 +1410,8 @@ class {name}:
             yield getattr(self, f)
 
     def __eq__(self, other):
-        return type(other) is {name} and all(a==b for a, b in zip(self, other))
+        return isinstance(other, {name}) and \
+               all(a==b for a, b in zip(self, other))
 
     @property
     def __dict__(self):
@@ -1367,6 +1421,10 @@ class {name}:
     def __repr__(self):
         return "{name}({fmt})".format(*self)
 '''
+
+    if isinstance(fields, str):
+        fields = fields.replace(',', ' ').split()
+    fields = tuple(fields)
 
     init = '\n        '.join(map('self.{0} = {0}'.format, fields))
     fmt = ', '.join(map('{}={{!r}}'.format, fields))
@@ -1384,7 +1442,6 @@ class {name}:
 
 
 
-_none = Marker('<none>')
 class BiDirIter:
     def __init__(self, seq, ind=-1, forward=True):
         self._seq = seq
@@ -1398,7 +1455,7 @@ class BiDirIter:
         self._i = min(max(ind, -1), len(self._seq))
     def reverse(self):
         self.forward = not self.forward
-    def nxt(self, default=_none):
+    def next(self, default=_none):
         self._i += 1
         if self._i >= len(self._seq):
             self._i = len(self._seq)
@@ -1476,14 +1533,14 @@ class BiDirIterPlus(BiDirIter, IterPlus):
 
 
 class NumberLine:
-    def __init__(self, low=-10, high=10, data=None):
+    def __init__(self, low=-10, high=10, pts=None):
         self.low = low
         self.high = high
         self.array = [False] * (high - low + 1)
-        if data and isinstance(data[0], bool):
-            self.array[:len(data)] = data[:high - low + 1]
+        if pts and isinstance(pts[0], bool):
+            self.array[:len(pts)] = pts[:high - low + 1]
         else:
-            for x in data:
+            for x in pts:
                 self[x] = True
     def __getitem__(self, i):
         if self.low <= i <= self.high:
@@ -1538,4 +1595,130 @@ def __r{name}__(self, other):
 
 
 
-### Proxy: expr | proxy().a[3].b(x).c()
+### Proxy: expr | proxy().a[3].b(x).c.d()
+
+
+
+class BitFlag(enum.IntEnum):
+    def __or__(self, other):
+        return type(self)(super().__or__(other))
+    def __ror__(self, other):
+        return type(self)(super().__or__(other))
+
+    def __and__(self, other):
+        return type(self)(super().__and__(other))
+    def __rand__(self, other):
+        return type(self)(super().__and__(other))
+
+    def __xor__(self, other):
+        return type(self)(super().__xor__(other))
+    def __rxor__(self, other):
+        return type(self)(super().__xor__(other))
+
+    def __invert__(self):
+        return type(self)(super().__invert__() & max(type(self)))
+
+class Color(BitFlag):
+    black = 0
+    red = 1 << 0
+    green = 1 << 1
+    blue = 1 << 2
+    yellow = red | green
+    magenta = red | blue
+    cyan = green | blue
+    white = red | blue | green
+
+
+
+class MultiArray(collections.MutableSequence):
+    def __init__(self, it=None):
+        self.lastsize = 0
+        self.lists = [[_none]]
+        if it:
+            self.update(it)
+    def append(self, val):
+        n = len(self.lists[-1])
+        if self.lastsize == n:
+            self.lists.append([_none]*n*2)
+            self.lastsize = 0
+        self.lists[-1][self.lastsize] = val
+        self.lastsize += 1
+    def __getitem__(self, i):
+        li = (i + 1).bit_length() - 1
+        ii = i & ((1 << li) - 1)
+        return self.lists[li][ii]
+    def __setitem__(self, i, value):
+        li = (i + 1).bit_length() - 1
+        ii = i & ((1 << li) - 1)
+        self.lists[li][ii] = value
+
+class CircleArray(collections.MutableSequence):
+    def __init__(self, it=None):
+        pass
+
+
+
+class PrettyODict(collections.OrderedDict):
+    @reprlib.recursive_repr()
+    def __repr__(self):
+        return '{' + ', '.join('%r: %r' % (k, v) for k, v in self.items()) + '}'
+
+class ReprStr(str):
+    def __repr__(self):
+        return str(self)
+
+class HexInt(int):
+    def __repr__(self):
+        return hex(self)
+    def __str__(self):
+        return hex(self)
+
+class BinInt(int):
+    def __repr__(self):
+        return bin(self)
+    def __str__(self):
+        return bin(self)
+
+
+
+class OrderedSet(collections.MutableSet):
+    def __init__(self, it=()):
+        self._odict = collections.OrderedDict.fromkeys(it)
+    def __len__(self):
+        return len(self._odict)
+    def __iter__(self):
+        return iter(self._odict)
+    def __reversed__(self):
+        return reversed(self._odict)
+    def __contains__(self, value):
+        return value in self._odict
+    def __eq__(self, other):
+        if isinstance(other, OrderedSet):
+            return self._odict == other._odict
+        return self._odict.keys() == other
+    def __repr__(self):
+        return '{}({})'.format(type(self).__name__, list(self))
+    def add(self, value):
+        self._odict[value] = None
+    def discard(self, value):
+        self._odict.pop(value, None)
+    def remove(self, value):
+        del self._odict[value]
+    def pop(self, last=True):
+        return self._odict.popitem(last)[0]
+    def clear(self):
+        self._odict.clear()
+    def copy(self):
+        return OrderedSet(self)
+    def move_to_end(self, value, last=True):
+        self._odict.move_to_end(value, last)
+    union = collections.Set.__or__
+    update = collections.MutableSet.__ior__
+    intersection = collections.Set.__and__
+    intersection_update = collections.MutableSet.__iand__
+    difference = collections.Set.__sub__
+    difference_update = collections.MutableSet.__isub__
+    symmetric_difference = collections.Set.__xor__
+    symmetric_difference_update = collections.MutableSet.__ixor__
+    issubset = collections.Set.__le__
+    issuperset = collections.Set.__ge__

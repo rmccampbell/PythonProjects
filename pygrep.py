@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 import sys, re, argparse, collections, getfiles
 
-defkwargs = {
+DEF_KWARGS = {
     'match_files': False,
     'no_match_files': False,
     'only_match': False,
@@ -24,11 +24,11 @@ def grep(pattern, *files, **kwargs):
         pattern = args.pattern
         files = args.files
     else:
-        for k, v in defkwargs.items:
-            kwargs.setdefault(k, v)
-        args = argparse.Namespace(**kwargs)
+        kwargs2 = DEF_KWARGS.copy()
+        kwargs2.update(kwargs)
+        args = argparse.Namespace(pattern=pattern, files=files, **kwargs2)
 
-    files = getfiles.getfiles(files, default=sys.stdin)
+    files = getfiles.getfiles(files)
     flags = args.ignore_case and re.IGNORECASE
 
     if args.fixed:
@@ -50,7 +50,7 @@ def grep(pattern, *files, **kwargs):
     if args.match_files or args.no_match_files:
         args.count, args.with_filename = False, False
 
-    stdout = getfiles.set_errorhandler()
+    stdout = getfiles.set_encoding()
 
     for file in files:
         if args.count:
@@ -59,8 +59,6 @@ def grep(pattern, *files, **kwargs):
         print_filename = args.with_filename
         before_buff.clear()
         after_limit = 0
-##        if args.with_filename:
-##            print('\n' + file.name)
 
         for lno, line in enumerate(file):
             match = pattern.search(line)
@@ -74,7 +72,7 @@ def grep(pattern, *files, **kwargs):
                     break
 
                 if print_filename:
-                    print('\n-- {} --\n'.format(file.name))
+                    print('\n-- {} --'.format(file.name))
                     print_filename = False
 
                 if args.count:
@@ -110,7 +108,7 @@ def grep(pattern, *files, **kwargs):
         if args.count:
             print(count)
 
-    getfiles.reset_errorhandler(stdout)
+    getfiles.reset_encoding(stdout)
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()

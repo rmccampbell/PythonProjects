@@ -11,7 +11,7 @@ class bitfield:
         return self
     def __set__(self, inst, value):
         mask = ~(-1 << self.size)
-        value = value & mask
+        value &= mask
         val = getattr(inst, self.field)
         val = val & ~(mask << self.off) | value << self.off
         setattr(inst, self.field, val)

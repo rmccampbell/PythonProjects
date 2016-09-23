@@ -1,10 +1,23 @@
 import struct
 
+DIG = EOFF = 23
+MMASK = (1 << DIG) - 1
+TDIG = DIG + 1
+EXP = 8
+EMASK = (1 << EXP) - 1
+BIAS = (1 << EXP-1) - 1
+TBIAS = BIAS + DIG
+SOFF = DIG + EXP
+MINEXP = -TBIAS
+MAXEXP = EMASK - TBIAS
+INF = EMASK << EOFF
+NAN = EMASK << EOFF | 1 << DIG-1
+
 def fp2float(i):
-    return struct.unpack('>f', i.to_bytes(4, 'big'))[0]
+    return struct.unpack('<f', i.to_bytes(4, 'little'))[0]
 
 def float2fp(f):
-    return int.from_bytes(struct.pack('>f', f), 'big')
+    return int.from_bytes(struct.pack('<f', f), 'little')
 
 def fp2int(i):
     sgn, exp, mant = fp_split(i)
@@ -23,30 +36,37 @@ def fp_split(i):
         return i
     elif isinstance(i, float):
         i = float2fp(i)
-    sgn = i>>31 & 1
-    exp = (i>>23 & 0xff) - 127 - 23
-    mant = i & 0x7fffff | 1<<23
-    if exp == -127 - 23:  # zero and subnormal
-        mant &= 0x7fffff
+    sgn = i>>SOFF & 1
+    exp = (i>>EOFF & EMASK) - TBIAS
+    mant = i & MMASK | 1<<DIG
+    if exp == MINEXP:  # zero and subnormal
+        mant &= MMASK
         exp += 1
     return sgn, exp, mant
 
 def fp_normalize(sgn, exp, mant):
-    n = mant.bit_length() - 24
+    n = mant.bit_length() - TDIG
     exp += n
     if mant == 0:  # zero
-        exp = -127 - 23
-    if exp <= -127 - 23:  # subnormal
-        n += -127 - 23 - exp + 1
-        exp = -127 - 23
-    elif exp >= 255 - 127 - 23:  # infinity
+        exp = MINEXP
+    if exp <= MINEXP:  # subnormal
+        n += MINEXP - exp + 1
+        exp = MINEXP
+    elif exp >= MAXEXP:  # infinity
         mant = 0
-        exp = 255 - 127 - 23
+        exp = MAXEXP
     if n >= 0:
         mant >>= n
     else:
         mant <<= -n
-    return sgn << 31 | exp + 127 + 23 << 23 | mant & 0x7fffff
+    return sgn << SOFF | exp+TBIAS << EOFF | mant & MMASK
+
+def fp_neg(a):
+    if isinstance(a, tuple):
+        a = fp_normalize(*a)
+    elif isinstance(a, float):
+        a = float2fp(a)
+    return a ^ (1 << SOFF)
 
 def fp_add(a, b):
     sgn1, exp1, mant1 = fp_split(a)
@@ -84,13 +104,42 @@ def fp_div(a, b):
     sgn1, exp1, mant1 = fp_split(a)
     sgn2, exp2, mant2 = fp_split(b)
     if mant2 == 0:
-        exp = 255 - 127 - 23
-        if mant1 == 0:
-            mant = 0xc00000
-        else:
-            mant = 0x800000
+        if mant1 == 0:  # nan
+            return NAN
+        else:  # infinity
+            return INF
     else:
-        mant = (mant1<<23) // mant2
-        exp = exp1 - exp2 - 23
+        mant = (mant1 << DIG) // mant2
+        exp = exp1 - exp2 - DIG
     sgn = sgn1 ^ sgn2
     return fp_normalize(sgn, exp, mant)
+
+def fp_sqrt(a):
+    sgn, exp, mant = fp_split(a)
+    if sgn and mant:
+        return NAN
+    if exp & 1:
+        exp -= 1
+        mant <<= 1
+    mant <<= TDIG
+    exp -= TDIG
+    y = 0
+    for i in range(TDIG, -1, -1):
+        y2 = y | 1<<i
+        if y2*y2 <= mant:
+            y = y2
+    return fp_normalize(0, exp >> 1, y)
+
+def fp_str(a):
+    sgn, exp, mant = fp_split(a)
+    e10 = (exp * 0x13441 >> 18) + 1 # approx exp * log10(2)
+    if exp >= 0:
+        x = (mant << exp) // 10**e10
+    else:
+        x = mant * 10**-e10 >> -exp
+    s = str(x)
+    if e10 >= 0:
+        return s + '0'*e10 + '.'
+    elif e10 <= -len(s):
+        return '.' + s.rjust(-e10, '0')
+    return s[:e10] + '.' + s[e10:]

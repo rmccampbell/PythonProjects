@@ -1,3 +1,4 @@
+#!/usr/bin/env python3
 import sys, argparse, getfiles, re
 
 def frep(pattern, replace, *files, inplace=False, fixed=False):

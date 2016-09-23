@@ -1,21 +1,25 @@
-#!/usr/bin/env python3
-import sys, os, pygame, pygame.freetype, random
+#!/usr/bin/python
+import sys, os, pygame, random
 from pygame.locals import *
 
 
 SIZE = 8
 
-HSFILE = os.path.join(os.path.dirname(sys.argv[0]), 'snake_highscore.txt')
+DIR = os.path.dirname(sys.argv[0])
+HSFILE = os.path.join(DIR, 'snake_highscore.txt')
+FONTFILE = os.path.join(DIR, 'bauhaus-93.ttf')
 
-TITLE = [
- [1, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0],
- [1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0],
- [1, 0, 0, 0, 0, 1, 1, 1, 1, 0, 1, 1, 1, 1, 0, 0, 1, 0, 1, 1, 0, 1, 1, 1, 1],
- [1, 1, 1, 1, 0, 1, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 1, 1, 1, 0, 0, 1, 0, 0, 1],
- [0, 0, 0, 1, 0, 1, 0, 0, 1, 0, 1, 1, 1, 1, 0, 0, 1, 1, 0, 0, 0, 1, 1, 1, 1],
- [0, 0, 0, 1, 0, 1, 0, 0, 1, 0, 1, 0, 0, 1, 0, 0, 1, 1, 1, 0, 0, 1, 0, 0, 0],
- [1, 1, 1, 1, 0, 1, 0, 0, 1, 0, 1, 1, 1, 1, 1, 0, 1, 0, 1, 1, 0, 1, 1, 1, 1]
-]
+TITLESTR = '''\
+####            #        
+#               #        
+#    #### ####  # ## ####
+#### #  #    #  ###  #  #
+   # #  # ####  ##   ####
+   # #  # #  #  ###  #   
+#### #  # ##### # ## ####
+'''
+
+TITLE = [[c != ' ' for c in r] for r in TITLESTR.splitlines()]
 
 
 class Snake:
@@ -88,13 +92,21 @@ class Game:
 
     def __init__(self):
         pygame.init()
-        self.screen = pygame.display.set_mode((328, 328))
         pygame.display.set_caption('Snake')
-        self.font = pygame.freetype.SysFont('Bauhaus 93', 32)
-        self.font.pad = True
+        self.screen = pygame.display.set_mode((328, 328))
+        fonts = pygame.font.get_fonts()
+        if os.path.exists(FONTFILE):
+            typ, font, s1, s2 = pygame.font.Font, FONTFILE, 32, 24
+        elif 'bauhaus93' in fonts:
+            typ, font, s1, s2 = pygame.font.SysFont, 'bauhaus93', 32, 24
+        else:
+            typ, font, s1, s2 = pygame.font.SysFont, 'impact', 42, 32
+        self.font1 = typ(font, s1)
+        self.font2 = typ(font, s2)
         self.snake = None
         self.is_title = True
         self.is_gameover = False
+        self.running = False
 
     def run(self):
         self.main()
@@ -122,7 +134,6 @@ class Game:
         file.write(str(self.highscore))
 
     def main(self):
-        screen = self.screen
         clock = pygame.time.Clock()
         self.running = True
         while self.running:
@@ -151,7 +162,7 @@ class Game:
                     self.quit()
 
             self.update()
-            self.draw(screen)
+            self.draw(self.screen)
             pygame.display.flip()
 
     def update(self):
@@ -178,20 +189,18 @@ class Game:
             for y, row in enumerate(TITLE):
                 for x, cell in enumerate(row):
                     if cell:
-                        pos = x*SIZE + SIZE//2 + 8*SIZE, y*SIZE + SIZE//2 + 15*SIZE
+                        pos = x*SIZE + SIZE//2 + 8*SIZE, y*SIZE + SIZE//2 + 16*SIZE
                         pygame.draw.circle(screen, Snake.color, pos, 4)
         elif self.is_gameover:
             scoretext = "Score: {}".format(self.score)
             hscoretext = "High Score: {}".format(self.highscore)
-            rect1 = self.font.get_rect("Game Over")
-            rect1.center = screen.get_rect().move(0, -50).center
-            rect2 = self.font.get_rect(scoretext, size=24)
-            rect2.center = screen.get_rect().move(0, 0).center
-            rect3 = self.font.get_rect(hscoretext, size=24)
-            rect3.center = screen.get_rect().move(0, 40).center
-            self.font.render_to(screen, rect1, "Game Over", (0, 0, 255))
-            self.font.render_to(screen, rect2, scoretext, (0, 0, 255), size=24)
-            self.font.render_to(screen, rect3, hscoretext, (0, 0, 255), size=24)
+            surf1 = self.font1.render('Game Over', True, (0, 0, 255))
+            surf2 = self.font2.render(scoretext, True, (0, 0, 255))
+            surf3 = self.font2.render(hscoretext, True, (0, 0, 255))
+            cx, cy = screen.get_rect().center
+            screen.blit(surf1, surf1.get_rect(center=(cx, cy - 50)))
+            screen.blit(surf2, surf2.get_rect(center=(cx, cy)))
+            screen.blit(surf3, surf3.get_rect(center=(cx, cy + 40)))
         else:
             for x, col in enumerate(self.grid):
                 for y, cell in enumerate(col):

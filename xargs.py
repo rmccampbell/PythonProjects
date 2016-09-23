@@ -30,9 +30,10 @@ if __name__ == '__main__':
 
     delim = args.delimiter
     if delim:
-        xargs = file.read().splitlines()
-        if delim != '\n':
-            xargs = ' '.join(lines).split(delim)
+        if delim == '\n':
+            xargs = file.read().splitlines()
+        else:
+            xargs = file.read().split(delim)
     else:
         xargs = winsplit(file)
 

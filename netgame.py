@@ -5,6 +5,7 @@ import argparse
 import pygame
 import socket
 import select
+import time
 from pygame.locals import *
 
 HOST = 'localhost'
@@ -15,7 +16,7 @@ H = 400
 
 def serve(port=PORT):
     sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-    sock.setblocking(False)
+    #sock.setblocking(False)
     sock.bind(('', port))
     print('listening on port %d...' % port)
     try:
@@ -35,7 +36,7 @@ def connect(host=HOST, port=PORT):
     host = socket.gethostbyname(host)
     addr = (host, port)
     sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-    sock.setblocking(False)
+    #sock.setblocking(False)
     print('connecting to %s on port %d...' % addr)
     try:
         while True:
@@ -45,9 +46,10 @@ def connect(host=HOST, port=PORT):
                 try:
                     data, addr2 = sock.recvfrom(256)
                 except ConnectionResetError:
+                    time.sleep(1)
                     continue
                 if addr2 == addr and data == b'connected':
-                        break
+                    break
     except KeyboardInterrupt:
         return
     print('connected')
@@ -66,7 +68,7 @@ def main(sock, addr, server=False):
         title = 'Server'
     else:
         os.environ['SDL_VIDEO_WINDOW_POS'] = '720, 140'
-        x, x2, y, y2 = x2, x, y2, y
+        x, y, x2, y2 = x2, y2, x, y
         color, color2 = color2, color
         title = 'Client'
 
@@ -84,7 +86,10 @@ def main(sock, addr, server=False):
                 if data == b'close':
                     running = False
                 else:
-                    x2, y2 = map(int, data.split(b','))
+                    try:
+                        x2, y2 = map(int, data.split(b','))
+                    except ValueError as e:
+                        print('ValueError: %s; data=%r' % (e, data))
         for event in pygame.event.get():
             if event.type == QUIT:
                 running = False
@@ -108,7 +113,7 @@ def main(sock, addr, server=False):
         x += dx
         y += dy
         if dx or dy:
-            sock.sendto(b'%+04d,%+04d' % (x, y), addr)
+            sock.sendto(('%+04d,%+04d' % (x, y)).encode('ascii'), addr)
         screen.fill((255, 255, 255))
         pygame.draw.circle(screen, color2, (x2, y2), 10)
         pygame.draw.circle(screen, color, (x, y), 10)

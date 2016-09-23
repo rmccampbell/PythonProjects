@@ -2,7 +2,7 @@ import sys
 import re
 import urllib.request, urllib.parse
 
-def crawl(url, search, depth=0, maxdepth=10, seen=None):
+def crawl(url, search, depth=0, maxdepth=5, seen=None):
     if '://' not in url:
         url = 'http://' + url
     if seen is None:

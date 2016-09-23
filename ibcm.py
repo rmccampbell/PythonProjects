@@ -23,7 +23,7 @@ READ = SHIFTR = 0x1
 WRITEH = ROTL = 0x2
 WRITE = ROTR = 0x3
 
-opcodes = {
+OPCODES = {
     'halt':     0x0,
     'readh':    0x1,
     'read':     0x1,
@@ -48,14 +48,14 @@ opcodes = {
     'brl':      0xf,
 }
 
-io_ops = {
+IO_OPS = {
     'readh':    0x0,
     'read':     0x1,
     'printh':   0x2,
     'print':    0x3,
 }
 
-shift_ops = {
+SHIFT_OPS = {
     'shiftl':   0x0,
     'shiftr':   0x1,
     'rotl':     0x2,
@@ -64,8 +64,6 @@ shift_ops = {
 
 
 def parse_array(s):
-    if '(' in s:
-        raise ValueError('invalid data declaration')
     try:
         objs = ast.literal_eval(s)
     except ValueError:
@@ -99,16 +97,16 @@ def assemble(code):
         opval = 0
         if opname == 'dw':
             if data.startswith("'"):
-                opval = ord(eval(data))
+                opval = ord(ast.literal_eval(data))
             elif data:
                 opval = int(data, 16)
         elif opname:
-            opcode = opcodes[opname.lower()]
+            opcode = OPCODES[opname.lower()]
             if opcode == IO:
-                io_op = io_ops[opname.lower()]
+                io_op = IO_OPS[opname.lower()]
                 oparg = io_op << 10
             elif opcode == SHIFT:
-                shift_op = shift_ops[opname.lower()]
+                shift_op = SHIFT_OPS[opname.lower()]
                 oparg = shift_op << 10 | (int(data, 16) & 0xf)
             else:
                 oparg = 0
@@ -141,19 +139,19 @@ def interpret(code):
         if op == HALT:
             break
         elif op == IO:
-            ioop = instr >> 10 & 0x3
+            ioop = addr >> 10
             if ioop == READH:
                 accum = int(input(), 16)
             elif ioop == READ:
                 char = sys.stdin.read(1)
                 accum = ord(char) if char else 0 # 0 for EOF
             elif ioop == WRITEH:
-                print('%04x' % accum)
+                print('{:04x}'.format(accum))
             elif ioop == WRITE:
                 sys.stdout.write(chr(accum))
         elif op == SHIFT:
-            shiftop = instr >> 10 & 0x3
-            cnt = instr & 0xf
+            shiftop = addr >> 10
+            cnt = addr & 0xf
             if shiftop == SHIFTL:
                 accum <<= cnt
             elif shiftop == SHIFTR:
