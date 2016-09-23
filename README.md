@@ -1,2 +1,2 @@
 # PythonProjects
-These are the various scripts, libraries and code musings I've written over the years.
+Various scripts, libraries and code musings I've written over the last few years.
