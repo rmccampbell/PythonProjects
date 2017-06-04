@@ -1,34 +1,38 @@
-ones = ['zero', 'one', 'two', 'three', 'four', 'five', 'six', 'seven', 'eight',
-        'nine', 'ten', 'eleven', 'twelve', 'thirteen', 'fourteen', 'fifteen',
-        'sixteen', 'seventeen', 'eighteen', 'nineteen']
+import math
 
-tens = ['twenty', 'thirty', 'forty', 'fifty', 'sixty', 'seventy', 'eighty',
-        'ninety']
+ones = [
+    'zero', 'one', 'two', 'three', 'four', 'five', 'six', 'seven', 'eight',
+    'nine', 'ten', 'eleven', 'twelve', 'thirteen', 'fourteen', 'fifteen',
+    'sixteen', 'seventeen', 'eighteen', 'nineteen'
+]
 
-thousands = ['thousand', 'million', 'billion', 'trillion', 'quadrillion',
-             'quintillion', 'sextillion', 'septillion', 'octillion',
-             'nonillion', 'decillion', 'undecillion', 'duodecillion',
-             'tredecillion', 'quattuordecillion', 'quindecillion',
-             'sexdecillion', 'septendecillion', 'octodecillion',
-             'novemdecillion', 'vigintillion']
+tens = [
+    '', 'ten', 'twenty', 'thirty', 'forty', 'fifty', 'sixty', 'seventy',
+    'eighty', 'ninety'
+]
 
-thousands = ['thousand', 'million', 'billion', 'trillion', 'quadrillion',
-             'quintillion', 'sextillion', 'septillion', 'octillion',
-             'nonillion', 'decillion', 'undecillion', 'duodecillion',
-             'tredecillion', 'quattuordecillion', 'quinquadecillion',
-             'sedecillion', 'septendecillion', 'octodecillion',
-             'novendecillion', 'vigintillion', 'unvigintillion',
-             'duovigintillion', 'tresvigintillion', 'quattuorvigintillion',
-             'quinquavigintillion', 'sesvigintillion', 'septemvigintillion',
-             'octovigintillion', 'novemvigintillion', 'trigintillion',
-             'untrigintillion', 'duotrigintillion', 'trestrigintillion',
-             'quattuortrigintillion', 'quinquatrigintillion',
-             'sestrigintillion', 'septentrigintillion', 'octotrigintillion',
-             'noventrigintillion', 'quadragintillion']
+thousands = [
+    '', 'thousand', 'million', 'billion', 'trillion', 'quadrillion',
+    'quintillion', 'sextillion', 'septillion', 'octillion', 'nonillion',
+
+    'decillion', 'undecillion', 'duodecillion', 'tredecillion',
+    'quattuordecillion', 'quinquadecillion', 'sedecillion', 'septendecillion',
+    'octodecillion', 'novendecillion',
+
+    'vigintillion', 'unvigintillion', 'duovigintillion', 'tresvigintillion',
+    'quattuorvigintillion', 'quinquavigintillion', 'sesvigintillion',
+    'septemvigintillion', 'octovigintillion', 'novemvigintillion',
+
+    'trigintillion', 'untrigintillion', 'duotrigintillion', 'trestrigintillion',
+    'quattuortrigintillion', 'quinquatrigintillion', 'sestrigintillion',
+    'septentrigintillion', 'octotrigintillion', 'noventrigintillion',
+
+    'quadragintillion'
+]
 
 ones_map = {n: i for i, n in enumerate(ones)}
-tens_map = {n: i for i, n in enumerate(tens, 2)}
-thousands_map = {n: i for i, n in enumerate(thousands, 1)}
+tens_map = {n: i for i, n in enumerate(tens) if n}
+thousands_map = {n: i for i, n in enumerate(thousands) if n}
 
 def smalln2words(n):
     if n < 0 or n > 999:
@@ -39,34 +43,50 @@ def smalln2words(n):
         s += ones[n] if n or not h else ''
     else:
         t, n = divmod(n, 10)
-        s += tens[t-2] + ' ' if t else ''
+        s += tens[t] + ' '
         s += ones[n] if n else ''
     return s.strip()
 
-def num2words(n, e=0):
-    sgn = 'negative ' if n < 0 else ''
+##def num2words(n, e=0):
+##    sgn = 'negative ' if n < 0 else ''
+##    n, r = divmod(abs(n), 1000)
+##    s = smalln2words(r) + (' ' + thousands[e] if e else '')
+##    if n:
+##        s = num2words(n, e+1) + (' ' + s if r else '')
+##    return sgn + s
+
+def num2words(n):
+    sgn = n < 0
     n, r = divmod(abs(n), 1000)
-    s = smalln2words(r) + (' ' + thousands[e-1] if e else '')
-    if n:
-        s = num2words(n, e+1) + (' ' + s if r else '')
-    return sgn + s
+    e = 0
+    ss = [smalln2words(r)] if r or not n else []
+    while n:
+        n, r = divmod(n, 1000)
+        e += 1
+        if r:
+            ss += [thousands[e], smalln2words(r)]
+    if sgn:
+        ss.append('negative')
+    return ' '.join(ss[::-1])
 
 
 def words2num(s):
-    l = s.lower().split()
     n = 0
+    x = 0
     last_type = ''
     last_thousand = 0
-    x = 0
     try:
         return int(s.replace(',', ''))
     except ValueError:
         pass
-    for w in l:
+    for w in s.lower().split():
         if w in ones_map:
             if last_type == 'ones' or x % 10:
                 raise ValueError('two ones in a row')
-            x += ones_map[w]
+            num = ones_map[w]
+            if (last_type == 'tens' or x % 100) and num >= 10:
+                raise ValueError('two tens in a row')
+            x += num
             last_type = 'ones'
         elif w in tens_map:
             if last_type == 'ones' or x % 10:

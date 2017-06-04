@@ -1,4 +1,3 @@
-#!/usr/bin/env python3
 import functools, itertools, inspect, random, threading, time
 from functools import partial, total_ordering
 from collections import Iterable, Iterator
@@ -26,8 +25,7 @@ class NonStrIter(Iterable):
                     not issubclass(C, (str, bytes, bytearray)))
         return NotImplemented
 
-_uncopyable = (Iterator, range, dict, type({}.keys()), type({}.values()),
-              type({}.items()))
+_copyable = (list, tuple, set, frozenset, bytes, bytearray)
 
 
 if hasattr(inspect, 'signature'):
@@ -85,14 +83,15 @@ def inv(func):
     return lambda *args, **kwargs: not func(*args, **kwargs)
 
 
-def rpartial(_func, *args, **kwargs):
+# underscore to prevent collisions with kwargs
+def rpartial(func_, *args, **kwargs):
     """Bind arguments to the right side of the function."""
-    _args, _kwargs = args, kwargs
+    args1, kwargs1 = args, kwargs
     def rpartial(*args, **kwargs):
-        kwargs2 = _kwargs.copy()
+        kwargs2 = kwargs1.copy()
         kwargs2.update(kwargs)
-        return _func(*args + _args, **kwargs2)
-    rpartial._func = _func
+        return func_(*args + args1, **kwargs2)
+    rpartial.func = func_
     rpartial.args = args
     rpartial.kwargs = kwargs
     return rpartial
@@ -239,6 +238,7 @@ def __r{name}__(self, other):
                          mod='%', pow='**', and_='&', or_='|', xor='^',
                          lshift='<<', rshift='>>').items():
         exec(binop.format(name=name.rstrip('_'), op=op))
+    del unop, binop, name, op
 
 _ = Placeholder()
 
@@ -268,7 +268,7 @@ def unique(it):
             seen_add(x)
             yield x
 
-def chunk(seq, size=2, fill=_none, partial=False):
+def chunk(seq, size=2, fill=_none, partial=True):
     """Groups input iterator into equally sized chunks"""
     if partial:
         return chunk_partial(seq, size)
@@ -283,29 +283,29 @@ def chunk_partial(seq, size=2):
         yield chunk
         chunk = tuple(islice(it, size))
 
-def flatten(lst, tp=(list, tuple)):
-    tp = tp or NonStrIter
-    return [b for a in lst for b in
-            (flatten(a, tp) if isinstance(a, tp) else (a,))]
-
-def iflatten(it, tp=NonStrIter):
+def iflatten(it, types=NonStrIter):
+    types = types or NonStrIter
     return (b for a in it for b in
-            (iflatten(a, tp) if isinstance(a, tp) else (a,)))
+            (iflatten(a, types) if isinstance(a, types) else (a,)))
 
-def deepcopy(lst, tp=(list, tuple), conv=None):
-    tp = tp or NonStrIter
-    if not isinstance(lst, tp):
-        raise TypeError
-    c = conv or (type(lst) if not isinstance(lst, _uncopyable) else list)
-    return c(deepcopy(o, tp, conv) if isinstance(o, tp) else o for o in lst)
+def flatten(lst, types=(list, tuple)):
+    types = types or NonStrIter
+    return [b for a in lst for b in
+            (flatten(a, types) if isinstance(a, types) else (a,))]
 
-def deepmap(func, lst, tp=(list, tuple)):
-    tp = tp or NonStrIter
-    if not isinstance(lst, tp):
-        raise TypeError
-    c = type(lst) if not isinstance(lst, _uncopyable) else list
-    return c(
-        deepmap(func, o, tp) if isinstance(o, tp) else func(o) for o in lst)
+def deepcopy(lst, types=(list, tuple), copy=None):
+    types = types or NonStrIter
+    if not isinstance(lst, types):
+        return lst
+    c = copy or (type(lst) if isinstance(lst, _copyable) else list)
+    return c(deepcopy(o, types, conv) for o in lst)
+
+def deepmap(func, lst, types=(list, tuple), copy=None):
+    types = types or NonStrIter
+    if not isinstance(lst, types):
+        return func(lst)
+    c = copy or (type(lst) if isinstance(lst, _copyable) else list)
+    return c(deepmap(func, o, types) for o in lst)
 
 
 def binsearch(seq, obj):
@@ -534,6 +534,9 @@ class view:
         return '<view({})>'.format(self.seq[self.start: self.stop: self.step])
 
 
+def ilen(it):
+    return sum(1 for x in iterable)
+
 def iindex(it, idx):
     if isinstance(idx, slice):
         return list(islice(it, idx.start, idx.stop, idx.step))
@@ -543,6 +546,10 @@ def iindex(it, idx):
         return next(islice(it, idx, None))
     except StopIteration:
         raise IndexError
+
+
+def first(iterable):
+    return next(iter(iterable))
 
 
 class loose_compare(object):
@@ -593,6 +600,26 @@ def nones_last(x):
 
 def nones_first(x):
     return x if x is not None else FIRST
+
+
+class reverse_order:
+    def __init__(self, obj):
+        self._obj = obj
+    def __eq__(self, other):
+        return self._obj == other._obj
+    def __ne__(self, other):
+        return self._obj != other._obj
+    def __lt__(self, other):
+        return self._obj > other._obj
+    def __gt__(self, other):
+        return self._obj < other._obj
+    def __le__(self, other):
+        return self._obj >= other._obj
+    def __ge__(self, other):
+        return self._obj <= other._obj
+
+def reverse_key(key):
+    return lambda obj: reverse_order(key(obj))
 
 
 class CompByKey:

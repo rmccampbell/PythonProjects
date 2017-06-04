@@ -292,15 +292,15 @@ class CustomMagic:
 def int_to_bits(num):
     bits = []
     while num > 0:
-        bits.append(num % 2)
-        num //= 2
+        bits.append(num & 1)
+        num >>= 1
     bits.reverse()
     return bits
 
 def bits_to_int(bits):
     num = 0
     for bit in bits:
-        num = (num * 2) + bool(bit)
+        num = (num << 1) | bool(bit)
     return num
 
 class Bits(collections.Sequence):
@@ -332,6 +332,15 @@ class Bits(collections.Sequence):
         if idx < 0 or idx >= l:
             raise IndexError('bit index out of range')
         return self.value >> idx & 1
+
+    def __setitem__(self, idx, value):
+        l = self.length
+        if idx < 0:
+            idx += l
+        if idx < 0 or idx >= l:
+            raise IndexError('bit index out of range')
+        self.value = self.value & ~(1 << idx) | (value << idx)
+        self.value ^= (-value ^ self.value) & (1 << idx)
 
     def __iter__(self):
         num = self.value
@@ -729,6 +738,7 @@ class AbstractSet:
         pred2 = AbstractSet(other).predicate
         return AbstractSet(lambda obj: pred1(obj) and not pred2(obj))
 
+# The set of all sets not members of themselves
 russels_set = AbstractSet(lambda obj: isinstance(obj, collections.Container)
                           and obj not in obj)
 
@@ -743,7 +753,7 @@ def frange(start, stop=None, step=1):
         count += step
 
 
-class Frange(collections.Sequence):
+class FRange(collections.Sequence):
     def __init__(self, start, stop=None, step=1):
         if stop is None:
             start, stop = 0, start
@@ -1601,19 +1611,25 @@ def __r{name}__(self, other):
 
 class BitFlag(enum.IntEnum):
     def __or__(self, other):
-        return type(self)(super().__or__(other))
+        val = super().__or__(other)
+        return type(self)(val) if val is not NotImplemented else val
     def __ror__(self, other):
-        return type(self)(super().__or__(other))
+        val = super().__ror__(other)
+        return type(self)(val) if val is not NotImplemented else val
 
     def __and__(self, other):
-        return type(self)(super().__and__(other))
+        val = super().__and__(other)
+        return type(self)(val) if val is not NotImplemented else val
     def __rand__(self, other):
-        return type(self)(super().__and__(other))
+        val = super().__rand__(other)
+        return type(self)(val) if val is not NotImplemented else val
 
     def __xor__(self, other):
-        return type(self)(super().__xor__(other))
+        val = super().__xor__(other)
+        return type(self)(val) if val is not NotImplemented else val
     def __rxor__(self, other):
-        return type(self)(super().__xor__(other))
+        val = super().__rxor__(other)
+        return type(self)(val) if val is not NotImplemented else val
 
     def __invert__(self):
         return type(self)(super().__invert__() & max(type(self)))
@@ -1668,22 +1684,36 @@ class ReprStr(str):
         return str(self)
 
 class HexInt(int):
+    def __new__(cls, x=0, width=0, base=16):
+        if isinstance(x, str):
+            self = super().__new__(cls, x, base)
+        else:
+            self = super().__new__(cls, x)
+        self.width = width
+        return self
     def __repr__(self):
-        return hex(self)
+        return '{:#0{}x}'.format(self, self.width + 2)
     def __str__(self):
-        return hex(self)
+        return repr(self)
 
 class BinInt(int):
+    def __new__(cls, x=0, width=0, base=2):
+        if isinstance(x, str):
+            self = super().__new__(cls, x, base)
+        else:
+            self = super().__new__(cls, x)
+        self.width = width
+        return self
     def __repr__(self):
-        return bin(self)
+        return '{:#0{}b}'.format(self, self.width + 2)
     def __str__(self):
-        return bin(self)
+        return repr(self)
 
 
 
 class OrderedSet(collections.MutableSet):
-    def __init__(self, it=()):
-        self._odict = collections.OrderedDict.fromkeys(it)
+    def __init__(self, iterable=()):
+        self._odict = collections.OrderedDict.fromkeys(iterable)
     def __len__(self):
         return len(self._odict)
     def __iter__(self):
@@ -1709,16 +1739,26 @@ class OrderedSet(collections.MutableSet):
     def clear(self):
         self._odict.clear()
     def copy(self):
-        return OrderedSet(self)
+        return OrderedSet(self._odict)
     def move_to_end(self, value, last=True):
         self._odict.move_to_end(value, last)
-    union = collections.Set.__or__
-    update = collections.MutableSet.__ior__
-    intersection = collections.Set.__and__
-    intersection_update = collections.MutableSet.__iand__
-    difference = collections.Set.__sub__
-    difference_update = collections.MutableSet.__isub__
-    symmetric_difference = collections.Set.__xor__
-    symmetric_difference_update = collections.MutableSet.__ixor__
-    issubset = collections.Set.__le__
-    issuperset = collections.Set.__ge__
+    def union(self, other):
+        return self | other
+    def update(self, other):
+        self |= other
+    def intersection(self, other):
+        return self & other
+    def intersection_update(self, other):
+        self &= other
+    def difference(self, other):
+        return self - other
+    def difference_update(self, other):
+        self -= other
+    def symmetric_difference(self, other):
+        return self ^ other
+    def symmetric_difference_update(self, other):
+        self ^= other
+    def issubset(self, other):
+        return self <= other
+    def issuperset(self, other):
+        return self >= other

@@ -125,7 +125,7 @@ def main():
     grid[y][x] = 2 if random.random() < .9 else 4
     while True:
         print('\n' * H)
-        print(grid_fmt.format(*[i or '' for r in grid for i in r]))
+        print(grid_fmt.format(*[i or '' for r in grid for i in r]), end='')
         gridcp = [r[:] for r in grid]
         if not (move_up(gridcp) or move_down(gridcp) or
                 move_left(gridcp) or move_right(gridcp)):

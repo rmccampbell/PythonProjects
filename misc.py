@@ -5,11 +5,11 @@ def isprime_re(n):
 
 
 def tobase(n, b):
-    s = ''
+    digs = []
     while n:
         n, r = divmod(n, b)
-        s = '0123456789abcdefghijklmnopqrstuvwxyz'[r] + s
-    return s or '0'
+        digs.append('0123456789abcdefghijklmnopqrstuvwxyz'[r])
+    return ''.join(digs)[::-1] or '0'
 
 def frombase(s, b):
     digs = dict(zip('0123456789abcdefghijklmnopqrstuvwxyz', range(b)))
@@ -21,22 +21,33 @@ def nthbit(x, n):
     return x >> n & 1
 
 def revbits(x, n=8):
-    r = 0
+    y = 0
     for i in range(n):
-        r <<= 1
-        r |= x & 1
+        y = y << 1 | x & 1
         x >>= 1
-    return r
+    return y
+
+def revbits2(x, n=8):
+    table = (0, 8, 4, 12, 2, 10, 6, 14, 1, 9, 5, 13, 3, 11, 7, 15)
+    y = 0
+    m, r = divmod(n, 4)
+    for i in range(m):
+        y = y << 4 | table[x & 0xf]
+        x >>= 4
+    if r:
+        y = y << r | table[x & 0xf] >> 4-r
+    return y
+
+def revbits32(x):
+    x = (x & 0x55555555) << 1 | x >> 1 & 0x55555555
+    x = (x & 0x33333333) << 2 | x >> 2 & 0x33333333
+    x = (x & 0x0f0f0f0f) << 4 | x >> 4 & 0x0f0f0f0f
+    x = (x & 0x00ff00ff) << 8 | x >> 8 & 0x00ff00ff
+    return (x & 0x0000ffff) << 16 | x >> 16
 
 def rotbits(x, y, n=8):
-    return x << y%n & ~(1<<n) | x >> -y%n
-
-def bitcount(n):
-    i = 0
-    while n:
-        n &= n-1
-        i += 1
-    return i
+    mask = (1<<n) - 1
+    return x << y%n & mask | (x & mask) >> -y%n
 
 def bitcount(n):
     i = 0
@@ -52,29 +63,44 @@ def bitcount32(n):
     n = (n & 0x00ff00ff) + (n >> 8 & 0x00ff00ff)
     return (n & 0x0000ffff) + (n >> 16)
 
+def parity(n):
+    i = 0
+    while n:
+        n &= n-1
+        i ^= 1
+    return i
 
-def float_int(num):
+def parity32(n):
+    n ^= n >> 16
+    n ^= n >> 8
+    n ^= n >> 4
+    n ^= n >> 2
+    n ^= n >> 1
+    return n & 1
+
+
+def float_bits(num):
     import struct
     return int.from_bytes(struct.pack('>f', num), 'big')
 
-def double_int(num):
+def double_bits(num):
     import struct
     return int.from_bytes(struct.pack('>d', num), 'big')
 
-def float_rep(num, sep=' '):
-    s = '{:032b}'.format(float_int(num))
+def float_bitstr(num, sep=' '):
+    s = '{:032b}'.format(float_bits(num))
     return s[:1] + sep + s[1:9] + sep + s[9:]
 
-def double_rep(num, sep=' '):
-    s = '{:064b}'.format(double_int(num))
+def double_bitstr(num, sep=' '):
+    s = '{:064b}'.format(double_bits(num))
     return s[:1] + sep + s[1:12] + sep + s[12:]
 
-def float_from_rep(s):
+def float_frombits(s):
     import struct
     if isinstance(s, str): s = int(s.replace(' ', ''), 2)
     return struct.unpack('>f', s.to_bytes(4, 'big'))[0]
 
-def double_from_rep(s):
+def double_frombits(s):
     import struct
     if isinstance(s, str): s = int(s.replace(' ', ''), 2)
     return struct.unpack('>d', s.to_bytes(8, 'big'))[0]
@@ -100,7 +126,7 @@ def roman(n):
 def concat_lists(lists):
     ret = []
     for l in lists:
-        ret.extend(l)
+        ret += l
     return ret
 
 
@@ -114,3 +140,23 @@ def as_integer_ratio(f):
     if -e <= n:
         return m >> -e, 1
     return m >> n, 1 << -e-n
+
+
+def caesar_cipher(s, k):
+    return ''.join([chr((ord(c) - 65 + k) % 26 + 65) if 'A' <= c <= 'Z' else \
+                    chr((ord(c) - 97 + k) % 26 + 97) if 'a' <= c <= 'z' else \
+                    c for c in s])
+
+
+def divmod_ceil(x, y):
+    q = (x - 1) // y + 1
+    return q, x - y*q
+
+
+def divmod_round(x, y):
+    q, r = divmod(x, y)
+    r2 = 2*r
+    if r2 > x or r2 == x and q % 2:
+        q += 1
+        r -= y
+    return q, r

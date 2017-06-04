@@ -4,9 +4,9 @@ del print_function, division
 import sys
 _PY3 = sys.version_info[0] >= 3
 
-import os, collections, functools, itertools, operator, types, math, re
+import os, collections, functools, itertools, operator, types, math, cmath, re
 import io, random, inspect, textwrap, dis, timeit, time, datetime, string
-import unicodedata
+import fractions, decimal, unicodedata, codecs, shutil
 from math import pi, e, sqrt, exp, log, log10, floor, ceil, factorial
 from math import sin, cos, tan, asin, acos, atan, atan2
 inf = float('inf')
@@ -18,23 +18,26 @@ from collections import OrderedDict
 from fractions import Fraction
 from decimal import Decimal
 if _PY3:
+    from itertools import zip_longest
     try: from math import log2
     except ImportError: pass
+    try: from math import gcd
+    except ImportError: from fractions import gcd
     try: from importlib import reload
     except ImportError: from imp import reload
     import urllib.request
     from urllib.request import urlopen
 
-import functools2, utils, primes, misc
+import functools2, utils, primes, misc, num2words
 from functools2 import autocurrying, chunk, comp, ncomp, ident, inv, supply
-from functools2 import rpartial, trycall, trywrap, tryiter, iterfunc
-from functools2 import is_sorted, iindex, flatten, deepcopy, deepmap
+from functools2 import rpartial, trycall, trywrap, tryiter, iterfunc, unique
+from functools2 import is_sorted, ilen, iindex, flatten, deepcopy, deepmap
 from functools2 import update_wrapper_signature as _update_wrapper
 if _PY3:
     import classes
     from classes import DictNS, Symbol, ReprStr, BinInt, HexInt, PrettyODict
 
-T, F = True, False
+T, F, N = True, False, None
 
 
 def flocals(depth=0):
@@ -59,7 +62,7 @@ def func(code, name=None, globs=None):
         for n, v in sorted(globs.items()):
             if not n.startswith('_') and (n, v) not in exclude.items():
                 return v
-        raise ValueError('Nothing to return')
+        raise ValueError('nothing to return')
 
 def impt(string, _depth=0):
     if not isinstance(string, str): return string
@@ -80,7 +83,7 @@ def impt(string, _depth=0):
                 except ImportError: break
     return eval(string, globs)
 
-class call(object):
+class pipe(object):
     def __init__(self, callable, *args, **kwargs): #wrapcall=True, **kwargs):
         self._wrapcall = kwargs.pop('wrapcall', True) #wrapcall
 
@@ -89,7 +92,7 @@ class call(object):
         else:
             self.callable = callable
 
-        if isinstance(callable, (type, call)):
+        if isinstance(callable, (type, pipe)):
             updated = ()
         else:
             updated = functools.WRAPPER_UPDATES
@@ -99,10 +102,10 @@ class call(object):
             _update_wrapper(self, callable, ('__doc__',), updated)
 
     def __repr__(self):
-        return '<utils.call of {}>'.format(self.callable)
+        return '<utils.pipe of {}>'.format(self.callable)
 
     def __or__(self, other):
-        if isinstance(other, call):
+        if isinstance(other, pipe):
             return other.__ror__(self)
 
     def __ror__(self, other):
@@ -113,20 +116,22 @@ class call(object):
                 res = self.callable(other)
         else:
             res = self.callable(other)
-        if self._wrapcall and callable(res) and not isinstance(res, call):
-            return call(res)
+        if self._wrapcall and callable(res) and not isinstance(res, pipe):
+            return pipe(res)
         return res
 
     def __call__(self, *args, **kwargs):
         res = self.callable(*args, **kwargs)
-        if self._wrapcall and callable(res) and not isinstance(res, call):
-            return call(res)
+        if self._wrapcall and callable(res) and not isinstance(res, pipe):
+            return pipe(res)
         return res
 
     def __getattr__(self, name):
         return getattr(self.callable, name)
+call = pipe
 
-def block(code, globs=None, locs=None):
+
+def cblock(code, globs=None, locs=None):
     #can see globals but won't modify them by default
     if globs is None:
         globs = fglobals(1)
@@ -159,48 +164,56 @@ def method(cls):
         return func
     return method
 
-@call
+@pipe
 def loop(it):
     for i in it:
         pass
+##    collections.deque(it, maxlen=0)
 
-def each(func):
-    return call(lambda it: loop(map(func, it)))
+def each(func, it=None):
+    if it is None:
+        return pipe(lambda it: loop(map(func, it)))
+    loop(map(func, it))
 
-def getl(n, depth=0):
-    return flocals(depth+1)[n]
+def getl(name, depth=0):
+    return flocals(depth+1)[name]
 
-def setl(n, v, depth=0):
-    flocals(depth+1)[n] = v
-    return v
+def setl(name, value, depth=0):
+    flocals(depth+1)[name] = value
+    return value
 
 def setls(_depth=0, **kws):
     flocals(_depth+1).update(kws)
 
-def setg(n, v, depth=0):
-    fglobals(depth+1)[n] = v
-    return v
+def getg(name, depth=0):
+    return fglobals(depth+1)[name]
+
+def setg(name, value, depth=0):
+    fglobals(depth+1)[name] = value
+    return value
 
 def setgs(_depth=0, **kws):
     fglobals(_depth+1).update(kws)
 
-def seta(o, n=None, v=None, **kws):
-    if n is not None:
-        setattr(o, n, v)
-    for n, v in kws.items():
-        setattr(o, n, v)
-    return o
+def seta(_obj, _name=None, _value=None, **kws):
+    if _name is not None:
+        setattr(_obj, _name, _value)
+    for name, value in kws.items():
+        setattr(_obj, name, value)
+    return _obj
 
-@call
+@pipe
 def void(*args):
     pass
 
 def clip(n, low, high):
     return min(max(n, low), high)
 
-def rints(size=10, max=10):
+def randints(size=10, max=10):
     return [random.randrange(max) for i in range(size)]
-randlist = rints
+
+def randbytes(n):
+    return random.getrandbits(8 * n).to_bytes(n, 'little')
 
 def crange(start, stop, inclusive=True, nonchars=False):
     start = start if isinstance(start, int) else ord(start)
@@ -215,15 +228,35 @@ def brange(start, stop, inclusive=True):
     if inclusive: stop += 1
     return bytes(range(start, stop))
 
-def letters(num=26):
-    return ''.join(islice(itertools.cycle(string.ascii_lowercase), num))
+def nextchr(c, off=1):
+    chrf = bchr if isinstance(c, bytes) else chr
+    return chrf(ord(c) + off)
 
-def rletters(num=10):
-    return ''.join(random.choice(string.ascii_lowercase) for i in range(num))
+def prevchr(c, off=1):
+    chr = bchr if isinstance(c, bytes) else chr
+    return chr(ord(c) - off)
 
-def rwords(num=10, size=10, stdev=1):
-    return [rletters(max(1, int(random.gauss(size, stdev))))
+def letters(num=26, upper=False):
+    letters = string.ascii_letters if upper else string.ascii_lowercase
+    return ''.join(islice(itertools.cycle(letters), num))
+
+def randletters(num=10, upper=False):
+    letters = string.ascii_letters if upper else string.ascii_lowercase
+    return ''.join(random.choice(letters) for i in range(num))
+
+def randwords(num=10, size=10, stdev=1, upper=False):
+    return [rletters(max(1, int(random.gauss(size, stdev))), upper)
             for i in range(num)]
+
+def randcolor(h=(0, 360), s=(75, 100), v=(75, 100), a=100):
+    from pygame import Color
+    c = Color(0, 0, 0)
+    h = random.randrange(*h) if isinstance(h, tuple) else h
+    s = random.randint(*s) if isinstance(s, tuple) else s
+    v = random.randint(*v) if isinstance(v, tuple) else v
+    a = random.randint(*a) if isinstance(a, tuple) else a
+    c.hsva = (h, s, v, a)
+    return c
 
 def shuffled(it):
     lst = list(it)
@@ -238,9 +271,19 @@ def schunk(s, size=2):
 def lschunk(s, size=2):
     return list(schunk(s, size))
 
-def sbreak(s, size=2, c=None):
-    if c is None: c = ' ' if isinstance(s, str) else b' '
-    return c.join(schunk(s, size))
+def sbreak(s, size=2, sep=None):
+    if sep is None:
+        sep = ' ' if isinstance(s, str) else b' '
+    return sep.join(schunk(s, size))
+
+def spartition(s, *inds):
+    ss = []
+    prev = 0
+    for ind in inds:
+        ss.append(s[prev:ind])
+        prev = ind
+    ss.append(s[prev:])
+    return ss
 
 
 def strbin(s, enc='utf-8', sep=' '):
@@ -262,31 +305,59 @@ def unsigned(x, n=8):
     return x & (1<<n)-1
 
 def signed(x, n=8):
-    return (x & (1<<n)-1) | -(x & 1<<(n-1))
+    sb = 1<<(n-1)
+    return (x & (1<<n)-1 ^ sb) - sb
+
+_signed = signed
+def tobytes(n, length=None, byteorder=sys.byteorder, signed=False):
+    if isinstance(length, str):
+        length, byteorder = None, length
+    byteorder = {'<': 'little', '>': 'big', '=': sys.byteorder}.get(
+        byteorder, byteorder)
+    if length is None:
+        bl = (n if n >= 0 else ~n).bit_length() + bool(signed)
+        length = (bl + 7) // 8
+    elif signed:
+        n = _signed(n, 8*length)
+    else:
+        n = unsigned(n, 8*length)
+    return n.to_bytes(length, byteorder, signed=signed)
+
+def frombytes(bts, byteorder=sys.byteorder, signed=False):
+    byteorder = {'<': 'little', '>': 'big', '=': sys.byteorder}.get(
+        byteorder, byteorder)
+    return int.from_bytes(bts, byteorder, signed=signed)
+
+def blen(n, signed=False):
+    if signed:
+        return (n if n >= 0 else ~n).bit_length() + 1
+    return n.bit_length()
 
 def binfmt(n, bits=8, sign=False, prefix=False):
     if hasattr(n, 'dtype'):
         bits = n.dtype.itemsize * 8
+    pref = '#' if prefix else ''
+    prefw = 2 if prefix else 0
     if sign:
-        return '{: 0{}b}'.format(signed(n, bits), bits+1)
-    return '{:0{}b}'.format(unsigned(n, bits), bits)
+        return '{: {}0{}b}'.format(signed(n, bits), pref, prefw+bits+1)
+    return '{:{}0{}b}'.format(unsigned(n, bits), pref, prefw+bits)
+binf = binfmt
 
 def hexfmt(n, digs=8, sign=False, prefix=False):
     if hasattr(n, 'dtype'):
         digs = n.dtype.itemsize * 2
+    pref = '#' if prefix else ''
+    prefw = 2 if prefix else 0
     if sign:
-        return '{: 0{}x}'.format(signed(n, digs*4), digs+1)
-    return '{:0{}x}'.format(unsigned(n, digs*4), digs)
+        return '{: {}0{}x}'.format(signed(n, digs*4), pref, prefw+digs+1)
+    return '{:{}0{}x}'.format(unsigned(n, digs*4), pref, prefw+digs)
+hexf = hexfmt
 
-def float_bin(num, p=23):
-    if p < 0: p = 52
-    s = float(num).hex()
-    if '0x' in s:
-        i = s.index('.')+1
-        j = s.index('p')
-        m = int(s[i:j], 16)
-        s = s[:i].replace('x', 'b') + binfmt(m, 52)[:p] + s[j:]
-    return s
+def binint(x):
+    return int(x, 2)
+
+def hexint(x):
+    return int(x, 16)
 
 def float_binf(num, p=23, pad0=False, pref=False):
     if p < 0: p = 1074
@@ -302,6 +373,29 @@ def float_binf(num, p=23, pad0=False, pref=False):
         ss.append('01'[int(whole)])
     return ''.join(ss)
 
+def float_hexf(num, p=13, pad0=False, pref=False):
+    if p < 0: p = 269
+    num, whole = math.modf(num)
+    num = abs(num)
+    ss = [format(int(whole), '#x' if pref else 'x'), '.']
+    for i in range(p):
+        if not (num or pad0):
+            break
+        num *= 16
+        num, whole = math.modf(num)
+        ss.append('0123456789abcdef'[int(whole)])
+    return ''.join(ss)
+
+def float_bin(num, p=23):
+    if p < 0: p = 52
+    s = float(num).hex()
+    if '0x' in s:
+        i = s.index('.')+1
+        j = s.index('p')
+        m = int(s[i:j], 16)
+        s = s[:i].replace('x', 'b') + binfmt(m, 52)[:p] + s[j:]
+    return s
+
 def float_frombin(s):
     s = s.strip()
     if re.search(r'\s', s):
@@ -312,6 +406,7 @@ def float_frombin(s):
         exp -= len(s) - s.index('.') - 1
     return float(int(s.replace('.', '', 1), 2) * 2**exp)
 
+
 def head(s, n=10, wrap=True):
     if wrap:
         s = textwrap.fill(str(s), 80, replace_whitespace=False)
@@ -321,6 +416,16 @@ def tail(s, n=10, wrap=True):
     if wrap:
         s = textwrap.fill(str(s), 80, replace_whitespace=False)
     print(''.join(s.splitlines(True)[-n:]))
+
+@pipe
+def more(s, h=24):
+    s = s.splitlines(True)
+    while s:
+        hd, s = s[:h], s[h:]
+        print(''.join(hd))
+        if s:
+            if input().lower() == 'q':
+                break
 
 def printr(o):
     print(o)
@@ -354,6 +459,7 @@ def print2d(arr, pad=2, just='left'):
     for r in arr:
         print((' '*pad).join(just(s, w) for s, w in zip(r, widths)).rstrip())
 
+
 def odict(obj=None):
     if isinstance(obj, str):
         return OrderedDict((k, eval(v, {})) for k, v in
@@ -382,7 +488,7 @@ def printd(dct):
         print(str(k).ljust(ksize) + ' =', rep, sep=sep)
 
 
-@call
+@pipe
 def rdict(dct):
     if _is_ordereddict(dct):
         return OrderedDict((v, k) for k, v in dct.items())
@@ -435,11 +541,11 @@ def dsearch(dct, s):
     if isinstance(dct, types.ModuleType): dct = vars(dct)
     return {k: v for k, v in dct.items() if re.search(s, k, re.IGNORECASE)}
 
-@call
+@pipe
 def dsort(dct, key=None):
     return OrderedDict(sorted(dct.items(), key=key))
 
-@call
+@pipe
 def dvsort(dct, key=None):
     key = key or ident
     return OrderedDict(sorted(dct.items(), key=lambda i: key(i[1])))
@@ -448,22 +554,25 @@ def search(seq, s):
     if isinstance(seq, types.ModuleType): seq = dir(seq)
     return [s2 for s2 in seq if re.search(s, s2, re.IGNORECASE)]
 
-@call
+@pipe
 def ufilt(it):
     return lfilter(lambda s: not s.startswith('_'), it)
 
-@call
+@pipe
 def udfilt(dct):
     return dkfilter(dct, lambda s: not s.startswith('_'))
 
 def zmap(func, *seqs):
-    return zip(*seqs + (map(func, *seqs),))
+    return (xx + func(*xx) for xx in zip(*seqs))
+#    return zip(*seqs + (map(func, *seqs),))
 
 def dzmap(func, seq):
-    return dict(zip(seq, map(func, seq)))
+    return {k: func(k) for k in seq}
+#    return dict(zip(seq, map(func, seq)))
 
 def zmaps(seq, *funcs):
-    return zip(*(map(func, seq) if func else seq for func in funcs))
+    return (tuple([func(x) if func else x for func in funcs]) for x in seqs)
+#    return zip(*(map(func, seq) if func else seq for func in funcs))
 
 def rzip(*seqs):
     return zip(*map(reversed, seqs))
@@ -476,9 +585,10 @@ def lwrap(f, name=None):
     def f2(*args, **kwargs):
         return list(f(*args, **kwargs))
     assigned = set(functools.WRAPPER_ASSIGNMENTS) - {'__module__'}
-    _update_wrapper(f2, f, assigned, ())
     if name:
-        f2 = rename(f2, name)
+        rename(f2, name)
+        assigned -= {'__name__', '__qualname__'}
+    _update_wrapper(f2, f, assigned, ())
     return f2
 
 def lwrap_copy(name):
@@ -488,12 +598,11 @@ def lwrap_copy(name):
         return f
     return _lwrap_copy
 
-for f in map, zip, range, filter, reversed, enumerate:
+for f in (map, zip, range, filter, reversed, enumerate, islice,
+          chunk, unique, zmap, dzmap, zmaps, rzip, renumerate):
     name = 'l' + f.__name__
     globals()[name] = lwrap(f, name)
 del f, name
-
-lchunk = lwrap(chunk, 'lchunk')
 
 
 def xord(c):
@@ -501,6 +610,9 @@ def xord(c):
 
 def escape(s):
     return s.encode('unicode_escape').decode('ascii')
+
+def unescape(s):
+    return s.encode('latin-1', 'backslashreplace').decode('unicode_escape')
 
 def bchr(i):
     return i.to_bytes(1, 'little')
@@ -515,24 +627,45 @@ def bprint(bts):
     else:
         bts = bytes(bts)
     try:
-        sys.stdout.buffer.write(bts + b'\n')
+        sys.stdout.buffer.write(bts + os.linesep.encode())
     except AttributeError:
         print(bts.decode(sys.stdout.encoding, 'ignore'))
 
-@call
+@pipe
 @autocurrying
 def b2s(bts, enc='utf-8'):
     return bts.decode(enc)
 
 
+def lcm(x, y):
+    return abs(x * y) // gcd(x, y)
+
+def sgn(x):
+    return x // abs(x or 1)
+
 def cround(z, n=0):
     return complex(round(z.real, n), round(z.imag, n))
 
-@call
-def thresh(n):
+@pipe
+def thresh(n, p=15):
     if isinstance(n, complex):
-        return cround(n, 15)
-    return round(n, 15)
+        return cround(n, p)
+    return round(n, p)
+
+
+def divmods(x, *divs):
+    out = []
+    for div in reversed(divs):
+        x, m = divmod(x, div)
+        out.append(m)
+    out.append(x)
+    return out[::-1]
+
+
+def avg(it):
+    l = list(it)
+    return sum(l) / len(l)
+
 
 def timef(f, *args):
     if isinstance(f, str):
@@ -542,90 +675,91 @@ def timef(f, *args):
     print(time.perf_counter()-t)
 
 
-class SliceCall(object):
+class SlicePipe(object):
     def __getitem__(self, item):
-        return call(operator.itemgetter(item))
+        return pipe(operator.itemgetter(item))
 
-sl = SliceCall()
+sl = SlicePipe()
 
-class IIndex:
+class IIndexPipe:
     def __getitem__(self, item):
-        return call(iindex, idx=item)
+        return pipe(iindex, idx=item)
 
-ii = IIndex()
+ii = IIndexPipe()
 
 class VarSetter(object):
     def __getattr__(self, name):
-        return call(setl, name, depth=1)
+        return pipe(setl, name, depth=1)
 
 v = VarSetter()
 
-c = call
-im = i = call(impt, _depth=1)
+c = pipe #call
+im = i = pipe(impt, _depth=1)
 f = func
+l = pipe(list)
+ln = pipe(len)
+s = pipe(str)
+lns = pipe(str.splitlines)
+j = pipe(lambda x: ''.join(map(str, x)))
+srt = pipe(sorted)
+p = cat = pipe(print)
+w = pipe(print, end='')
+pr = pipe(printr)
+bp = pipe(bprint)
+bf = lambda bits=8, sign=False, prefix=False: \
+     pipe(lambda n: print(binfmt(n, bits, sign, prefix)))
+hf = lambda digs=8, sign=False, prefix=False: \
+     pipe(lambda n: print(hexfmt(n, digs, sign, prefix)))
+pf = lambda p=4: pipe(lambda f: print('%.*g' % (p, f)))
+pa = pipe(printall)
+pj = pipe(printall, end='')
+ps = pipe(printall, end=' ')
+pc = pipe(printcols)
+pcr = pipe(printcols, rows=True)
+p2d = pipe(print2d)
+pd = pipe(printd)
+hd = lambda n=10, wrap=True: pipe(head, n=n, wrap=wrap)
+tl = lambda n=10, wrap=True: pipe(tail, n=n, wrap=wrap)
+doc = pipe(inspect.getdoc)
+dp = pipe(lambda obj: print(inspect.getdoc(obj)))
+sig = pipe(lambda f: print(inspect.signature(f)))
+src = pipe(lambda f: print(inspect.getsource(f)))
+d = pipe(dir)
+vrs = pipe(vars)
+t = pipe(type, wrapcall=False)
+tm = pipe(timef)
+fr = pipe(lambda *args: Fraction(*args).limit_denominator())
+mp = lambda f: pipe(lmap, f)
+stmp = lambda f: pipe(itertools.starmap, f)
+flt = lambda f=None: pipe(lfilter, f)
+dflt = lambda f=None, typ=None: pipe(dfilter, cond=f, typ=typ)
+dkflt = lambda f=None: pipe(dkfilter, cond=f)
+dmp = lambda f: pipe(dmap, func=f)
+dkmp = lambda f: pipe(dkmap, func=f)
+dvmp = lambda f: pipe(dvmap, func=f)
+sv = lambda n, v=None: setl(n, v, 1) if v else pipe(setl, n, depth=1)
+sch = lambda s: pipe(search, s=s)
+dsch = lambda s: pipe(dsearch, s=s)
+ditems = pipe(lambda d: list(d.items()))
+dkeys = pipe(lambda d: list(d.keys()))
+dvalues = pipe(lambda d: list(d.values()))
+try:
+    h = pipe(help)
+except NameError:
+    pass
 
 def rn(obj=None, name=None, qualname=None):
     if obj is None:
-        return call(rename, name=name, qualname=qualname, wrapcall=False)
+        return pipe(rename, name=name, qualname=qualname, wrapcall=False)
     if name is None:
-        return call(rename, name=obj, qualname=qualname, wrapcall=False)
+        return pipe(rename, name=obj, qualname=qualname, wrapcall=False)
     return rename(obj, name, qualname)
 
-try:
-    h = call(help)
-except NameError:
-    pass
-l = call(list)
-ln = call(len)
-s = call(str)
-lns = call(str.splitlines)
-j = call(lambda x: ''.join(map(str, x)))
-srt = call(sorted)
-p = cat = call(print)
-w = call(print, end='')
-pr = call(printr)
-bp = call(bprint)
-bf = lambda bits=8, sign=False: call(lambda n: print(binfmt(n, bits, sign)))
-hf = lambda digs=8, sign=False: call(lambda n: print(hexfmt(n, digs, sign)))
-pf = lambda p=4: call(lambda f: print('%.*g' % (p, f)))
-pa = call(printall)
-pj = call(printall, end='')
-ps = call(printall, end=' ')
-pc = call(printcols)
-pcr = call(printcols, rows=True)
-p2d = call(print2d)
-pd = call(printd)
-hd = lambda n=10, wrap=True: call(head, n=n, wrap=wrap)
-tl = lambda n=10, wrap=True: call(tail, n=n, wrap=wrap)
-doc = call(inspect.getdoc)
-dp = call(lambda obj: print(inspect.getdoc(obj)))
-sig = call(lambda f: print(inspect.signature(f)))
-src = call(lambda f: print(inspect.getsource(f)))
-d = call(dir)
-vrs = call(vars)
-t = call(type, wrapcall=False)
-tm = call(timef)
-fr = call(lambda *args: Fraction(*args).limit_denominator())
-mp = lambda f: call(lmap, f)
-stmp = lambda f: call(itertools.starmap, f)
-flt = lambda f=None: call(lfilter, f)
-dflt = lambda f=None, typ=None: call(dfilter, cond=f, typ=typ)
-dkflt = lambda f=None: call(dkfilter, cond=f)
-dmp = lambda f: call(dmap, func=f)
-dkmp = lambda f: call(dkmap, func=f)
-dvmp = lambda f: call(dvmap, func=f)
-sv = lambda n, v=None: setl(n, v, 1) if v else call(setl, n, depth=1)
-sch = lambda s: call(search, s=s)
-dsch = lambda s: call(dsearch, s=s)
-ditems = call(lambda d: list(d.items()))
-dkeys = call(lambda d: list(d.keys()))
-dvalues = call(lambda d: list(d.values()))
-
-@call
+@pipe
 def r(*mods):
     return tuple([reload(impt(m, 3)) for m in mods])
 
-@call
+@pipe
 def ia(*mods, **kwargs): # rel=False, _depth=0
     rel=kwargs.get('rel', False)
     _depth=kwargs.get('_depth', 0)
@@ -637,9 +771,9 @@ def ia(*mods, **kwargs): # rel=False, _depth=0
         exec('from {} import *'.format(mod.__name__), globs)
     return mods
 
-ri = ra = call(ia, rel=True, _depth=1)
+ra = pipe(ia, rel=True, _depth=1)
 
-@call
+@pipe
 def ic(*objs, **kwargs): # rel=False, _depth=0
     rel=kwargs.get('rel', False)
     _depth=kwargs.get('_depth', 0)
@@ -657,19 +791,25 @@ def ic(*objs, **kwargs): # rel=False, _depth=0
         robjs.append(cls)
     return robjs
 
-rc = call(ic, rel=True, _depth=1)
+rc = pipe(ic, rel=True, _depth=1)
 
-def clear():
+def clear_vars():
     d = fglobals(1)
     for n in list(d):
         if not re.match(r'^__.*__$', n):
             del d[n]
 
 
-@call
+@pipe
 def decomp(o):
     import unpyc3
     print(unpyc3.decompile(o))
+
+
+def isbuiltinclass(obj):
+    if not isinstance(obj, type):
+        obj = type(obj)
+    return hasattr(sys.modules.get(obj.__module__), '__file__')
 
 
 def setdisplayhook(func, typ=object):
@@ -693,12 +833,24 @@ def cls():
     print('\n' * 24)
 
 
+def cd(path=None):
+    if path:
+        os.chdir(os.path.expanduser(os.path.expandvars(path)))
+    return os.getcwd()
+
+
+
+
+
+### Module import shortcuts ###
+
 def np():
     import numpy
-    exec(pr('import numpy, numpy as np'), fglobals(1))
+    exec(pr('import numpy, numpy as np\n'
+            'np.set_printoptions(suppress=True)'), fglobals(1))
     return numpy
 
-def qt():
+def qt4():
     from PyQt4 import Qt
     exec(pr('import PyQt4\n'
             'from PyQt4 import QtCore, QtGui, Qt as Q\n'
@@ -706,16 +858,24 @@ def qt():
             'app = QApplication([])'), fglobals(1))
     return Qt
 
-def plt():
-    from matplotlib import pyplot
+def qt5():
+    from PyQt5 import Qt
+    exec(pr('import PyQt5\n'
+            'from PyQt5 import QtCore, QtGui, QtWidgets, Qt as Q\n'
+            'from PyQt5.Qt import *\n'
+            'app = QApplication([])'), fglobals(1))
+    return Qt
+
+def pylab():
+    import pylab
     exec(pr('from pylab import *'), fglobals(1))
-    return pyplot
+    return pylab
 
 def sympy():
     import sympy
     exec(pr('import sympy, sympy as sp; from sympy import *\n'
             'R = Rational\n'
-            'var("x, y, z, a, b, c")'),
+            'var("x, y, z, a, b, c, t")'),
          fglobals(1))
     return sympy
 
@@ -724,7 +884,7 @@ def scipy():
     exec(pr('import scipy, scipy as sp'), fglobals(1))
     return scipy
 
-def pg():
+def pygame():
     import pygame
     pygame.init()
     exec(pr('import pygame, pygame as pg; from pygame.locals import *'),
@@ -739,6 +899,7 @@ def PIL():
 def ctypes():
     import ctypes
     exec(pr('import ctypes; from ctypes import *\n'
+            'from ctypes.util import *\n'
             'try: from ctypes.wintypes import *\n'
             'except: pass'), fglobals(1))
     return ctypes
@@ -755,3 +916,11 @@ def qenum_name(x):
             return n
     return None
 
+
+def readrows(typ=int, file=None):
+    file = open(file) if file else sys.stdin
+    return list(map(typ, s.split()) for s in
+                itertools.takewhile(str.strip, file))
+
+def readcols(typ=int, file=None):
+    return list(map(list, zip(*readrows(typ, file))))

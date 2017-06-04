@@ -2,49 +2,48 @@ from itertools import islice
 from math import sqrt, log
 
 __all__ = ['pfactor', 'factor', 'isprime', 'primes', 'nprimes', 'nthprime',
-           'lpfactor', 'lfactor', 'lprimes', 'lnprimes']
+           'pfactori', 'factori', 'primesi', 'nprimesi']
 
-def pfactor(n):
+def pfactori(n):
     for i in range(2, int(sqrt(abs(n)))+1):
         q, r = divmod(n, i)
         if r == 0:
             yield i
-            for f in pfactor(q):
+            for f in pfactori(q):
                 yield f
             return
     if abs(n) > 1:
         yield n
 
-def factor(n):
+def factori(n):
     for i in range(1, int(sqrt(abs(n)))+1):
         q, r = divmod(n, i)
         if r == 0:
             yield i, q
 
 def isprime(n):
-    rt = sqrt(abs(n))
-    if rt.is_integer():
+    if n < 2 or (n > 2 and n % 2 == 0):
         return False
-    for i in range(2, int(rt)+1):
+    for i in range(3, int(sqrt(n))+1, 2):
         if n % i == 0:
             return False
     return True
 
-def primes(n):
-    sieve = [False] * n
+def primesi(n):
+    sieve = [True] * n
     for p in range(2, n):
-        if sieve[p]: continue
-        yield p
-        for i in range(p**2, n, p):
-            sieve[i] = True
+        if sieve[p]:
+            yield p
+            for i in range(p**2, n, p):
+                sieve[i] = False
 
-def nprimes(n):
+def nprimesi(n):
     b = int(n * (log(n) + log(log(n)))) if n > 9 else 24
-    return islice(primes(b), n)
+    return islice(primesi(b), n)
 
 def nthprime(n):
-    return next(islice(nprimes(n+1), n, None))
+    return next(islice(nprimesi(n+1), n, None))
 
 for f in ('pfactor', 'factor', 'primes', 'nprimes'):
-    exec('def l{0}(n): return list({0}(n))'.format(f))
+    exec('def {0}(n): return list({0}i(n))'.format(f))
 del f
