@@ -601,6 +601,7 @@ class OverloadedMethod:
         self.typ = typ
 
     def __call__(self, *args, **kwargs):
+        err = None
         for func in self.funcs:
             try:
                 return func.__get__(self.obj, self.typ)(*args, **kwargs)
