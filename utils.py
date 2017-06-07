@@ -868,7 +868,8 @@ def qt5():
 
 def pylab():
     import pylab
-    exec(pr('from pylab import *'), fglobals(1))
+    exec(pr('from pylab import *\n'
+            'interactive(True)'), fglobals(1))
     return pylab
 
 def sympy():
