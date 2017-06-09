@@ -1,3 +1,4 @@
+#!/usr/bin/env python3
 import numpy as np
 import pygame as pg
 # import pygame.gfxdraw
@@ -80,20 +81,22 @@ def main():
     clock = pg.time.Clock()
     running = True
     while running:
+        mods = pg.key.get_mods()
         for evt in pg.event.get():
-            if evt.type == pg.QUIT:                   
+            if evt.type == pg.QUIT:
                 running = False
             elif evt.type == pg.KEYDOWN:
                 if evt.key == pg.K_ESCAPE or \
-                   evt.key == pg.K_F4 and evt.mod & pg.KMOD_ALT:
+                   evt.key == pg.K_F4 and evt.mod & pg.KMOD_ALT or\
+                   evt.key == pg.K_w and evt.mod & pg.KMOD_META:
                     running = False
                 elif evt.key == pg.K_c:
                     ballx, bally = clear(z, v)
             elif evt.type == pg.MOUSEBUTTONDOWN:
-                if evt.button == 2:
+                if evt.button == 2 or mods & pg.KMOD_CTRL:
                     ballx, bally = add_ball(ballx, bally, *evt.pos)
         mouse = pg.mouse.get_pressed()
-        if mouse[0] or mouse[2]:
+        if (mouse[0] or mouse[2]) and not mods & pg.KMOD_CTRL:
             splash(z, v, mouse[0], *pg.mouse.get_pos())
         clock.tick(FPS)
         propagate(z, v, WRAP)

@@ -663,47 +663,50 @@ class OverloadingTypeChecking(metaclass=OverloadingTypeCheckingMeta):
 
 
 
-class _ImplicitSelfDict(dict):
-    def __setitem__(self, key, value):
-        if isinstance(value, types.FunctionType):
-            value = implicit_self(value)
-            super().__setitem__(key, value)
-
-class ImplicitSelfMeta(InheritingDictMeta):
-    _dicttype = _ImplicitSelfDict
-
-##    @classmethod
-##    def __prepare__(cls, name, bases):
-##        return cls.get_prepare_type(__class__, _ImplicitSelfDict, name, bases)()
-
-class ImplicitSelfBase(metaclass=ImplicitSelfMeta):
+try:
+    from implicitself import implicit_self, implicit_this
+except ImportError:
     pass
+else:
+    class _ImplicitSelfDict(dict):
+        def __setitem__(self, key, value):
+            if isinstance(value, types.FunctionType):
+                value = implicit_self(value)
+                super().__setitem__(key, value)
+
+    class ImplicitSelfMeta(InheritingDictMeta):
+        _dicttype = _ImplicitSelfDict
+
+    ##    @classmethod
+    ##    def __prepare__(cls, name, bases):
+    ##        return cls.get_prepare_type(__class__, _ImplicitSelfDict, name, bases)()
+
+    class ImplicitSelfBase(metaclass=ImplicitSelfMeta):
+        pass
 
 
+    class _ImplicitThisDict(dict):
+        def __setitem__(self, key, value):
+            if isinstance(value, types.FunctionType):
+                value = implicit_this(value)
+                super().__setitem__(key, value)
 
-class _ImplicitThisDict(dict):
-    def __setitem__(self, key, value):
-        if isinstance(value, types.FunctionType):
-            value = implicit_this(value)
-            super().__setitem__(key, value)
+    class ImplicitThisMeta(InheritingDictMeta):
+        _dicttype = _ImplicitThisDict
 
-class ImplicitThisMeta(InheritingDictMeta):
-    _dicttype = _ImplicitThisDict
+    ##    @classmethod
+    ##    def __prepare__(cls, name, bases):
+    ##        return cls.get_prepare_type(__class__, _ImplicitThisDict, name, bases)()
 
-##    @classmethod
-##    def __prepare__(cls, name, bases):
-##        return cls.get_prepare_type(__class__, _ImplicitThisDict, name, bases)()
-
-class ImplicitThisBase(metaclass=ImplicitThisMeta):
-    pass
-
+    class ImplicitThisBase(metaclass=ImplicitThisMeta):
+        pass
 
 
-class JavaClassMeta(ImplicitThisMeta, OverloadingTypeCheckingMeta):
-    pass
+    class JavaClassMeta(ImplicitThisMeta, OverloadingTypeCheckingMeta):
+        pass
 
-class JavaClass(metaclass=JavaClassMeta):
-    pass
+    class JavaClass(metaclass=JavaClassMeta):
+        pass
 
 
 

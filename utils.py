@@ -245,8 +245,11 @@ def randletters(num=10, upper=False):
     return ''.join(random.choice(letters) for i in range(num))
 
 def randwords(num=10, size=10, stdev=1, upper=False):
-    return [rletters(max(1, int(random.gauss(size, stdev))), upper)
+    return [randletters(max(1, int(random.gauss(size, stdev))), upper)
             for i in range(num)]
+
+rletters = randletters
+rwords = randwords
 
 def randcolor(h=(0, 360), s=(75, 100), v=(75, 100), a=100):
     from pygame import Color
