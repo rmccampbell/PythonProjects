@@ -535,7 +535,7 @@ class view:
 
 
 def ilen(it):
-    return sum(1 for x in iterable)
+    return sum(1 for x in it)
 
 def iindex(it, idx):
     if isinstance(idx, slice):
@@ -548,8 +548,8 @@ def iindex(it, idx):
         raise IndexError
 
 
-def first(iterable):
-    return next(iter(iterable))
+def first(it):
+    return next(iter(it))
 
 
 class loose_compare(object):
