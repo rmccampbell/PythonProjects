@@ -270,9 +270,9 @@ def unique(it):
 
 def chunk(seq, size=2, fill=_none, partial=True):
     """Groups input iterator into equally sized chunks"""
-    if partial:
-        return chunk_partial(seq, size)
     if fill is _none:
+        if partial:
+            return chunk_partial(seq, size)
         return zip(*(iter(seq),)*size)
     return zip_longest(*(iter(seq),)*size, fillvalue=fill)
 
@@ -523,7 +523,7 @@ class view:
     def __getitem__(self, i):
         if isinstance(i, slice):
             return view(self.seq, self.start + self.step*i.start,
-                                  self.stop + self.step*i.stop,
+                                  self.start + self.step*i.stop,
                                   self.step * i.step)
         if i < 0:
             i += len(self)
@@ -531,7 +531,7 @@ class view:
             raise IndexError
         return self.seq[self.start + self.step*i]
     def __repr__(self):
-        return '<view({})>'.format(self.seq[self.start: self.stop: self.step])
+        return '<view({})>'.format(list(self.seq[self.start: self.stop: self.step]))
 
 
 def ilen(it):
@@ -549,7 +549,18 @@ def iindex(it, idx):
 
 
 def first(it):
-    return next(iter(it))
+    try:
+        return next(iter(it))
+    except:
+        return IndexError
+
+def last(it):
+    for x in it:
+        pass
+    try:
+        return x
+    except UnboundLocalError:
+        raise IndexError
 
 
 class loose_compare(object):
@@ -636,9 +647,6 @@ class CompByKey:
     def __ge__(self, other):
         return self._key() >= other
 
-def cmp(x, y):
-    return -1 if x < y else 1 if x > y else 0
-
 class CompByCmp:
     def __eq__(self, other):
         return self._cmp(other) == 0
@@ -653,6 +661,11 @@ class CompByCmp:
     def __ge__(self, other):
         return self._cmp(other) >= 0
 
+def cmp(x, y):
+    return -1 if x < y else 1 if x > y else 0
+
+def key_to_cmp(func):
+    return lambda x, y: cmp(func(x), func(y))
 
 def count(start=0, stop=None, step=1):
     if stop is None:

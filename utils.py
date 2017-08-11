@@ -14,7 +14,7 @@ nan = float('nan')
 deg = pi/180
 from functools import partial, reduce
 from itertools import islice, chain, starmap
-from collections import OrderedDict
+from collections import OrderedDict, Counter
 from fractions import Fraction
 from decimal import Decimal
 if _PY3:
@@ -102,7 +102,7 @@ class pipe(object):
             _update_wrapper(self, callable, ('__doc__',), updated)
 
     def __repr__(self):
-        return '<utils.pipe of {}>'.format(self.callable)
+        return '<utils.pipe of {!r}>'.format(self.callable)
 
     def __or__(self, other):
         if isinstance(other, pipe):
@@ -166,9 +166,10 @@ def method(cls):
 
 @pipe
 def loop(it):
-    for i in it:
-        pass
-##    collections.deque(it, maxlen=0)
+    # https://docs.python.org/3.6/library/itertools.html?highlight=itertools#itertools-recipes
+    collections.deque(it, maxlen=0)
+    # for i in it:
+    #     pass
 
 def each(func, it=None):
     if it is None:
@@ -176,24 +177,22 @@ def each(func, it=None):
     loop(map(func, it))
 
 def getl(name, depth=0):
-    return flocals(depth+1)[name]
+    return flocals(depth + 1)[name]
 
-def setl(name, value, depth=0):
-    flocals(depth+1)[name] = value
-    return value
-
-def setls(_depth=0, **kws):
+def setl(_name=None, _value=None, _depth=0, **kws):
     flocals(_depth+1).update(kws)
+    if _name is not None:
+        flocals(_depth + 1)[_name] = _value
+        return _value
 
 def getg(name, depth=0):
-    return fglobals(depth+1)[name]
+    return fglobals(depth + 1)[name]
 
-def setg(name, value, depth=0):
-    fglobals(depth+1)[name] = value
-    return value
-
-def setgs(_depth=0, **kws):
-    fglobals(_depth+1).update(kws)
+def setg(_name=None, _value=None, _depth=0, **kws):
+    fglobals(_depth + 1).update(kws)
+    if _name is not None:
+        fglobals(_depth + 1)[_name] = _value
+        return _value
 
 def seta(_obj, _name=None, _value=None, **kws):
     if _name is not None:
@@ -439,7 +438,9 @@ def printall(seq, end='\n'):
         print(o, end=end)
 
 _justs = {'left': str.ljust, 'right': str.rjust, 'center': str.center}
-def printcols(seq, rows=False, swidth=80, pad=2, just='left'):
+def printcols(seq, rows=False, swidth=None, pad=2, just='left'):
+    if not swidth:
+        swidth, _ = shutil.get_terminal_size()
     just = _justs[just]
     seq = list(map(str, seq))
     if not seq: return
@@ -928,3 +929,13 @@ def readrows(typ=int, file=None):
 
 def readcols(typ=int, file=None):
     return list(map(list, zip(*readrows(typ, file))))
+
+
+def ipy_resize(w=None):
+    import shutil, IPython
+    if not w:
+        w, _ = shutil.get_terminal_size()
+    config = IPython.get_ipython().config
+    config.PlainTextFormatter.max_width = w - 8
+    shell = IPython.core.interactiveshell.InteractiveShell.instance()
+    shell.init_display_formatter()
