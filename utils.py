@@ -7,8 +7,8 @@ _PY3 = sys.version_info[0] >= 3
 import os, collections, functools, itertools, operator, types, math, cmath, re
 import io, random, inspect, textwrap, dis, timeit, time, datetime, string
 import fractions, decimal, unicodedata, codecs, shutil
-from math import pi, e, sqrt, exp, log, log10, floor, ceil, factorial
-from math import sin, cos, tan, asin, acos, atan, atan2
+from math import pi, e, sqrt, exp, log, log10, floor, ceil, factorial, \
+     sin, cos, tan, asin, acos, atan, atan2
 inf = float('inf')
 nan = float('nan')
 deg = pi/180
@@ -29,9 +29,9 @@ if _PY3:
     from urllib.request import urlopen
 
 import functools2, utils, primes, misc, num2words
-from functools2 import autocurrying, chunk, comp, ncomp, ident, inv, supply
-from functools2 import rpartial, trycall, trywrap, tryiter, iterfunc, unique
-from functools2 import is_sorted, ilen, iindex, flatten, deepcopy, deepmap
+from functools2 import autocurrying, chunk, comp, ncomp, ident, inv, supply, \
+     rpartial, trycall, trywrap, tryiter, iterfunc, unique, is_sorted, ilen, \
+     iindex, flatten, deepcopy, deepmap, first, last
 from functools2 import update_wrapper_signature as _update_wrapper
 if _PY3:
     import classes
@@ -235,16 +235,15 @@ def prevchr(c, off=1):
     chr = bchr if isinstance(c, bytes) else chr
     return chr(ord(c) - off)
 
-def letters(num=26, upper=False):
-    letters = string.ascii_letters if upper else string.ascii_lowercase
-    return ''.join(islice(itertools.cycle(letters), num))
+def letters(num=26):
+    return ''.join(islice(itertools.cycle(string.ascii_lowercase), num))
 
-def randletters(num=10, upper=False):
-    letters = string.ascii_letters if upper else string.ascii_lowercase
+def randletters(num=10, mixedcase=False):
+    letters = string.ascii_letters if mixedcase else string.ascii_lowercase
     return ''.join(random.choice(letters) for i in range(num))
 
-def randwords(num=10, size=10, stdev=1, upper=False):
-    return [randletters(max(1, int(random.gauss(size, stdev))), upper)
+def randwords(num=10, size=10, stdev=1, mixedcase=False):
+    return [randletters(max(1, int(random.gauss(size, stdev))), mixedcase)
             for i in range(num)]
 
 rletters = randletters
@@ -651,7 +650,7 @@ def cround(z, n=0):
     return complex(round(z.real, n), round(z.imag, n))
 
 @pipe
-def thresh(n, p=15):
+def thresh(n, p=14):
     if isinstance(n, complex):
         return cround(n, p)
     return round(n, p)
@@ -676,7 +675,7 @@ def timef(f, *args):
         f = func(f, globs=fglobals(1))
     t=time.perf_counter()
     f(*args)
-    print(time.perf_counter()-t)
+    return time.perf_counter()-t
 
 
 class SlicePipe(object):
@@ -716,7 +715,7 @@ hf = lambda digs=8, sign=False, prefix=False: \
      pipe(lambda n: print(hexfmt(n, digs, sign, prefix)))
 pf = lambda p=4: pipe(lambda f: print('%.*g' % (p, f)))
 pa = pipe(printall)
-pj = pipe(printall, end='')
+wa = pj = pipe(printall, end='')
 ps = pipe(printall, end=' ')
 pc = pipe(printcols)
 pcr = pipe(printcols, rows=True)

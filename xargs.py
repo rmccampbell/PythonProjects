@@ -18,6 +18,7 @@ if __name__ == '__main__':
                         action='store_const', const='\n')
     parser.add_argument('-0', '--null', dest='delimiter',
                         action='store_const', const='\0')
+    parser.add_argument('-I', '--replace')
     args = parser.parse_args()
 
     command = args.command or ['echo']
@@ -37,4 +38,7 @@ if __name__ == '__main__':
     else:
         xargs = winsplit(file)
 
+    if args.replace:
+        while xargs and args.replace in command:
+            command[command.index(args.replace)] = xargs.pop(0)
     subprocess.call(command + xargs, shell=True, stdin=stdin)

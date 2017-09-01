@@ -41,9 +41,9 @@ def split_parametric(expr1, expr2):
     for expr in expr1, expr2:
         try:
             var, expr = map(str.strip, expr.split('=', 1))
-            if var == 'x':
+            if var == 'x' and xexpr is None:
                 xexpr = expr
-            elif var == 'y':
+            elif var == 'y' and yexpr is None:
                 yexpr = expr
             else:
                 raise Exception(
@@ -59,9 +59,6 @@ def split_parametric(expr1, expr2):
         xexpr = expr3
     elif yexpr is None:
         yexpr = expr3
-
-    if xexpr is None or yexpr is None:
-        raise Exception("parametric must have an x and a y equation")
 
     return xexpr, yexpr
 

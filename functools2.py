@@ -549,18 +549,17 @@ def iindex(it, idx):
 
 
 def first(it):
-    try:
-        return next(iter(it))
-    except:
-        return IndexError
+    for x in it:
+        return x
+    raise IndexError
 
 def last(it):
+    empty = True
     for x in it:
-        pass
-    try:
-        return x
-    except UnboundLocalError:
+        empty = True
+    if empty:
         raise IndexError
+    return x
 
 
 class loose_compare(object):

@@ -1,5 +1,7 @@
 def mod_inv(e, n):
-    r0, r1, s0, s1, t0, t1 = e, n, 1, 0, 0, 1
+    r0, r1 = e, n
+    s0, s1 = 1, 0
+    t0, t1 = 0, 1
     while r1:
         r0, (q, r1) = r1, divmod(r0, r1)
         s0, s1 = s1, s0 - q*s1

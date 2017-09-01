@@ -56,6 +56,11 @@ def smalln2words(n):
 ##    return sgn + s
 
 def num2words(n):
+    if isinstance(n, float):
+        n, f = int(n), n % 1
+        if f:
+            return '{} and {} {}ths'.format(
+                num2words(n), *map(num2words, f.as_integer_ratio()))
     sgn = n < 0
     n, r = divmod(abs(n), 1000)
     e = 0

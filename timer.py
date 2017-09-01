@@ -10,7 +10,7 @@ def timer(minutes, seconds=0, showsecs=False, msgbox=True):
     print("{}:{:02}".format(rtime // 60, rtime % 60), end='', flush=True)
 
     try:
-        while curtime < endtime:
+        while rtime > 0:
             time.sleep(1)
             curtime = time.time()
             rtime = round(endtime - curtime)

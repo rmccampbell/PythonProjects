@@ -1,15 +1,13 @@
 #!/usr/bin/env python3
+"""Find and replace text"""
 import sys, argparse, getfiles, re
 
 def frep(pattern, replace, *files, inplace=False, fixed=False):
-    if inplace:
-        mode = 'r+'
-    else:
-        mode = 'r'
-        out = sys.stdout
+    mode = 'r+b' if inplace else 'rb'
+    out = None if inplace else sys.stdout.buffer
     if fixed:
         pattern = re.escape(pattern)
-    files = getfiles.getfiles(files, mode, default='-')
+    files = getfiles.getfiles(files, mode)
 
     try:
         for file in files:

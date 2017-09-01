@@ -19,40 +19,40 @@ JMPL  = 0xe
 BRL   = 0xf
 
 READH = SHIFTL = 0x0
-READ = SHIFTR = 0x1
-WRITEH = ROTL = 0x2
-WRITE = ROTR = 0x3
+READC = SHIFTR = 0x1
+PRINTH = ROTL = 0x2
+PRINTC = ROTR = 0x3
 
 OPCODES = {
-    'halt':     0x0,
-    'readh':    0x1,
-    'read':     0x1,
-    'printh':   0x1,
-    'print':    0x1,
-    'shiftl':   0x2,
-    'shiftr':   0x2,
-    'rotl':     0x2,
-    'rotr':     0x2,
-    'load':     0x3,
-    'store':    0x4,
-    'add':      0x5,
-    'sub':      0x6,
-    'and':      0x7,
-    'or':       0x8,
-    'xor':      0x9,
-    'not':      0xa,
-    'nop':      0xb,
-    'jmp':      0xc,
-    'jmpe':     0xd,
-    'jmpl':     0xe,
-    'brl':      0xf,
+    'halt':     HALT,
+    'readh':    IO,
+    'readc':    IO,
+    'printh':   IO,
+    'printc':   IO,
+    'shiftl':   SHIFT,
+    'shiftr':   SHIFT,
+    'rotl':     SHIFT,
+    'rotr':     SHIFT,
+    'load':     LOAD,
+    'store':    STORE,
+    'add':      ADD,
+    'sub':      SUB,
+    'and':      AND,
+    'or':       OR,
+    'xor':      XOR,
+    'not':      NOT,
+    'nop':      NOP,
+    'jmp':      JMP,
+    'jmpe':     JMPE,
+    'jmpl':     JMPL,
+    'brl':      BRL,
 }
 
 IO_OPS = {
     'readh':    0x0,
-    'read':     0x1,
+    'readc':     0x1,
     'printh':   0x2,
-    'print':    0x3,
+    'printc':    0x3,
 }
 
 SHIFT_OPS = {
@@ -64,10 +64,13 @@ SHIFT_OPS = {
 
 
 def parse_array(s):
+    msg = 'invalid data declaration'
+    if '(' in s:
+        raise ValueError(msg)
     try:
         objs = ast.literal_eval(s)
-    except ValueError:
-        raise ValueError('invalid data declaration')
+    except (SyntaxError, ValueError):
+        raise ValueError(msg)
     if not isinstance(objs, tuple):
         objs = (objs,)
     arr = []
@@ -77,7 +80,9 @@ def parse_array(s):
         elif isinstance(obj, str):
             arr.extend(ord(c) & 0xffff for c in obj)
         else:
-            raise ValueError('invalid data declaration')
+            raise ValueError(msg)
+    if not arr:
+        raise ValueError(msg)
     return arr
 
 def assemble(code):
@@ -85,37 +90,40 @@ def assemble(code):
     toklst = []
     mcode = []
     labels = {}
-    for i, l in enumerate(code):
+    i = 0
+    for l in code:
+        if not l.strip():
+            continue
         toks = [t.strip() for t in l.split('\t', 3)]
         toks.extend([''] * (4 - len(toks)))
-        toklst.append(toks)
-        label = toks[0]
+        label, opname, data, comment = toks
         if label:
             labels[label] = i
-    for i, toks in enumerate(toklst):
-        label, opname, data, comment = toks
-        opval = 0
         if opname == 'dw':
-            if data.startswith("'"):
-                opval = ord(ast.literal_eval(data))
-            elif data:
-                opval = int(data, 16)
-        elif opname:
+            datas = parse_array(data)
+            toklst.append([datas[0]] + toks)
+            toklst.extend([[data, '', '', '', ''] for data in datas[1:]])
+            i += len(datas)
+        else:
+            toklst.append([0] + toks)
+            i += 1
+    for i, (opval, label, opname, data, comment) in enumerate(toklst):
+        if opname and opname != 'dw':
             opcode = OPCODES[opname.lower()]
             if opcode == IO:
                 io_op = IO_OPS[opname.lower()]
                 oparg = io_op << 10
             elif opcode == SHIFT:
                 shift_op = SHIFT_OPS[opname.lower()]
-                oparg = shift_op << 10 | (int(data, 16) & 0xf)
+                oparg = shift_op << 10 | (int(data, 0) & 0xf)
             else:
                 oparg = 0
                 if '+' in data:
                     lbl, off = data.split('+', 1)
-                    oparg = labels[lbl.strip()] + int(off, 16)
+                    oparg = labels[lbl.strip()] + int(off, 0)
                 elif data:
                     try:
-                        oparg = int(data, 16)
+                        oparg = int(data, 0)
                     except ValueError:
                         oparg = labels[data]
             opval = opcode << 12 | oparg
@@ -126,7 +134,7 @@ def assemble(code):
     return '\n'.join(mcode) + '\n'
 
 
-def interpret(code):
+def execute(code):
     mem = [0] * 0x1000
     for i, l in enumerate(code.splitlines()):
         mem[i] = int(l[:4], 16)
@@ -135,23 +143,23 @@ def interpret(code):
     while pc < len(mem):
         instr = mem[pc]
         op = instr >> 12
-        addr = instr & 0xfff
+        addr = args = instr & 0xfff
         if op == HALT:
             break
         elif op == IO:
-            ioop = addr >> 10
+            ioop = args >> 10
             if ioop == READH:
                 accum = int(input(), 16)
-            elif ioop == READ:
+            elif ioop == READC:
                 char = sys.stdin.read(1)
                 accum = ord(char) if char else 0 # 0 for EOF
-            elif ioop == WRITEH:
+            elif ioop == PRINTH:
                 print('{:04x}'.format(accum))
-            elif ioop == WRITE:
+            elif ioop == PRINTC:
                 sys.stdout.write(chr(accum))
         elif op == SHIFT:
-            shiftop = addr >> 10
-            cnt = addr & 0xf
+            shiftop = args >> 10
+            cnt = args & 0xf
             if shiftop == SHIFTL:
                 accum <<= cnt
             elif shiftop == SHIFTR:
@@ -203,4 +211,4 @@ if __name__ == '__main__':
         mcode = assemble(args.ifile.read())
         args.ofile.write(mcode)
     else:
-        interpret(args.ifile.read())
+        execute(args.ifile.read())

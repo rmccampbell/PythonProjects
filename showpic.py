@@ -102,7 +102,7 @@ def web_gallery(url, begin=None, end=None, scale=1, maxh=0):
     if not url.startswith('http://'):
         url = 'http://' + url
     req = urllib.request.Request(url, headers={'User-Agent': 'Chrome'})
-    doc = bs4.BeautifulSoup(urllib.request.urlopen(req))
+    doc = bs4.BeautifulSoup(urllib.request.urlopen(req), 'lxml')
     imgs = doc.find_all('img')[begin:end]
     gallery(imgs, scale, maxh, url)
 
@@ -110,7 +110,7 @@ def linked_gallery(url, begin=None, end=None, scale=1, maxh=0, _close=True):
     if not url.startswith('http://'):
         url = 'http://' + url
     req = urllib.request.Request(url, headers={'User-Agent': 'Chrome'})
-    doc = bs4.BeautifulSoup(urllib.request.urlopen(req))
+    doc = bs4.BeautifulSoup(urllib.request.urlopen(req), 'lxml')
     imgs = doc.find_all('img')[begin:end]
     links = [img.parent if img.parent.name == 'a' else None for img in imgs]
 

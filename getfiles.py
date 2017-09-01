@@ -8,17 +8,29 @@ ERRORS = 'replace'
 PROGNAME = os.path.basename(sys.argv[0] or sys.executable)
 
 def printerr(msg='{prog}: {error}', *args, **kwargs):
+##    import traceback
+##    traceback.print_exc()
     etype, error, tb = sys.exc_info()
-    kwargs.update(prog=PROGNAME, error=error, etype=etype and etype.__name__)
-    print(msg.format(*args, **kwargs), file=sys.stderr)
+    kws = dict(prog=PROGNAME, error=error, etype=etype and etype.__name__)
+    kws.update(kwargs)
+    print(msg.format(*args, **kws), file=sys.stderr)
 
 @contextlib.contextmanager
 def safeclose(file):
     yield file
-    if not file.closed and file.fileno() > 2:
+    try:
+        if not file.closed and file.fileno() > 2:
+            file.close()
+        elif hasattr(file, '_changed_encoding') and file.buffer:
+            file.detach()
+    except io.UnsupportedOperation:
+        pass  # fileno doesn't work on idle std streams
+
+@contextlib.contextmanager
+def maybeclose(file, close=True):
+    yield file
+    if close:
         file.close()
-    elif hasattr(file, '_changed_encoding') and file.buffer:
-        file.detach()
 
 def chars(file):
     return chunk(file, 1)
@@ -37,8 +49,8 @@ def getfiles(paths=None, mode='r', encoding=None, errors=ERRORS,
         default = None
     if paths is None:
         paths = sys.argv[1:]
-    if not paths:
-        paths = (default,) if default else ()
+    if not paths and default:
+        paths = [default]
     for path in paths:
         if not isinstance(path, str):
             yield path
@@ -61,18 +73,22 @@ def expandpaths(paths, recursive=True):
 def stdopen(file, mode='r', encoding=None, errors=ERRORS):
     """Open a file, or return stdin or stdout for '-'"""
     if file == '-':
-        mod = mode.strip('bt')
-        if mod == 'r':
+        mode2 = mode.strip('btU')
+        if mode2 == 'r':
             file = sys.stdin
-        elif mod in ('w', 'a'):
+        elif mode2 in ('w', 'a'):
             file = sys.stdout
         else:
             raise ValueError("mode '{}' not allowed for '-'".format(mode))
         if _PY3:
+            encoding = encoding if encoding != '-' else None
             if 'b' in mode:
                 file = file.buffer
-            elif encoding and encoding != '-':
-                file = change_encoding(file, encoding, errors)
+            elif encoding or errors:
+                try:
+                    file = change_encoding(file, encoding, errors)
+                except AttributeError:
+                    pass
         return file
     else:
         return guess_open(file, mode, encoding=encoding, errors=errors)

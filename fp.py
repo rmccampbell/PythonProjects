@@ -6,10 +6,10 @@ TDIG = DIG + 1
 EXP = 8
 EMASK = (1 << EXP) - 1
 BIAS = (1 << EXP-1) - 1
-TBIAS = BIAS + DIG
+IBIAS = BIAS + DIG
 SOFF = DIG + EXP
-MINEXP = -TBIAS
-MAXEXP = EMASK - TBIAS
+MINEXP = -IBIAS
+MAXEXP = EMASK - IBIAS
 INF = EMASK << EOFF
 NAN = EMASK << EOFF | 1 << DIG-1
 
@@ -37,7 +37,7 @@ def fp_split(i):
     elif isinstance(i, float):
         i = float2fp(i)
     sgn = i>>SOFF & 1
-    exp = (i>>EOFF & EMASK) - TBIAS
+    exp = (i>>EOFF & EMASK) - IBIAS
     mant = i & MMASK | 1<<DIG
     if exp == MINEXP:  # zero and subnormal
         mant &= MMASK
@@ -59,7 +59,7 @@ def fp_normalize(sgn, exp, mant):
         mant >>= n
     else:
         mant <<= -n
-    return sgn << SOFF | exp+TBIAS << EOFF | mant & MMASK
+    return sgn << SOFF | exp+IBIAS << EOFF | mant & MMASK
 
 def fp_neg(a):
     if isinstance(a, tuple):
@@ -143,3 +143,6 @@ def fp_str(a):
     elif e10 <= -len(s):
         return '.' + s.rjust(-e10, '0')
     return s[:e10] + '.' + s[e10:]
+
+def fp_sin(a):
+    pass

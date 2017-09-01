@@ -38,10 +38,10 @@ def parse_table(html='-', id=None, number=None, columns=None, startrow=None,
         results.append([td.get_text(' ', True) for td in tds])
     return results
 
-def print_tabs(arr):
+def print_delimited(arr, delimiter='\t'):
     enc = sys.stdout.encoding
     for row in arr:
-        print('\t'.join(row).encode(enc, 'replace').decode(enc))
+        print(delimiter.join(row).encode(enc, 'replace').decode(enc))
 
 def pretty_print(arr, pad=2):
     widths = [max((len(r[i]) for r in arr if i < len(r)), default=0)
@@ -60,14 +60,16 @@ if __name__ == '__main__':
     parser.add_argument('-s', '--startrow', type=int)
     parser.add_argument('-e', '--endrow', type=int)
     parser.add_argument('-b', '--tbody', action='store_true')
-    parser.add_argument('-t', '--tabs', action='store_true')
+    parser.add_argument('-d', '--delimiter')
+    parser.add_argument('-t', '--tabs', dest='delimiter', const='\t',
+                        action='store_const')
     kwargs = vars(parser.parse_args())
-    tabs = kwargs.pop('tabs')
+    delimiter = kwargs.pop('delimiter')
     try:
         table = parse_table(**kwargs)
     except Exception as e:
         sys.exit('{}: {}'.format(type(e).__name__, e))
-    if tabs:
-        print_tabs(table)
+    if delimiter:
+        print_delimited(table, delimiter)
     else:
         pretty_print(table)

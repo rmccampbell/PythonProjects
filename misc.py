@@ -1,4 +1,4 @@
-import math, re, struct, functools
+import math, re, struct, functools, string, itertools
 
 def isprime_re(n):
     return not re.match(r'^1?$|^(11+?)\1+$', '1'*n)
@@ -13,7 +13,7 @@ def tobase(n, b):
 
 def frombase(s, b):
     digs = dict(zip('0123456789abcdefghijklmnopqrstuvwxyz', range(b)))
-    #return sum(digs[c]*b**i for i, c in enumerate(reversed(s)))
+    # return sum(digs[c]*b**i for i, c in enumerate(reversed(s)))
     return functools.reduce(lambda n, c: n*b + digs[c], s, 0)
 
 
@@ -142,10 +142,34 @@ def as_integer_ratio(f):
     return m >> n, 1 << -e-n
 
 
+# def caesar_cipher(s, k):
+#     A, a = ord('A'), ord('a')
+#     return ''.join([chr((ord(c) - A + k) % 26 + A) if 'A' <= c <= 'Z' else
+#                     chr((ord(c) - a + k) % 26 + a) if 'a' <= c <= 'z' else
+#                     c for c in s])
+
 def caesar_cipher(s, k):
-    return ''.join([chr((ord(c) - 65 + k) % 26 + 65) if 'A' <= c <= 'Z' else \
-                    chr((ord(c) - 97 + k) % 26 + 97) if 'a' <= c <= 'z' else \
-                    c for c in s])
+    k %= 26
+    lower, upper = string.ascii_lowercase, string.ascii_uppercase
+    trans = str.maketrans(lower + upper, 
+                          lower[k:] + lower[:k] + upper[k:] + upper[:k])
+    return s.translate(trans)
+
+
+def vigenere_encode(s, k):
+    A, a = ord('A'), ord('a')
+    k = [ord(c) - a for c in k.lower()]
+    return ''.join([chr((ord(c) + ki - A) % 26 + A) if 'A' <= c <= 'Z'
+               else chr((ord(c) + ki - a) % 26 + a) if 'a' <= c <= 'z'
+               else c for c, ki in zip(s, itertools.cycle(k))])
+
+
+def vigenere_decode(s, k):
+    A, a = ord('A'), ord('a')
+    k = [ord(c) - a for c in k.lower()]
+    return ''.join([chr((ord(c) - ki - A) % 26 + A) if 'A' <= c <= 'Z'
+               else chr((ord(c) - ki - a) % 26 + a) if 'a' <= c <= 'z'
+               else c for c, ki in zip(s, itertools.cycle(k))])
 
 
 def divmod_ceil(x, y):

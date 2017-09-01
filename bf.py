@@ -1,10 +1,23 @@
-#!/usr/bin/env -S python3 -u
+#!/usr/bin/env python3
 import sys, argparse, io
 
 MEMSIZE = 30000
 
-def run(code, debug=False, text=False, eof_nochange=False):
-    code = [c for c in code if c in '><+-.,[]' + ('dpi' if debug else '')]
+def run(source, debug=False, text=False, unbuffered=False, eof_nochange=False):
+    commands = set('><+-.,[]' + ('dpi' if debug else ''))
+    code = []
+    brackets = []
+    for c in source:
+        if c in commands:
+            code.append(c)
+            if c == '[':
+                brackets.append(len(code))
+                code.append(-1)
+            elif c == ']':
+                match = brackets.pop()
+                code[match] = len(code)
+                code.append(match)
+
     array = [0] * MEMSIZE
     p = 0
     i = 0
@@ -13,7 +26,9 @@ def run(code, debug=False, text=False, eof_nochange=False):
         chr_ = chr
     else:
         stdin, stdout = sys.stdin.buffer, sys.stdout.buffer
-        def chr_(i): return chr(i).encode('latin-1')
+        chr_ = lambda i: chr(i).encode('latin-1')
+        if unbuffered:
+            stdin, stdout = stdin.raw, stdout.raw
     while i < len(code):
         c = code[i]
         if c == '>':
@@ -34,25 +49,13 @@ def run(code, debug=False, text=False, eof_nochange=False):
             if b or not eof_nochange:
                 array[p] = ord(b) & 0xff if b else 0
         elif c == '[':
+            i += 1
             if not array[p]:
-                depth = 1
-                while depth:
-                    i += 1
-                    c = code[i]
-                    if c == '[':
-                        depth += 1
-                    elif c == ']':
-                        depth -= 1
+                i = code[i]
         elif c == ']':
+            i += 1
             if array[p]:
-                depth = 1
-                while depth:
-                    i -= 1
-                    c = code[i]
-                    if c == '[':
-                        depth -= 1
-                    elif c == ']':
-                        depth += 1
+                i = code[i]
         elif debug:
             if c == 'd':
                 end = next((i for i in range(MEMSIZE-1, -1, -1) if array[i]), 0)
@@ -67,12 +70,13 @@ if __name__ == '__main__':
     p = argparse.ArgumentParser()
     p.add_argument('-d', '--debug', action='store_true')
     p.add_argument('-t', '--text', action='store_true')
+    p.add_argument('-u', '--unbuffered', action='store_true')
     p.add_argument('-e', '--eof-nochange', action='store_true')
     p.add_argument('-c', '--cmd')
     p.add_argument('file', nargs='?', type=argparse.FileType(), default='-')
     args = p.parse_args()
     code = args.cmd or args.file.read()
     try:
-        run(code, args.debug, args.text, args.eof_nochange)
+        run(code, args.debug, args.text, args.unbuffered, args.eof_nochange)
     except KeyboardInterrupt:
         pass
