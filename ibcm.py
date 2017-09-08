@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-import sys, argparse, ast
+import sys, argparse, ast, array
 
 HALT  = 0x0
 IO    = 0x1
@@ -85,10 +85,11 @@ def parse_array(s):
         raise ValueError(msg)
     return arr
 
-def assemble(code):
+
+def assemble(code, raw=False, binary=False):
     code = code.splitlines()
     toklst = []
-    mcode = []
+    mcode = array.array('H') if binary else []
     labels = {}
     i = 0
     for l in code:
@@ -127,17 +128,30 @@ def assemble(code):
                     except ValueError:
                         oparg = labels[data]
             opval = opcode << 12 | oparg
-        line = '%04X %03X %s\t%s\t%s\t%s' % (
-            opval, i, label, opname, data, comment)
-        line = line.rstrip().replace(' \t', '\t')
-        mcode.append(line)
-    return '\n'.join(mcode) + '\n'
+        if binary:
+            mcode.append(opval)
+        elif raw:
+            mcode.append(format(opval, '04X'))
+        else:
+            line = '{:04X} {:03X} {}\t{}\t{}\t{}'.format(
+                opval, i, label, opname, data, comment)
+            line = line.rstrip().replace(' \t', '\t')
+            mcode.append(line)
+    if binary:
+        return mcode.tobytes()
+    else:
+        return '\n'.join(mcode) + '\n'
 
 
-def execute(code):
+def execute(code, binary=False):
     mem = [0] * 0x1000
-    for i, l in enumerate(code.splitlines()):
-        mem[i] = int(l[:4], 16)
+    if binary:
+        arr = array.array('H')
+        arr.frombytes(code)
+        mem[:len(arr)] = arr
+    else:
+        for i, line in enumerate(code.splitlines()):
+            mem[i] = int(line[:4], 16)
     pc = 0
     accum = 0
     while pc < len(mem):
@@ -154,7 +168,7 @@ def execute(code):
                 char = sys.stdin.read(1)
                 accum = ord(char) if char else 0 # 0 for EOF
             elif ioop == PRINTH:
-                print('{:04x}'.format(accum))
+                print(format(accum, '04x'))
             elif ioop == PRINTC:
                 sys.stdout.write(chr(accum))
         elif op == SHIFT:
@@ -201,14 +215,24 @@ def execute(code):
         pc += 1
 
 
+def binary_file(file):
+    if file is sys.stdin or file is sys.stdout:
+        return file.buffer
+    return file.detach()
+
+
 if __name__ == '__main__':
     p = argparse.ArgumentParser()
     p.add_argument('ifile', nargs='?', type=argparse.FileType('r'), default='-')
     p.add_argument('ofile', nargs='?', type=argparse.FileType('w'), default='-')
     p.add_argument('-a', '--assemble', action='store_true')
+    p.add_argument('-b', '--binary', action='store_true')
+    p.add_argument('-r', '--raw', action='store_true')
     args = p.parse_args()
     if args.assemble:
-        mcode = assemble(args.ifile.read())
-        args.ofile.write(mcode)
+        mcode = assemble(args.ifile.read(), raw=args.raw, binary=args.binary)
+        ofile = binary_file(args.ofile) if args.binary else args.ofile
+        ofile.write(mcode)
     else:
-        execute(args.ifile.read())
+        ifile = binary_file(args.ifile) if args.binary else args.ifile
+        execute(ifile.read(), binary=args.binary)
