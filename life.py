@@ -121,8 +121,6 @@ class Life:
                     elif event.key == K_MINUS:
                         self.zoom(-1)
                         redraw = True
-                    else:
-                        print(event)
                 elif event.type == VIDEORESIZE:
                     px = self.px
                     self.swidth = sw = int(round(event.w / px))
