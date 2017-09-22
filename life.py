@@ -115,16 +115,25 @@ class Life:
                     elif event.key == K_PAGEDOWN:
                         self.scrolly = max(self.height - self.sheight, 0)
                         redraw = True
+                    elif event.key == K_EQUALS:
+                        self.zoom(1)
+                        redraw = True
+                    elif event.key == K_MINUS:
+                        self.zoom(-1)
+                        redraw = True
+                    else:
+                        print(event)
                 elif event.type == VIDEORESIZE:
-                    self.swidth = sw = int(round(event.w / self.px))
-                    self.sheight = sh = int(round(event.h / self.px))
+                    px = self.px
+                    self.swidth = sw = int(round(event.w / px))
+                    self.sheight = sh = int(round(event.h / px))
                     if abs(sw - self.width) < 5:
                         self.swidth = sw = self.width
                     if abs(sh - self.height) < 5:
                         self.sheight = sh = self.height
                     self.scrolly = max(min(self.scrolly, self.height - sh), 0)
                     self.scrollx = max(min(self.scrollx, self.width - sw), 0)
-                    pygame.display.set_mode((self.px*sw, self.px*sh), RESIZABLE)
+                    pygame.display.set_mode((px*sw, px*sh), RESIZABLE)
                     redraw = True
 
             if i >= FPS//self.speed or step:
@@ -135,6 +144,15 @@ class Life:
             if redraw:
                 self.display()
             i += 1
+
+    def zoom(self, amount):
+        oldpx = self.px
+        self.px = px = max(oldpx + amount, 1)
+        self.swidth = sw = int(round(self.swidth * oldpx / px))
+        self.sheight = sh = int(round(self.sheight * oldpx / px))
+        self.scrolly = max(min(self.scrolly, self.height - sh), 0)
+        self.scrollx = max(min(self.scrollx, self.width - sw), 0)
+        pygame.display.set_mode((px*sw, px*sh), RESIZABLE)
 
     def tick(self):
         #neighbors = convolve2d(self.board, [[1,1,1],[1,0,1],[1,1,1]], 'same')
@@ -151,15 +169,16 @@ class Life:
         self.board = board2
 
     def display(self):
+        px = self.px
         if self.width < self.swidth or self.height < self.sheight:
             self.screen.fill(BGCOLOR)
-            self.screen.fill(COLOR0, (0, 0, self.width*self.px, self.height*self.px))
+            self.screen.fill(COLOR0, (0, 0, self.width*px, self.height*px))
         else:
             self.screen.fill(COLOR0)
         for i in range(min(self.swidth, self.width)):
             for j in range(min(self.sheight, self.height)):
                 if self.board[i + self.scrollx, j + self.scrolly]:
-                    self.screen.fill(COLOR1, (i*self.px, j*self.px, self.px, self.px))
+                    self.screen.fill(COLOR1, (i*px, j*px, px, px))
         pygame.display.flip()
 
 
@@ -184,13 +203,14 @@ def run(seed=None, w=None, h=None, xoff=0, yoff=0, screen=(SWIDTH, SHEIGHT),
 
 if __name__ == '__main__':
     p = argparse.ArgumentParser(
-        usage='%(prog)s [-s W H] [-w] [-p] [file] [w] [h] [xoff] [yoff]')
+        usage='%(prog)s [-h] [-s W H] [-x PIXEL] [-w] [-p] '
+        '[file] [w h] [xoff yoff]')
     p.add_argument('-s', '--screen', metavar=('W', 'H'), type=int, nargs=2,
                    default=[SWIDTH, SHEIGHT])
     p.add_argument('-x', '--pixel', type=int, default=PIXEL)
     p.add_argument('-w', '--wrap', action='store_true')
     p.add_argument('-p', '--pause', action='store_true')
-    p.add_argument('args', nargs='*')
+    p.add_argument('args', nargs='*', metavar='file, w, h, xoff, yoff')
     ns = p.parse_args()
     args = ns.args
 
