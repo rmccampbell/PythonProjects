@@ -17,6 +17,26 @@ def frombase(s, b):
     return functools.reduce(lambda n, c: n*b + digs[c], s, 0)
 
 
+def float_tobase(num, b, p=10):
+    num, whole = math.modf(num)
+    num = abs(num)
+    ss = [tobase(int(whole), b), '.']
+    for i in range(p):
+        if not (num or pad0):
+            break
+        num, whole = math.modf(num * 2)
+        ss.append('0123456789abcdefghijklmnopqrstuvwxyz'[int(whole)])
+    return ''.join(ss)
+
+def float_frombase(s, b):
+    exp = 0
+    point = s.find('.')
+    if point >= 0:
+        exp = len(s) - point - 1
+        s = s[:point] + s[point + 1:]
+    return float(frombase(s, b) * b**exp)
+
+
 def nthbit(x, n):
     return x >> n & 1
 
@@ -79,13 +99,23 @@ def parity32(n):
     return n & 1
 
 
+def byteswap(n, nb=2):
+    return sum((n >> 8*i & 255) << 8*(nb-i-1) for i in range(nb))
+
+def byteswap16(n):
+    return (n & 255) << 8 | n >> 8
+
+def byteswap32(n):
+    return (n & 255) << 24 | (n & 65280) << 8 | n >> 8 & 65280 | n >> 24
+
+
 def float_bits(num):
     import struct
-    return int.from_bytes(struct.pack('>f', num), 'big')
+    return int.from_bytes(struct.pack('<f', num), 'little')
 
 def double_bits(num):
     import struct
-    return int.from_bytes(struct.pack('>d', num), 'big')
+    return int.from_bytes(struct.pack('<d', num), 'little')
 
 def float_bitstr(num, sep=' '):
     s = '{:032b}'.format(float_bits(num))
@@ -98,15 +128,16 @@ def double_bitstr(num, sep=' '):
 def float_frombits(s):
     import struct
     if isinstance(s, str): s = int(s.replace(' ', ''), 2)
-    return struct.unpack('>f', s.to_bytes(4, 'big'))[0]
+    return struct.unpack('<f', s.to_bytes(4, 'little'))[0]
 
 def double_frombits(s):
     import struct
     if isinstance(s, str): s = int(s.replace(' ', ''), 2)
-    return struct.unpack('>d', s.to_bytes(8, 'big'))[0]
+    return struct.unpack('<d', s.to_bytes(8, 'little'))[0]
 
 
 def from_roman(s):
+    s = s.upper()
     digs = dict(I=1, V=5, X=10, L=50, C=100, D=500, M=1000)
     x = 0
     for i, c in enumerate(s):
@@ -156,31 +187,102 @@ def caesar_cipher(s, k):
     return s.translate(trans)
 
 
+def rot13(s):
+    return caesar_cipher(s, 13)
+
+
 def vigenere_encode(s, k):
     A, a = ord('A'), ord('a')
-    k = [ord(c) - a for c in k.lower()]
+    if isinstance(k, str):
+        k = [ord(c) - a for c in k.lower()]
     return ''.join([chr((ord(c) + ki - A) % 26 + A) if 'A' <= c <= 'Z'
                else chr((ord(c) + ki - a) % 26 + a) if 'a' <= c <= 'z'
                else c for c, ki in zip(s, itertools.cycle(k))])
 
 
 def vigenere_decode(s, k):
-    A, a = ord('A'), ord('a')
-    k = [ord(c) - a for c in k.lower()]
-    return ''.join([chr((ord(c) - ki - A) % 26 + A) if 'A' <= c <= 'Z'
-               else chr((ord(c) - ki - a) % 26 + a) if 'a' <= c <= 'z'
-               else c for c, ki in zip(s, itertools.cycle(k))])
+    if isinstance(k, str):
+        a = ord('a')
+        k = [ord(c) - a for c in k.lower()]
+    return vigenere_encode(s, [-ki for ki in k])
 
 
 def divmod_ceil(x, y):
-    q = (x - 1) // y + 1
-    return q, x - y*q
+    q, r = divmod(x, -y)
+    return -q, r
 
 
 def divmod_round(x, y):
     q, r = divmod(x, y)
     r2 = 2*r
-    if r2 > x or r2 == x and q % 2:
+    if r2 > y or r2 == y and q & 1:
         q += 1
         r -= y
     return q, r
+
+
+def divmod_trunc(x, y):
+    xneg = x < 0
+    yneg = y < 0
+    if xneg:
+        x = -x
+    if yneg:
+        y = -y
+    q, r = divmod(x, y)
+    if xneg:
+        r = -r
+    if xneg ^ yneg:
+        q = -q
+    return q, r
+
+
+def bin2gray(n):
+    return n ^ (n >> 1)
+
+
+def gray2bin(n):
+    mask = n >> 1
+    while mask:
+        n ^= mask
+        mask >>= 1
+    return n
+
+
+def frac2dec(f, prec=None):
+    from decimal import Decimal, Context, localcontext
+    with localcontext(Context(prec=prec)):
+        return Decimal(f.numerator) / Decimal(f.denominator)
+
+
+def human_readable(n, prec=1, strip=True):
+    power = max((int(n).bit_length() - 1) // 10, 0)
+    num = '{:.{}f}'.format(n / 1024**power, prec)
+    if strip:
+        num = num.rstrip('.0')
+    return num + 'BKMGTPE'[power]
+
+
+def download_size(url, readable=False):
+    import requests
+    resp = requests.head(url, allow_redirects=True)
+    resp.raise_for_status()
+    size = int(resp.headers['Content-Length'])
+    if readable:
+        return human_readable(size)
+    return size
+
+
+def running_avg(arr, axis=-1):
+    import numpy as np
+    arr = np.asarray(arr)
+    return arr.cumsum(axis=axis) / (np.arange(arr.shape[axis]) + 1)
+
+
+def least_upper_bound(t1, t2):
+    for t in t2.mro():
+        if issubclass(t1, t):
+            return t
+
+
+def rescale(x, a1, b1, a2, b2):
+    return (x - a1) * (b2 - a2) / (b1 - a1) + a2
