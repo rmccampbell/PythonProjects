@@ -4,9 +4,8 @@ import sys, types, collections, itertools, re, math, operator, inspect
 import functools, io, textwrap, enum, reprlib
 import functools2
 from functools2 import typechecking, autocurrying, Sentinel
-from implicitself import implicit_self, implicit_this
 
-_none = Sentinel('<none>')
+_none = Sentinel('<empty>')
 
 
 class HashlessMap(collections.MutableMapping):
@@ -571,7 +570,7 @@ class overloading:
             name = func.__name__
         except AttributeError:
             name = func.__func__.__name__
-        clsvars = sys._getframe(1).f_back.f_locals
+        clsvars = sys._getframe(1).f_locals
         obj = clsvars.get(name)
         if isinstance(obj, overloading):
             return obj.overload(func)
@@ -1338,52 +1337,52 @@ def __{0}__(self, other):
 
 
 
-class IDProxy:
+class IdWrapper:
     def __init__(self, obj):
-        if isinstance(obj, IDProxy):
+        if isinstance(obj, IdWrapper):
             self._obj = obj._obj
         else:
             self._obj = obj
     def __eq__(self, other):
-        return isinstance(other, IDProxy) and self._obj is other._obj
+        return isinstance(other, IdWrapper) and self._obj is other._obj
     def __hash__(self):
         return object.__hash__(self._obj)
     def __repr__(self):
         return repr(self._obj)
 
 
-class IDDict(collections.MutableMapping, dict):
+class IdDict(collections.MutableMapping, dict):
     def __init__(self, *args, **kwargs):
         self.update(*args, **kwargs)
     def __setitem__(self, key, value):
-        dict.__setitem__(self, IDProxy(key), value)
+        dict.__setitem__(self, IdWrapper(key), value)
     def __getitem__(self, key):
-        return dict.__getitem__(self, IDProxy(key))
+        return dict.__getitem__(self, IdWrapper(key))
     def __delitem__(self, key):
-        dict.__delitem__(self, IDProxy(key))
+        dict.__delitem__(self, IdWrapper(key))
     def __len__(self):
         return dict.__len__(self)
     def __iter__(self):
         return (k._obj for k in dict.__iter__(self))
     def copy(self):
-        return IDDict(self)
+        return IdDict(self)
 
 
-class IDSet(collections.MutableSet, set):
+class IdSet(collections.MutableSet, set):
     def __init__(self, it=()):
         self |= it
     def add(self, obj):
-        set.add(self, IDProxy(obj))
+        set.add(self, IdWrapper(obj))
     def discard(self, obj):
-        set.discard(self, IDProxy(obj))
+        set.discard(self, IdWrapper(obj))
     def __contains__(self, obj):
-        return set.__contains__(self, IDProxy(obj))
+        return set.__contains__(self, IdWrapper(obj))
     def __len__(self):
         return set.__len__(self)
     def __iter__(self):
         return (o._obj for o in set.__iter__(self))
     def copy(self):
-        return IDSet(self)
+        return IdSet(self)
     union = collections.Set.__or__
     update = collections.MutableSet.__ior__
     intersection = collections.Set.__and__
@@ -1398,6 +1397,7 @@ class IDSet(collections.MutableSet, set):
 
 
 def struct(name, fields, defaults=()):
+    """A mutable equivalent of namedtuple"""
     templ = '''\
 from collections import OrderedDict
 
@@ -1487,11 +1487,9 @@ class BiDirIter:
         return self._seq[self._i]
     def jump(self, ind, default=_none):
         self._i = min(max(ind, -1), len(self._seq))
-        if ind < 0 or ind >= len(self._seq):
-            if default != _none:
-                return default
-            raise IndexError
-        return self._seq[self._i]
+        return self.curr(default)
+    def advance(self, amount, default=_none):
+        return self.jump(self._i + amount, default)
     def curr(self, default=_none):
         if self._i < 0 or self._i >= len(self._seq):
             if default != _none:
@@ -1500,7 +1498,7 @@ class BiDirIter:
         return self._seq[self._i]
     def __next__(self):
         if self.forward:
-            return self.nxt()
+            return self.next()
         else:
             return self.prev()
     def __iter__(self):
@@ -1650,32 +1648,102 @@ class Color(BitFlag):
 
 
 
-class MultiArray(collections.MutableSequence):
+class MultiArray(collections.Sequence):
     def __init__(self, it=None):
         self.lastsize = 0
-        self.lists = [[_none]]
+        self.lists = [[None]]
         if it:
-            self.update(it)
+            self.extend(it)
     def append(self, val):
         n = len(self.lists[-1])
         if self.lastsize == n:
-            self.lists.append([_none]*n*2)
+            self.lists.append([None]*n*2)
             self.lastsize = 0
         self.lists[-1][self.lastsize] = val
         self.lastsize += 1
-    def __getitem__(self, i):
+    def extend(self, values):
+        for v in values:
+            self.append(v)
+    def _getinds(self, i):
         li = (i + 1).bit_length() - 1
-        ii = i & ((1 << li) - 1)
+        ii = i - (1 << li) + 1
+        if li == len(self.lists) - 1 and ii >= self.lastsize:
+            raise IndexError
+        return li, ii
+    def __getitem__(self, i):
+        li, ii = self._getinds(i)
         return self.lists[li][ii]
     def __setitem__(self, i, value):
-        li = (i + 1).bit_length() - 1
-        ii = i & ((1 << li) - 1)
+        li, ii = self._getinds(i)
         self.lists[li][ii] = value
+    def __len__(self):
+        return len(self.lists[-1]) - 1 + self.lastsize
+    def __repr__(self):
+        return 'MultiArray({})'.format(list(self))
 
-class CircleArray(collections.MutableSequence):
+
+
+class CircleArray(collections.Sequence):
     def __init__(self, it=None):
-        pass
-
+        self.arr = [None]
+        self.begin = self.end = 0
+        self.full = False
+        if it:
+            self.extend(it)
+    def resize(self):
+        n = len(self.arr)
+        self.arr *= 2
+        self.arr[n : n + self.end] = self.arr[:self.end]
+        self.end += n
+    def append(self, val):
+        if self.full:
+            self.resize()
+        self.arr[self.end] = val
+        self.end = (self.end + 1) % len(self.arr)
+        self.full = self.begin == self.end
+    def appendleft(self, val):
+        if self.full:
+            self.resize()
+        self.begin = (self.begin - 1) % len(self.arr)
+        self.arr[self.begin] = val
+        self.full = self.begin == self.end
+    def extend(self, values):
+        for v in values:
+            self.append(v)
+    def extendleft(self, val):
+        for v in values:
+            self.appendleft(v)
+    def pop(self):
+        if len(self) == 0:
+            raise IndexError
+        self.end = (self.end - 1) % len(self.arr)
+        val = self.arr[self.end]
+        self.full = False
+        return val
+    def popleft(self):
+        if len(self) == 0:
+            raise IndexError
+        val = self.arr[self.begin]
+        self.begin = (self.begin + 1) % len(self.arr)
+        self.full = False
+        return val
+    def __getitem__(self, ind):
+        n = len(self)
+        if not -n <= ind < n:
+            raise IndexError
+        return self.arr[(self.begin + ind) % len(self.arr)]
+    def __setitem__(self, ind, val):
+        n = len(self)
+        if not -n <= ind < n:
+            raise IndexError
+        self.arr[(self.begin + ind) % len(self.arr)] = val
+    def __len__(self):
+        n = self.end - self.begin
+        if n < 0 or self.full:
+            n += len(self.arr)
+        return n
+    def __repr__(self):
+        return 'CircleArray({})'.format(list(self))
 
 
 class PrettyODict(collections.OrderedDict):
@@ -1766,3 +1834,28 @@ class OrderedSet(collections.MutableSet):
         return self <= other
     def issuperset(self, other):
         return self >= other
+
+
+
+class DefValDict(dict):
+    def __init__(self, _defval=None, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self._defval = _defval
+    def __missing__(self, key):
+        return self._defval
+
+
+
+class NamedProp(property):
+    def __init__(self, fget=None, fset=None, fdel=None, doc=None):
+        super().__init__(fget, fset, fdel, doc)
+        self.__name__ = self.__qualname__ = None
+    def __set_name__(self, owner, name):
+        self.__name__ = name
+        self.__qualname__ = owner.__name__ + '.' + name
+        self.__objclass__ = owner
+    def __repr__(self):
+        bits = 32 if sys.maxsize <= 2**31 - 1 else 64
+        return '<property {} at 0x{:0{}X}>'.format(
+            self.__qualname__ or 'object', id(self), bits//4)
+
