@@ -19,6 +19,9 @@ class MouseRecorder(pymouse.PyMouseEvent):
     def click(self, x, y, button, press):
         self.events.append(('click', self.tick(), x, y, button, press))
 
+    def scroll(self, x, y, vert, horiz):
+        self.events.append(('scroll', self.tick(), x, y, vert, horiz))
+
     def move(self, x, y):
         if self.track_movement:
             self.events.append(('move', self.tick(), x, y))
