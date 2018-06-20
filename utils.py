@@ -305,31 +305,51 @@ def schunk(s, size=2):
         yield s[i : i+size]
 ##    return map(''.join, chunk(s, size, dofill=False))
 
-def sgroup(s, size=2, sep=None):
-    if sep is None:
-        sep = ' ' if isinstance(s, str) else b' '
+def sgroup(s, size=2, sep=' '):
+    if isinstance(s, bytes) and isinstance(sep, str):
+        sep = sep.encode()
     return sep.join(schunk(s, size))
 
-def spartition(s, *inds):
+def sbreak(s, *inds):
     prev = 0
     for ind in inds:
         yield s[prev:ind]
         prev = ind
     yield s[prev:]
 
-def sbreak(s, inds, sep=None):
-    if sep is None:
-        sep = ' ' if isinstance(s, str) else b' '
-    return sep.join(spartition(s, *inds))
+def ssep(s, inds, sep=' '):
+    if isinstance(s, bytes) and isinstance(sep, str):
+        sep = sep.encode()
+    return sep.join(sbreak(s, *inds))
 
 def sinsert(s, ind, s2):
     return s[:ind] + s2 + s[ind:]
+
+def sdelete(s, ind, ind2=_empty):
+    if ind2 is _empty:
+        if ind == -1:
+            return s[:ind]
+        return s[:ind] + s[ind+1:]
+    return s[:ind] + s[ind2:]
 
 def sfilter(func, s):
     return ''.join(filter(func, s))
 
 def smap(func, s):
     return ''.join(map(str, map(func, s)))
+
+
+def hsplit(string, *inds):
+    return list(map('\n'.join,
+                    zip(*(spartition(s, *inds) for s in string.splitlines()))))
+
+def hconcat(*strings):
+    line_lists = [s.splitlines() for s in strings]
+    widths = [max(map(len, lines)) for lines in line_lists]
+    return '\n'.join(
+        ''.join(line.ljust(w) for line, w in zip(row, widths))
+        for row in zip_longest(*line_lists, fillvalue='')
+    )
 
 
 def strbin(s, enc='utf-8', sep=' '):
@@ -686,7 +706,7 @@ def lwrap_copy(f, name=None):
     return f
 
 for f in (map, zip, range, filter, reversed, enumerate, islice,
-          chunk, schunk, unique, zmap, zmaps, rzip, renumerate):
+          chunk, schunk, sbreak, unique, zmap, zmaps, rzip, renumerate):
     lwrap_copy(f)
 del f
 
