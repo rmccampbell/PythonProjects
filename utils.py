@@ -341,7 +341,7 @@ def smap(func, s):
 
 def hsplit(string, *inds):
     return list(map('\n'.join,
-                    zip(*(spartition(s, *inds) for s in string.splitlines()))))
+                    zip(*(sbreak(s, *inds) for s in string.splitlines()))))
 
 def hconcat(*strings):
     line_lists = [s.splitlines() for s in strings]
@@ -351,6 +351,16 @@ def hconcat(*strings):
         for row in zip_longest(*line_lists, fillvalue='')
     )
 
+def vstr(s):
+    return '\n'.join(s)
+
+def hpad(s, w, left=False):
+    just = str.rjust if left else str.ljust
+    return '\n'.join(just(l, w) for l in s.splitlines())
+
+def vpad(s, h, bottom=False):
+    padding = '\n' * (h - s.count('\n') - 1)
+    return s + padding if bottom else padding + s
 
 def strbin(s, enc='utf-8', sep=' '):
     if isinstance(s, str):

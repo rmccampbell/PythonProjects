@@ -1,68 +1,34 @@
+from itertools import zip_longest
+
+def sbreak(s, *inds):
+    prev = 0
+    for ind in inds:
+        yield s[prev:ind]
+        prev = ind
+    yield s[prev:]
+
+def hsplit(string, *inds):
+    return list(map('\n'.join,
+                    zip(*(sbreak(s, *inds) for s in string.splitlines()))))
+
+_digs = '''\
+ _     _  _     _  _  _  _  _  _     _     _  _ 
+| |  | _| _||_||_ |_   ||_||_||_||_ |   _||_ |_ 
+|_|  ||_  _|  | _||_|  ||_| _|| ||_||_ |_||_ |  '''
+
+DIGS = hsplit(_digs, *range(3, 3*16, 3))
+
 PATTERN = '''\
  _ 
 |_|
 |_|
 '''
+
 TEMPLATE = '''\
- 0
+ 0 
 561
 432
 '''
-ZERO = '''\
- _ 
-| |
-|_|
-'''
-ONE = '''\
-
-  |
-  |
-'''
-TWO = '''\
- _ 
- _|
-|_ 
-'''
-THREE = '''\
- _ 
- _|
- _|
-'''
-FOUR = '''\
-   
-|_|
-  |
-'''
-FIVE = '''\
- _ 
-|_ 
- _|
-'''
-SIX = '''\
- _ 
-|_ 
-|_|
-'''
-SEVEN = '''\
- _ 
-  |
-  |
-'''
-EIGHT = '''\
- _ 
-|_|
-|_|
-'''
-NINE = '''\
- _ 
-|_|
- _|
-'''
-DIGS = [ZERO, ONE, TWO, THREE, FOUR, FIVE, SIX, SEVEN, EIGHT, NINE]
-
-def hsplit(string, *inds):
-    return list(map('\n'.join,
-                    zip(*(spartition(s, *inds) for s in string.splitlines()))))
 
 def hconcat(*strings):
     line_lists = [s.splitlines() for s in strings]
@@ -73,4 +39,22 @@ def hconcat(*strings):
     )
 
 def decode(n):
-    pass
+    return ''.join(
+        c if not d.isdigit() or n >> int(d) & 1 == 1 else ' '
+        for c, d in zip(PATTERN, TEMPLATE)
+    )
+
+def char_to_7seg(c):
+    if c == ' ':
+        return '\n'.join('   ')
+    if c == ':':
+        return '\n'.join(' ..')
+    if c == '.':
+        return '\n'.join('  .')
+    return DIGS[int(c, 16)]
+
+def str_to_7seg(s):
+    return hconcat(*map(char_to_7seg, s))
+
+def num_to_7seg(n, hex=False):
+    return str_to_7seg(format(n, 'x' if hex else 'd'))
