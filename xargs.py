@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-import sys, argparse, subprocess, shlex
+import sys, os, argparse, subprocess, shlex
 
 def winsplit(s=None):
     lex = shlex.shlex(s, posix=True)
@@ -30,15 +30,18 @@ if __name__ == '__main__':
         stdin = None
 
     delim = args.delimiter
-    if delim:
-        if delim == '\n':
-            xargs = file.read().splitlines()
-        else:
-            xargs = file.read().split(delim)
-    else:
+    if delim == '\n':
+        xargs = file.read().splitlines()
+    elif delim:
+        xargs = file.read().split(delim)
+    elif os.name == 'nt':
         xargs = winsplit(file)
+    else:
+        xargs = shlex.split(file)
 
     if args.replace:
         while xargs and args.replace in command:
             command[command.index(args.replace)] = xargs.pop(0)
-    subprocess.call(command + xargs, shell=True, stdin=stdin)
+
+    shell = os.name == 'nt' # Pass command to shell on windows
+    subprocess.call(command + xargs, shell=shell, stdin=stdin)
