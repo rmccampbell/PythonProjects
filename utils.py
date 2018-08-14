@@ -446,7 +446,7 @@ def hexint(x):
     return int(x, 16)
 
 def float_binf(num, p=23, pad0=False, prefix=False):
-    if p < 0 or p is None: p = 1074
+    if p is None or p < 0: p = 1074
     num, whole = math.modf(num)
     num = abs(num)
     ss = [format(int(whole), '#b' if prefix else 'b'), '.']
@@ -458,7 +458,7 @@ def float_binf(num, p=23, pad0=False, prefix=False):
     return ''.join(ss)
 
 def float_hexf(num, p=13, pad0=False, prefix=False):
-    if p < 0 or p is None: p = 269
+    if p is None or p < 0: p = 269
     num, whole = math.modf(num)
     num = abs(num)
     ss = [format(int(whole), '#x' if pref else 'x'), '.']
