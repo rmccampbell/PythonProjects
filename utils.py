@@ -24,8 +24,8 @@ if _PY3:
     except ImportError: pass
     try: from math import gcd
     except ImportError: from fractions import gcd
-    try: from importlib import reload
-    except ImportError: from imp import reload
+    try: from importlib import reload as _reload
+    except ImportError: from imp import reload as _reload
     import urllib.request
     from urllib.request import urlopen
 
@@ -56,6 +56,16 @@ T, F, N = True, False, None
 _empty = functools2.Sentinel('<empty>')
 
 
+def alias(obj, *names):
+    if isinstance(obj, str):
+        names = (obj,) + names
+        return lambda obj: alias(obj, *names)
+    globs = fglobals(1)
+    for name in names:
+        globs[name] = obj
+    return obj
+
+
 def flocals(depth=0):
     return sys._getframe(depth + 1).f_locals
 
@@ -63,6 +73,7 @@ def fglobals(depth=0):
     return sys._getframe(depth + 1).f_globals
 
 
+@alias('f')
 def func(code, name=None, globs=None):
     if globs is None:
         globs = fglobals(1)
@@ -80,7 +91,9 @@ def func(code, name=None, globs=None):
                 return v
         raise ValueError('nothing to return')
 
-def impt(string, _depth=0):
+
+@alias('impt')
+def autoimport(string, _depth=0):
     if not isinstance(string, str): return string
     globs = fglobals(_depth+1)
 
@@ -99,6 +112,8 @@ def impt(string, _depth=0):
                 except ImportError: break
     return eval(string, globs)
 
+
+@alias('call', 'c')
 class pipe(object):
     def __init__(self, callable_, *args, **kwargs): #wrapcall=False, **kwargs):
         self._wrapcall = kwargs.pop('wrapcall', False) #wrapcall
@@ -144,7 +159,12 @@ class pipe(object):
 
     def __getattr__(self, name):
         return getattr(self.callable, name)
-call = pipe
+
+def pipe_alias(f, *names, **kwargs):
+    if isinstance(f, str):
+        return rpartial(pipe_alias, f, *names, **kwargs)
+    alias(pipe(f, **kwargs), *names)
+    return f
 
 
 def cblock(code, globs=None, locs=None):
@@ -157,6 +177,7 @@ def cblock(code, globs=None, locs=None):
         code = textwrap.dedent(code)
     exec(code, globs, locs)
     return locs
+
 
 def rename(obj, name=None, qualname=None):
     if name is None and qualname in (None, True, False):
@@ -511,18 +532,20 @@ def tail(s, n=10, wrap=True):
     print(''.join(s.splitlines(True)[-n:]))
 
 @pipe
-def more(s, h=24):
+def more(s, n=24):
     s = str(s).splitlines(True)
     while s:
-        hd, s = s[:h], s[h:]
+        hd, s = s[:n], s[n:]
         print(''.join(hd), end='')
         if s and input().lower() == 'q':
             break
 
+@pipe_alias('pr')
 def printr(o):
     print(o)
     return o
 
+@pipe_alias('pa')
 def printall(seq, end='\n'):
     for o in seq:
         print(o, end=end)
@@ -530,6 +553,7 @@ def printall(seq, end='\n'):
 _justs = {'left': str.ljust, 'right': str.rjust, 'center': str.center,
           '<': str.ljust, '>': str.rjust, '^': str.center}
 
+@pipe_alias('pc')
 def printcols(seq, rows=False, swidth=None, pad=2, just='left'):
     if not swidth:
         swidth, _ = shutil.get_terminal_size()
@@ -546,6 +570,7 @@ def printcols(seq, rows=False, swidth=None, pad=2, just='left'):
     for r in rows:
         print((' '*pad).join(just(s, width) for s in r).rstrip())
 
+@pipe_alias('p2d')
 def print2d(arr, pad=2, just='left'):
     just = _justs[just]
     arr = [[str(o) for o in r] for r in arr]
@@ -570,6 +595,7 @@ def _is_ordereddict(d):
         except AttributeError: pass
     return False
 
+@pipe_alias('pd')
 def printd(dct):
     if not hasattr(dct, 'keys'):
         dct = dict(dct)
@@ -699,16 +725,16 @@ def lwrap(f, name=None):
     _update_wrapper(f2, f, assigned, ())
     return f2
 
-##def lwrap_copy(name):
-##    def _lwrap_copy(f):
+##def lwrap_alias(name):
+##    def _lwrap_alias(f):
 ##        f2 = lwrap(f, name)
 ##        fglobals(1)[name] = f2
 ##        return f
-##    return _lwrap_copy
+##    return _lwrap_alias
 
-def lwrap_copy(f, name=None):
-    if isinstance(f, str):
-        return partial(lwrap_copy, name=f)
+def lwrap_alias(f=None, name=None):
+    if f is None or isinstance(f, str):
+        return partial(lwrap_alias, name=f or name)
     if name is None:
         name = 'l' + f.__name__
     f2 = lwrap(f, name)
@@ -717,7 +743,7 @@ def lwrap_copy(f, name=None):
 
 for f in (map, zip, range, filter, reversed, enumerate, islice,
           chunk, schunk, sbreak, unique, zmap, zmaps, rzip, renumerate):
-    lwrap_copy(f)
+    lwrap_alias(f)
 del f
 
 
@@ -737,6 +763,7 @@ def bchr(i):
 ##    return b'%c' % i
 ##    return chr(i).encode('latin-1')
 
+@pipe_alias('bp')
 def bprint(bts):
     if isinstance(bts, int):
         bts = bchr(bts)
@@ -792,6 +819,7 @@ def geom_mean(it, *args):
     l = list(it)
     return reduce(l, operator.mul) ** 1/len(l)
 
+@pipe_alias('fr')
 def frac(n, d=None, maxd=1000000):
     if d is not None and isinstance(n, (float, Decimal)):
         d, maxd = None, d
@@ -824,9 +852,8 @@ class VarSetter(object):
 
 v = VarSetter()
 
-c = pipe #call
+########
 im = i = pipe(impt, _depth=1)
-f = func
 l = pipe(list)
 ln = pipe(len)
 s = pipe(str)
@@ -835,20 +862,14 @@ j = pipe(lambda x: ''.join(map(str, x)))
 srt = pipe(sorted)
 p = cat = pipe(print)
 w = pipe(print, end='')
-pr = pipe(printr)
-bp = pipe(bprint)
 bf = lambda bits=8, sign=False, prefix=False: \
      pipe(lambda n: print(binfmt(n, bits, sign, prefix)))
 hf = lambda digs=8, sign=False, prefix=False: \
      pipe(lambda n: print(hexfmt(n, digs, sign, prefix)))
 pf = lambda p=4: pipe(lambda f: print('%.*g' % (p, f)))
-pa = pipe(printall)
 wa = pj = pipe(printall, end='')
 ps = pipe(printall, end=' ')
-pc = pipe(printcols)
 pcr = pipe(printcols, rows=True)
-p2d = pipe(print2d)
-pd = pipe(printd)
 hd = lambda n=10, wrap=True: pipe(head, n=n, wrap=wrap)
 tl = lambda n=10, wrap=True: pipe(tail, n=n, wrap=wrap)
 doc = pipe(inspect.getdoc)
@@ -858,7 +879,6 @@ src = pipe(lambda f: print(inspect.getsource(f)))
 d = pipe(dir)
 vrs = pipe(vars)
 tp = pipe(type)
-fr = pipe(frac)
 enum = pipe(lenumerate)
 mp = lambda f: pipe(lmap, f)
 stmp = lambda f: pipe(itertools.starmap, f)
@@ -887,8 +907,15 @@ def rn(obj=None, name=None, qualname=None):
         return pipe(rename, name=obj, qualname=qualname)
     return rename(obj, name, qualname)
 
+def reload(mod):
+    try:
+        mod.__dict__.clear()
+    except AttributeError:
+        pass
+    return _reload(mod)
+
 @pipe
-def r(*mods):
+def reloads(*mods):
     return tuple([reload(impt(m, 3)) for m in mods])
 
 @pipe
@@ -938,10 +965,16 @@ def decomp(o):
     print(unpyc3.decompile(o))
 
 
+def isbuiltinmod(mod):
+    if isinstance(mod, str):
+        mod = sys.modules[mod]
+    file = getattr(mod, '__file__', None)
+    return not file
+
 def isbuiltinclass(obj):
     if not isinstance(obj, type):
         obj = type(obj)
-    return hasattr(sys.modules.get(obj.__module__), '__file__')
+    return isbuiltinmod(obj.__module__)
 
 
 def setdisplayhook(func, typ=object):
@@ -1266,3 +1299,24 @@ class Summer:
     def __call__(self, x):
         self.s += x
         return self.s
+
+
+def print_overlay(it, delay=1.0, end=None, stream=None):
+    if delay:
+        it = delay_iter(it, delay, False)
+    w = 0
+    for x in it:
+        print('\b'*w + ' '*w + '\b'*w, end='', file=stream)
+        s = str(x)
+        w = len(s)
+        print(s, end='', flush=True, file=stream)
+    print(end=end, file=stream)
+
+def delay_iter(it, delay=1.0, first=False):
+    skipfirst = not first
+    for x in it:
+        if skipfirst:
+            skipfirst = False
+        else:
+            time.sleep(delay)
+        yield x
