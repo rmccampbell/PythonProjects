@@ -24,8 +24,8 @@ if _PY3:
     except ImportError: pass
     try: from math import gcd
     except ImportError: from fractions import gcd
-    try: from importlib import reload as _reload
-    except ImportError: from imp import reload as _reload
+    try: from importlib import reload as reload
+    except ImportError: from imp import reload as reload
     import urllib.request
     from urllib.request import urlopen
 
@@ -907,19 +907,12 @@ def rn(obj=None, name=None, qualname=None):
         return pipe(rename, name=obj, qualname=qualname)
     return rename(obj, name, qualname)
 
-def reload(mod):
-    try:
-        mod.__dict__.clear()
-    except AttributeError:
-        pass
-    return _reload(mod)
-
-@pipe
+@pipe_alias('r')
 def reloads(*mods):
     return tuple([reload(impt(m, 3)) for m in mods])
 
-@pipe
-def ia(*mods, **kwargs): # rel=False, _depth=0
+@pipe_alias('ia')
+def importall(*mods, **kwargs): # rel=False, _depth=0
     rel=kwargs.get('rel', False)
     _depth=kwargs.get('_depth', 0)
     mods = mods or (utils,)
@@ -930,10 +923,10 @@ def ia(*mods, **kwargs): # rel=False, _depth=0
         exec('from {} import *'.format(mod.__name__), globs)
     return mods
 
-ra = pipe(ia, rel=True, _depth=1)
+reloadall = ra = pipe(importall, rel=True, _depth=1)
 
-@pipe
-def ic(*objs, **kwargs): # rel=False, _depth=0
+@pipe_alias('ic')
+def importclass(*objs, **kwargs): # rel=False, _depth=0
     rel=kwargs.get('rel', False)
     _depth=kwargs.get('_depth', 0)
     robjs = []
@@ -950,7 +943,7 @@ def ic(*objs, **kwargs): # rel=False, _depth=0
         robjs.append(cls)
     return robjs
 
-rc = pipe(ic, rel=True, _depth=1)
+reloadclass = rc = pipe(importclass, rel=True, _depth=1)
 
 def clear_vars():
     d = fglobals(1)
@@ -1066,7 +1059,7 @@ def scipy():
     import scipy
     exec(pr('import scipy, scipy as sp\n'
             'import scipy.misc, scipy.special, scipy.ndimage, '
-            'scipy.integrate, scipy.signal'), fglobals(1))
+            'scipy.integrate, scipy.signal, scipy.constants'), fglobals(1))
     return scipy
 
 def pygame(init=True):
@@ -1136,6 +1129,12 @@ def ipy_resize(w=None):
     config.PlainTextFormatter.max_width = w - 8
     shell = IPython.core.interactiveshell.InteractiveShell.instance()
     shell.init_display_formatter()
+
+def np_resize(w=None):
+    import shutil, numpy as np
+    if not w:
+        w, _ = shutil.get_terminal_size()
+    np.set_printoptions(linewidth=w)
 
 
 def getdefault(seq, i, default=None):
