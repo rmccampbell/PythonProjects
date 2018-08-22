@@ -73,51 +73,9 @@ def fglobals(depth=0):
     return sys._getframe(depth + 1).f_globals
 
 
-@alias('f')
-def func(code, name=None, globs=None):
-    if globs is None:
-        globs = fglobals(1)
-    if name is None:
-        exclude = globs.copy()
-    if isinstance(code, str):
-        code = textwrap.dedent(code)
-
-    exec(code, globs)
-    if name is not None:
-        return globs[name]
-    else:
-        for n, v in sorted(globs.items()):
-            if not n.startswith('_') and (n, v) not in exclude.items():
-                return v
-        raise ValueError('nothing to return')
-
-
-@alias('impt')
-def autoimport(string, _depth=0):
-    if not isinstance(string, str): return string
-    globs = fglobals(_depth+1)
-
-    dotnames = re.findall(r'(?<!\.)\b[A-Za-z_]\w*(?:\.[A-Za-z_]\w*)*', string)
-    for dotname in dotnames:
-        names = dotname.split('.')
-        for i, name in enumerate(names):
-            try:
-                eval(dotname, globs)
-                break
-            except NameError as e:
-                try: globs[name] = __import__(name)
-                except ImportError: break
-            except AttributeError as e:
-                try: __import__('.'.join(names[:i+1]))
-                except ImportError: break
-    return eval(string, globs)
-
-
 @alias('call', 'c')
 class pipe(object):
-    def __init__(self, callable_, *args, **kwargs): #wrapcall=False, **kwargs):
-        self._wrapcall = kwargs.pop('wrapcall', False) #wrapcall
-
+    def __init__(self, callable_, *args, **kwargs):
         if args or kwargs:
             self.callable = partial(callable_, *args, **kwargs)
         else:
@@ -147,13 +105,13 @@ class pipe(object):
                 res = self.callable(other)
         else:
             res = self.callable(other)
-        if self._wrapcall and callable(res) and not isinstance(res, pipe):
+        if getattr(res, '_autocurrying', False):
             return pipe(res)
         return res
 
     def __call__(self, *args, **kwargs):
         res = self.callable(*args, **kwargs)
-        if self._wrapcall and callable(res) and not isinstance(res, pipe):
+        if getattr(res, '_autocurrying', False):
             return pipe(res)
         return res
 
@@ -167,12 +125,54 @@ def pipe_alias(f, *names, **kwargs):
     return f
 
 
+@alias('f')
+def func(code, name=None, globs=None):
+    if globs is None:
+        globs = fglobals(1)
+    if name is None:
+        exclude = globs.copy()
+    if isinstance(code, str):
+        code = textwrap.dedent(code)
+
+    exec(code, globs)
+    if name is not None:
+        return globs[name]
+    else:
+        for n, v in sorted(globs.items()):
+            if not n.startswith('_') and (n, v) not in exclude.items():
+                return v
+        raise ValueError('nothing to return')
+
+
+@pipe_alias('impt', 'im', 'i', _depth=1)
+def autoimport(string, _depth=0):
+    if not isinstance(string, str): return string
+    globs = fglobals(_depth+1)
+
+    dotnames = re.findall(r'(?<!\.)\b[A-Za-z_]\w*(?:\.[A-Za-z_]\w*)*', string)
+    for dotname in dotnames:
+        names = dotname.split('.')
+        for i, name in enumerate(names):
+            try:
+                eval(dotname, globs)
+                break
+            except NameError as e:
+                try: globs[name] = __import__(name)
+                except ImportError: break
+            except AttributeError as e:
+                try: __import__('.'.join(names[:i+1]))
+                except ImportError: break
+    return eval(string, globs)
+
+
 def cblock(code, globs=None, locs=None):
     #can see globals but won't modify them by default
     if globs is None:
         globs = fglobals(1)
     if locs is None:
         locs = {}
+    elif locs is True:
+        locs = globs
     if isinstance(code, str):
         code = textwrap.dedent(code)
     exec(code, globs, locs)
@@ -725,13 +725,6 @@ def lwrap(f, name=None):
     _update_wrapper(f2, f, assigned, ())
     return f2
 
-##def lwrap_alias(name):
-##    def _lwrap_alias(f):
-##        f2 = lwrap(f, name)
-##        fglobals(1)[name] = f2
-##        return f
-##    return _lwrap_alias
-
 def lwrap_alias(f=None, name=None):
     if f is None or isinstance(f, str):
         return partial(lwrap_alias, name=f or name)
@@ -848,12 +841,13 @@ ii = IIndexPipe()
 
 class VarSetter(object):
     def __getattr__(self, name):
-        return pipe(setl, name, depth=1)
+        return pipe(setl, name, _depth=1)
+    def __call__(self, n, v=None):
+        return setl(n, v, 1) if v else pipe(setl, n, _depth=1)
 
-v = VarSetter()
+sv = VarSetter()
 
-########
-im = i = pipe(impt, _depth=1)
+
 l = pipe(list)
 ln = pipe(len)
 s = pipe(str)
@@ -888,7 +882,6 @@ dkflt = lambda f=None: pipe(dkfilter, cond=f)
 dmp = lambda f: pipe(dmap, func=f)
 dkmp = lambda f: pipe(dkmap, func=f)
 dvmp = lambda f: pipe(dvmap, func=f)
-sv = lambda n, v=None: setl(n, v, 1) if v else pipe(setl, n, depth=1)
 sch = lambda s: pipe(search, s=s)
 dsch = lambda s: pipe(dsearch, s=s)
 dvsch = lambda s: pipe(dvsearch, s=s)
@@ -909,15 +902,16 @@ def rn(obj=None, name=None, qualname=None):
 
 @pipe_alias('r')
 def reloads(*mods):
-    return tuple([reload(impt(m, 3)) for m in mods])
+    return tuple([reload(autoimport(m, 3)) for m in mods])
 
-@pipe_alias('ia')
+@pipe_alias('ia', _depth=1)
 def importall(*mods, **kwargs): # rel=False, _depth=0
     rel=kwargs.get('rel', False)
     _depth=kwargs.get('_depth', 0)
     mods = mods or (utils,)
-    globs = fglobals(_depth + 2)
-    mods = tuple([impt(m, _depth + 3) for m in mods])
+    globs = fglobals(_depth + 1)
+    # _depth + 2 because of comprehension
+    mods = tuple([autoimport(m, _depth + 2) for m in mods])
     for mod in mods:
         if rel: reload(mod)
         exec('from {} import *'.format(mod.__name__), globs)
@@ -925,15 +919,15 @@ def importall(*mods, **kwargs): # rel=False, _depth=0
 
 reloadall = ra = pipe(importall, rel=True, _depth=1)
 
-@pipe_alias('ic')
+@pipe_alias('ic', _depth=1)
 def importclass(*objs, **kwargs): # rel=False, _depth=0
     rel=kwargs.get('rel', False)
     _depth=kwargs.get('_depth', 0)
     robjs = []
-    globs = fglobals(_depth + 2)
+    globs = fglobals(_depth + 1)
     cache = set()
     for cls in objs:
-        cls = impt(cls, _depth + 2)
+        cls = autoimport(cls, _depth + 1)
         if rel:
             mod = sys.modules[cls.__module__]
             if mod not in cache:
