@@ -8,6 +8,7 @@ _PY3 = sys.version_info[0] >= 3
 import os, collections, functools, itertools, operator, types, math, cmath, re
 import io, random, inspect, textwrap, dis, timeit, time, datetime, string
 import fractions, decimal, unicodedata, codecs, locale, shutil, numbers
+import subprocess
 from math import pi, e, sqrt, exp, log, log10, floor, ceil, factorial, \
      sin, cos, tan, asin, acos, atan, atan2
 inf = float('inf')
@@ -24,8 +25,8 @@ if _PY3:
     except ImportError: pass
     try: from math import gcd
     except ImportError: from fractions import gcd
-    try: from importlib import reload as reload
-    except ImportError: from imp import reload as reload
+    try: from importlib import reload
+    except ImportError: from imp import reload
     import urllib.request
     from urllib.request import urlopen
 
@@ -81,10 +82,8 @@ class pipe(object):
         else:
             self.callable = callable_
 
-        if isinstance(callable_, (type, pipe)):
-            updated = ()
-        else:
-            updated = functools.WRAPPER_UPDATES
+        updated = (() if isinstance(callable_, (type, pipe))
+                   else functools.WRAPPER_UPDATES)
         try:
             _update_wrapper(self, callable_, updated=updated)
         except AttributeError:
@@ -616,6 +615,13 @@ def rdict(dct):
         return OrderedDict((v, k) for k, v in dct.items())
     return {v: k for k, v in dct.items()}
 
+@pipe
+def rdictall(dct):
+    res = {}
+    for k, v in dct.items():
+        res.setdefault(v, []).append(k)
+    return res
+
 def dfind(dct, val):
     return {k for k, v in dct.items() if v == val}
 
@@ -711,8 +717,7 @@ def renumerate(seq):
 
 
 def lists(its):
-    return [list(it) if isinstance(it, functools2.NonStrIter) else it
-            for it in its]
+    return [list(it) for it in its]
 
 
 def lwrap(f, name=None):
@@ -1090,6 +1095,12 @@ def pandas():
     exec(pr('import pandas as pd'), fglobals(1))
     return pandas
 
+def argparse():
+    import argparse
+    exec(pr('import argparse\n'
+            'p = argparse.ArgumentParser()'), fglobals(1))
+    return argparse
+
 
 def qenum_name(x):
     if 'PyQt4' in sys.modules:
@@ -1123,12 +1134,14 @@ def ipy_resize(w=None):
     config.PlainTextFormatter.max_width = w - 8
     shell = IPython.core.interactiveshell.InteractiveShell.instance()
     shell.init_display_formatter()
+    return w
 
 def np_resize(w=None):
     import shutil, numpy as np
     if not w:
         w, _ = shutil.get_terminal_size()
     np.set_printoptions(linewidth=w)
+    return w
 
 
 def getdefault(seq, i, default=None):

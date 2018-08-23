@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-import sys, os, argparse, subprocess, shlex
+import sys, os, argparse, subprocess, shlex, shutil
 
 def winsplit(s=None):
     lex = shlex.shlex(s, posix=True)
@@ -17,8 +17,10 @@ if __name__ == '__main__':
     parser.add_argument('-N', '--newline', dest='delimiter',
                         action='store_const', const='\n')
     parser.add_argument('-0', '--null', dest='delimiter',
-                        action='store_const', const='\0')
+                        action='store_const', const='\x00')
     parser.add_argument('-I', '--replace')
+    parser.add_argument('-i', dest='replace', action='store_const', const='{}')
+    parser.add_argument('-S', '--shell', action='store_true')
     args = parser.parse_args()
 
     command = args.command or ['echo']
@@ -43,5 +45,10 @@ if __name__ == '__main__':
         while xargs and args.replace in command:
             command[command.index(args.replace)] = xargs.pop(0)
 
-    shell = os.name == 'nt' # Pass command to shell on windows
-    subprocess.call(command + xargs, shell=shell, stdin=stdin)
+    if os.name == 'nt' and not args.shell:
+        whichcmd = shutil.which(command[0])
+        ext = os.path.splitext(whichcmd)[1].lower()
+        if ext in ('.py', '.pyw'):
+            command[:1] = [sys.executable, whichcmd]
+
+    subprocess.call(command + xargs, shell=args.shell, stdin=stdin)
