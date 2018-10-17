@@ -40,7 +40,7 @@ def hconcat(*strings):
 
 def decode(n):
     return ''.join(
-        c if not d.isdigit() or n >> int(d) & 1 == 1 else ' '
+        c if (not d.isdigit()) or (n >> int(d) & 1) else ' '
         for c, d in zip(PATTERN, TEMPLATE)
     )
 

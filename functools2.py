@@ -1,12 +1,12 @@
-import functools, itertools, inspect, random, operator, threading, time
+import functools, itertools, collections, inspect, random, operator
+import threading, time
 from functools import partial, total_ordering
-from collections import Iterable, Iterator, deque
+from collections import Iterable, deque
 from itertools import islice, groupby, chain, combinations
 try:
     from itertools import zip_longest
 except ImportError:
     from itertools import izip_longest as zip_longest
-
 
 class Sentinel(object):
     def __init__(self, repr=None):
@@ -14,7 +14,7 @@ class Sentinel(object):
     def __repr__(self):
         return self._repr or super().__repr__()
 
-_none = Sentinel('<empty>')
+_empty = Sentinel('<empty>')
 
 
 class NonStrIter(Iterable):
@@ -130,14 +130,14 @@ def repeated(func, n):
         f = (lambda f=f: lambda x: func(f(x)))()
     return f
 
-def iterfunc(func, init, cond=None, stop=_none):
+def iterfunc(func, init, cond=None, stop=_empty):
     if isinstance(cond, int):
         for i in range(cond):
             yield init
             init = func(init)
         return
     cond = cond or (lambda x: True)
-    if stop is not _none:
+    if stop is not _empty:
         cond = lambda init: init != stop
     while cond(init):
         yield init
@@ -151,12 +151,13 @@ def trycall(func, default=None, exc=Exception, args=(), kwargs=None):
         return default
 
 def trywrap(func, default=None, exc=Exception):
+    @wraps_signature(func)
     def f(*args, **kwargs):
         try:
             return func(*args, **kwargs)
         except exc:
             return default
-    return update_wrapper_signature(f, func)
+    return f
 
 
 def tryiter(func, exc=Exception):
@@ -285,8 +286,8 @@ def unique(it):
             seen_add(x)
             yield x
 
-def take(it, num, default=_none):
-    if default is not _none:
+def take(it, num, default=_empty):
+    if default is not _empty:
         it = chain(it, itertools.repeat(default))
     return list(islice(it, num))
 
@@ -295,38 +296,52 @@ def pad(seq, num, default=None):
     seq += [default]*(num - len(seq))
     return seq
 
-def chunk(seq, size=2, fill=_none, partial=True):
+def chunk(seq, size=2, fill=_empty, partial=True):
     """Groups input iterator into equally sized chunks"""
-    if fill is _none:
-        if partial:
-            def _chunk(seq, size):
-                it = iter(seq)
+    if fill is not _empty:
+        return zip_longest(*(iter(seq),)*size, fillvalue=fill)
+    if partial:
+        def _chunk(seq, size):
+            it = iter(seq)
+            chunk = tuple(islice(it, size))
+            while chunk:
+                yield chunk
                 chunk = tuple(islice(it, size))
-                while chunk:
-                    yield chunk
-                    chunk = tuple(islice(it, size))
-            return _chunk(seq, size)
-        return zip(*(iter(seq),)*size)
-    return zip_longest(*(iter(seq),)*size, fillvalue=fill)
+        return _chunk(seq, size)
+    return zip(*(iter(seq),)*size)
 
-def window(seq, size=2, step=1, fill=None):
+def window(seq, size=2, step=1, fill=_empty, partial=True):
     it = iter(seq)
-    window = deque(maxlen=size)
-    newelts = take(it, size, fill)
-    while newelts:
-        window.extend(pad(newelts, step, fill))
-        yield tuple(window)
+    window = deque(take(it, size), maxlen=size)
+    while window:
+        if fill is not _empty:
+            yield tuple(pad(window, size, fill))
+        elif partial or len(window) == size:
+            yield tuple(window)
         newelts = take(it, step)
+        if not newelts or step - len(newelts) > size:
+            break
+        window.extend(newelts)
+        for i in range(step - len(newelts)):
+            window.popleft()
 
-def iflatten(it, types=NonStrIter):
-    types = types or NonStrIter
+_exclude = (str, bytes, bytearray, dict)
+
+def iflatten(it, types=None, exclude=None):
+    exclude = exclude or (_exclude if types is None else ())
+    types = types or Iterable
     return (b for a in it for b in
-            (iflatten(a, types) if isinstance(a, types) else (a,)))
+            (iflatten(a, types)
+             if isinstance(a, types) and not isinstance(a, exclude)
+             else (a,)))
 
-def flatten(lst, types=(list, tuple)):
-    types = types or NonStrIter
+def flatten(lst, types=(list, tuple), exclude=None):
+    exclude = exclude or (_exclude if types is None else ())
+    types = types or Iterable
     return [b for a in lst for b in
-            (flatten(a, types) if isinstance(a, types) else (a,))]
+            (flatten(a, types)
+             if isinstance(a, types) and not isinstance(a, exclude)
+             else (a,))]
 
 _copyable = (list, tuple, set, frozenset, str, bytes, bytearray)
 
@@ -538,45 +553,6 @@ def bogobogosort(l):
     return l
 
 
-class view:
-    def __init__(self, seq, start=None, stop=None, step=1):
-        self.seq = seq
-        if isinstance(start, slice):
-            slc = start
-        else:
-            slc = slice(start, stop, step)
-        self.start, self.stop, self.step = slc.indices(len(seq))
-        self.len = max(0, -(-(self.stop - self.start) // self.step))
-    def __len__(self):
-        return self.len
-    def __iter__(self):
-        seq = self.seq
-        for i in range(self.start, self.stop, self.step):
-            yield seq[i]
-    def _get_slice(self, slc):
-        istart, istop, istep = slc.indices(self.len)
-        start = self.start + self.step*istart
-        stop = self.start + self.step*istop
-        return slice(start, stop if stop >= 0 else None, self.step*istep)
-    def _get_ind(self, i):
-        if i < 0:
-            i += self.len
-        if not 0 <= i < self.len:
-            raise IndexError
-        return self.start + self.step*i
-    def __getitem__(self, i):
-        if isinstance(i, slice):
-            return view(self.seq, self._get_slice(i))
-        return self.seq[self._get_ind(i)]
-    def __setitem__(self, i, val):
-        if isinstance(i, slice):
-            self.seq[self._get_slice(i)] = val
-            return
-        self.seq[self._get_ind(i)] = val
-    def __repr__(self):
-        return '<view({})>'.format(list(self))
-
-
 def ilen(it):
     return sum(1 for x in it)
 
@@ -592,19 +568,19 @@ def iindex(it, idx):
         raise IndexError
 
 
-def first(it, default=_none):
+def first(it, default=_empty):
     for x in it:
         return x
-    if default is not _none:
+    if default is not _empty:
         return default
     raise IndexError
 
-def last(it, default=_none):
+def last(it, default=_empty):
     empty = True
     for x in it:
         empty = False
     if empty:
-        if default is not _none:
+        if default is not _empty:
             return default
         raise IndexError
     return x
@@ -751,7 +727,7 @@ def subset_i(i):
 
 def subsets(n=None, m=None):
     for i in count(0, m):
-        if i.bit_length() == n + 1:
+        if n is not None and i.bit_length() == n + 1:
             break
         yield subset_i(i)
 
@@ -765,6 +741,15 @@ def strings(alphabet, n=None, m=None):
             j += 1
         if j == m:
             break
+
+##def multiset_i(i):
+##    return primes.pfactor(i + 1)
+##
+##def multisets(m=None):
+##    i = 0
+##    while m is None or i < m:
+##        yield multiset_i(i)
+##        i += 1
 
 ##def multisets(m=None):
 ##    for i in count(0, m):
@@ -782,11 +767,6 @@ def strings(alphabet, n=None, m=None):
 ##        l.extend([b]*(n+1))
 ##    return l
 ##
-##def multisets(m=None):
-##    x = 0
-##    while m is None or i < m:
-##        yield multiset_i(i)
-##        x += 1
 
 
 def powerset(iterable):

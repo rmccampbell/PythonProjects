@@ -401,7 +401,7 @@ def bytesfrombin(s):
     return bytes(int(bits, 2) for bits in schunk(''.join(s.split()), 8))
 
 def strfrombin(s, enc='utf-8'):
-    return bytes_frombin(s).decode(enc)
+    return bytesfrombin(s).decode(enc)
 
 def strfromhex(s, enc='utf-8'):
     return bytes.fromhex(s).decode(enc)
@@ -545,9 +545,9 @@ def printr(o):
     return o
 
 @pipe_alias('pa')
-def printall(seq, end='\n'):
+def printall(seq, sep='\n'):
     for o in seq:
-        print(o, end=end)
+        print(o, end=sep)
 
 _justs = {'left': str.ljust, 'right': str.rjust, 'center': str.center,
           '<': str.ljust, '>': str.rjust, '^': str.center}
@@ -866,8 +866,8 @@ bf = lambda bits=8, sign=False, prefix=False: \
 hf = lambda digs=8, sign=False, prefix=False: \
      pipe(lambda n: print(hexfmt(n, digs, sign, prefix)))
 pf = lambda p=4: pipe(lambda f: print('%.*g' % (p, f)))
-wa = pj = pipe(printall, end='')
-ps = pipe(printall, end=' ')
+wa = pj = pipe(printall, sep='')
+ps = pipe(printall, sep=' ')
 pcr = pipe(printcols, rows=True)
 hd = lambda n=10, wrap=True: pipe(head, n=n, wrap=wrap)
 tl = lambda n=10, wrap=True: pipe(tail, n=n, wrap=wrap)
@@ -909,6 +909,7 @@ def rn(obj=None, name=None, qualname=None):
 def reloads(*mods):
     return tuple([reload(autoimport(m, 3)) for m in mods])
 
+@pipe_alias('reloadall', 'ra', rel=True, _depth=1)
 @pipe_alias('ia', _depth=1)
 def importall(*mods, **kwargs): # rel=False, _depth=0
     rel=kwargs.get('rel', False)
@@ -922,8 +923,9 @@ def importall(*mods, **kwargs): # rel=False, _depth=0
         exec('from {} import *'.format(mod.__name__), globs)
     return mods
 
-reloadall = ra = pipe(importall, rel=True, _depth=1)
+# reloadall = ra = pipe(importall, rel=True, _depth=1)
 
+@pipe_alias('reloadclass', 'rc', rel=True, _depth=1)
 @pipe_alias('ic', _depth=1)
 def importclass(*objs, **kwargs): # rel=False, _depth=0
     rel=kwargs.get('rel', False)
@@ -942,7 +944,18 @@ def importclass(*objs, **kwargs): # rel=False, _depth=0
         robjs.append(cls)
     return robjs
 
-reloadclass = rc = pipe(importclass, rel=True, _depth=1)
+# reloadclass = rc = pipe(importclass, rel=True, _depth=1)
+
+@pipe_alias('ifr', _depth=1)
+def importfrom(*mods, **kwargs):
+    _depth=kwargs.get('_depth', 0)
+    globs = fglobals(_depth + 1)
+    # _depth + 2 because of comprehension
+    mods = tuple([autoimport(m, _depth + 2) for m in mods])
+    for mod in mods:
+        globs[mod.__name__.split('.')[-1]] = mod
+    return mods
+
 
 def clear_vars():
     d = fglobals(1)
@@ -951,10 +964,10 @@ def clear_vars():
             del d[n]
 
 
-@pipe
-def decomp(o):
-    import unpyc3
-    print(unpyc3.decompile(o))
+##@pipe
+##def decomp(o):
+##    import unpyc3
+##    print(unpyc3.decompile(o))
 
 
 def isbuiltinmod(mod):
@@ -996,15 +1009,22 @@ def cd(path=None):
     return os.getcwd()
 
 
-
-
-
 ### Module import shortcuts ###
 
+class lazy_loader:
+    def __init__(self, func):
+        self.func = func
+    def __call__(self, *args, **kwargs):
+        return self.func(*args, **kwargs)
+    def __getattr__(self, name):
+        return getattr(self.func(), name)
+
+
+@lazy_loader
 def np():
     import numpy
     exec(pr('import numpy, numpy as np\n'
-            'np.set_printoptions(suppress=True)'), fglobals(1))
+            'np.set_printoptions(suppress=True)'), fglobals(2))
     return numpy
 
 def qt4():
@@ -1057,7 +1077,7 @@ def sympy():
 def scipy():
     import scipy
     exec(pr('import scipy, scipy as sp\n'
-            'import scipy.misc, scipy.special, scipy.ndimage, '
+            'import scipy.misc, scipy.special, scipy.ndimage, scipy.sparse, '
             'scipy.integrate, scipy.signal, scipy.constants'), fglobals(1))
     return scipy
 
@@ -1101,6 +1121,8 @@ def argparse():
             'p = argparse.ArgumentParser()'), fglobals(1))
     return argparse
 
+
+################
 
 def qenum_name(x):
     if 'PyQt4' in sys.modules:
@@ -1224,8 +1246,8 @@ def execfile(file):
 
 
 @pipe
-def thousands(n):
-    return format(n, '_')
+def thousands(n, sep='_'):
+    return format(n, '_').replace('_', sep)
 
 
 def prunicode(s):
@@ -1307,7 +1329,7 @@ class Summer:
         return self.s
 
 
-def print_overlay(it, delay=1.0, end=None, stream=None):
+def print_updating(it, delay=1.0, end=None, stream=None):
     if delay:
         it = delay_iter(it, delay, False)
     w = 0

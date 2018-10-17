@@ -1859,3 +1859,44 @@ class NamedProp(property):
         return '<property {} at 0x{:0{}X}>'.format(
             self.__qualname__ or 'object', id(self), bits//4)
 
+
+
+class view:
+    def __init__(self, seq, start=None, stop=None, step=1):
+        self.seq = seq
+        if isinstance(start, slice):
+            slc = start
+        else:
+            slc = slice(start, stop, step)
+        self.start, self.stop, self.step = slc.indices(len(seq))
+        self.len = max(0, -(-(self.stop - self.start) // self.step))
+    def __len__(self):
+        return self.len
+    def __iter__(self):
+        seq = self.seq
+        for i in range(self.start, self.stop, self.step):
+            yield seq[i]
+    def _get_slice(self, slc):
+        istart, istop, istep = slc.indices(self.len)
+        start = self.start + self.step*istart
+        stop = self.start + self.step*istop
+        return slice(start if start >= 0 else -sys.maxsize-1,
+                     stop if stop >= 0 else -sys.maxsize-1, self.step*istep)
+    def _get_ind(self, i):
+        if i < 0:
+            i += self.len
+        if not 0 <= i < self.len:
+            raise IndexError
+        return self.start + self.step*i
+    def __getitem__(self, i):
+        if isinstance(i, slice):
+            return view(self.seq, self._get_slice(i))
+        return self.seq[self._get_ind(i)]
+    def __setitem__(self, i, val):
+        if isinstance(i, slice):
+            self.seq[self._get_slice(i)] = val
+            return
+        self.seq[self._get_ind(i)] = val
+    def __repr__(self):
+        return '<view({})>'.format(list(self))
+

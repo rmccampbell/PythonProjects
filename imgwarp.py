@@ -1,30 +1,40 @@
 import numpy as np
+##from scipy.ndimage import map_coordinates
 
-def warp(img, func, scale=(1, 1), clip=False, wrap=False, reflect=False):
-    w, h, *rest = img.shape
-    dim = round(w*scale[0]), round(h*scale[1])
-    dstx, dsty = np.indices(dim)
-    srcx, srcy = func(dstx, dsty)
-    srcx = srcx.round().astype(int)
+def warp(img, func, scale=1, center=False, clip=False, wrap=False,
+         reflect=False):
+    h, w, *rest = img.shape
+    if np.isscalar(scale):
+        scalew = scaleh = scale
+    else:
+        scalew, scaleh = scale
+    dim2 = h2, w2 = round(h*scaleh), round(w*scalew)
+    dsty, dstx = y, x = np.indices(dim2)
+    if center:
+        y, x = y - (h2-1)/2, x - (w2-1)/2
+    srcx, srcy = func(x, y)
+    if center:
+        srcy, srcx = srcy + (h-1)/2, srcx + (w-1)/2
     srcy = srcy.round().astype(int)
+    srcx = srcx.round().astype(int)
     if reflect:
-        srcx %= 2*w
         srcy %= 2*h
-        xmask = srcx >= w
-        srcx[xmask] = 2*w - 1 - srcx[xmask]
+        srcx %= 2*w
         ymask = srcy >= h
         srcy[ymask] = 2*h - 1 - srcy[ymask]
+        xmask = srcx >= w
+        srcx[xmask] = 2*w - 1 - srcx[xmask]
     elif wrap:
-        srcx %= w
         srcy %= h
+        srcx %= w
     elif clip:
-        srcx = srcx.clip(0, w - 1)
-        srcy = srcy.clip(0, h - 1)
+        srcy.clip(0, h - 1, srcy)
+        srcx.clip(0, w - 1, srcx)
     else:
-        mask = ((srcx >= 0) & (srcx < w) & (srcy >= 0) & (srcy < h))
-        dstx, dsty = dstx[mask], dsty[mask]
-        srcx, srcy = srcx[mask], srcy[mask]
-    out = np.zeros(dim + tuple(rest), img.dtype)
-    out[dstx, dsty] = img[srcx, srcy]
+        mask = ((srcy >= 0) & (srcy < h) & (srcx >= 0) & (srcx < w))
+        dsty, dstx = dsty[mask], dstx[mask]
+        srcy, srcx = srcy[mask], srcx[mask]
+    out = np.zeros(dim2 + tuple(rest), img.dtype)
+    out[dsty, dstx] = img[srcy, srcx]
+##    out[dsty, dstx] = map_coordinates(img, (srcy, srcx))
     return out
-
