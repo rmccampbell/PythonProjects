@@ -2,6 +2,8 @@
 import sys, os, random, threading
 import pygame as pg
 
+inf = float('inf')
+
 DEBUG = False
 
 ### If you set BLACK_CPU to False, you can play in 2-player mode.
@@ -9,10 +11,10 @@ DEBUG = False
 WHITE_CPU = False
 BLACK_CPU = True
 
-### If you set MAXIMIN_DEPTH to 4, it will get harder in theory. It will
+### If you set MINIMAX_DEPTH to 4, it will get harder in theory. It will
 ### also get a lot slower.
 ### Warning: don't set it higher than 4 or it will take forever. 
-MAXIMIN_DEPTH = 3
+MINIMAX_DEPTH = 4
 
 # PyInstaller
 if getattr(sys, 'frozen', False):
@@ -82,7 +84,7 @@ class Game:
     title_image = None
 
     def __init__(self, white_cpu=WHITE_CPU, black_cpu=BLACK_CPU,
-                 maximin_depth=MAXIMIN_DEPTH):
+                 minimax_depth=MINIMAX_DEPTH):
         pg.init()
         pg.display.set_icon(load_image('chess_icon', False))
         pg.display.set_caption('Chess')
@@ -91,7 +93,7 @@ class Game:
         self.font1 = pg.font.Font(FONTFILE, 28)
         self.font2 = pg.font.Font(FONTFILE, 40)
         self.is_cpu = [white_cpu, black_cpu]
-        self.maximin_depth = maximin_depth
+        self.minimax_depth = minimax_depth
         self.title()
         self.running = False
         # self.run()
@@ -399,30 +401,34 @@ class Game:
 
     def cpu_move_compute(self):
         board = [row[:] for row in self.board]
-        max_move, max_score = self.maximin(board, self.turn, self.maximin_depth)
+        max_move, max_score = self.minimax(board, self.turn, self.minimax_depth)
         if DEBUG: print('max move: %s -> %s: %s' % (*max_move, max_score))
         self.cpu_move_result = max_move
         self.cpu_move_complete = True
 
-    def maximin(self, board, turn, depth):
+    def minimax(self, board, turn, depth, alpha=-inf, beta=inf):
         if depth == 0:
             return None, self.score_board(board, turn)
         max_move = None
-        max_score = -999999
+        max_score = -inf
         for src, piece in self.enum_pieces(turn, board):
             for dest in piece.enum_moves(src, board):
-                if DEBUG and depth == self.maximin_depth:
-                    print('maximin d=%s, %s -> %s: ' % (depth, src, dest),
-                          end='', flush=True)
-                score = self.maximin_move(board, turn, src, dest, depth)
-                if DEBUG and depth == self.maximin_depth:
+                if DEBUG and depth == self.minimax_depth:
+                    print('minimax d=%s, %s -> %s: ' % (depth, src, dest), end='', flush=True)
+                score = self.minimax_move(
+                    board, turn, src, dest, depth, alpha, beta)
+                if DEBUG and depth == self.minimax_depth:
                     print(score)
                 if score > max_score:
                     max_score = score
                     max_move = (src, dest)
+                    if max_score > alpha:
+                        alpha = max_score
+                        if alpha >= beta:
+                            return max_move, max_score
         return max_move, max_score
 
-    def maximin_move(self, board, turn, src, dest, depth):
+    def minimax_move(self, board, turn, src, dest, depth, alpha, beta):
         (sx, sy), (dx, dy) = src, dest
         src_piece = board[sx][sy]
         dest_piece = board[dx][dy]
@@ -432,7 +438,7 @@ class Game:
         board[dx][dy] = src_piece
         if src_piece.type == PAWN and dy in (0, 7):
             board[dx][dy] = Piece(src_piece.side, QUEEN)
-        move, score = self.maximin(board, 1 - turn, depth - 1)
+        move, score = self.minimax(board, 1 - turn, depth - 1, -beta, -alpha)
         board[sx][sy] = src_piece
         board[dx][dy] = dest_piece
         return -score
@@ -597,14 +603,14 @@ def getside(piece):
 
 def main():
     white_cpu, black_cpu = WHITE_CPU, BLACK_CPU
-    maximin_depth = MAXIMIN_DEPTH
+    minimax_depth = MINIMAX_DEPTH
     if len(sys.argv) > 2:
         white_cpu = bool(int(sys.argv[1]))
         black_cpu = bool(int(sys.argv[2]))
     if len(sys.argv) > 3:
-        maximin_depth = int(sys.argv[3])
+        minimax_depth = int(sys.argv[3])
     try:
-        game = Game(white_cpu, black_cpu, maximin_depth)
+        game = Game(white_cpu, black_cpu, minimax_depth)
         game.run()
     finally:
         pg.quit()
