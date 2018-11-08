@@ -1,19 +1,23 @@
 #!/usr/bin/env python3
-import sys, os, argparse, urllib.request, re, mimetypes
+import sys, os, argparse, urllib.request, urllib.parse, re, mimetypes
 
 CHUNK = 0x4000
 
 EXTS = 'mp4|mov|flv|webm|ogg'
 PATTERN = r'["=](http[^";?]+\.(?:%s)\b[^";]*)(?:"|&amp;)'
 
-def main(url, file=None, num=None, lst=False, urlonly=False, exts=EXTS):
+def main(url, file=None, num=None, list_urls=False, url_only=False,
+         force_download=False, size_only=False, exts=EXTS):
+    url = urllib.parse.unquote(url)
     if '//' not in url:
         url = 'http://' + url
-    url = urllib.parse.unquote(url)
-    req = urllib.request.Request(url, headers={'User-Agent': 'Chrome'})
+    method = 'HEAD' if size_only and force_download else 'GET'
+    headers = {'User-Agent': 'Chrome'}
+    req = urllib.request.Request(url, headers=headers, method=method)
     resp = urllib.request.urlopen(req)
-    if resp.headers.get_content_type() == 'text/html':
-        if num is not None and not lst and not urlonly:
+    ctype = resp.headers.get_content_type()
+    if not force_download and ctype == 'text/html':
+        if num is not None and not list_urls and not url_only:
             print('Fetching video url #%d from %s...' % (num, url))
         en = resp.headers.get_content_charset('iso-8859-1')
         with resp:
@@ -30,13 +34,13 @@ def main(url, file=None, num=None, lst=False, urlonly=False, exts=EXTS):
         if num is None:
             num = 0
             if len(urls) > 1:
-                lst = True
-        if lst:
-            if not urlonly:
+                list_urls = True
+        if list_urls:
+            if not url_only:
                 print('Videos found at %s:' % url)
             for i, u in enumerate(urls):
-                print(u if urlonly else '%d: %s' % (i, u))
-            if urlonly:
+                print(u if url_only else '%d: %s' % (i, u))
+            if url_only:
                 return
             n = input('Download video #: ')
             if not n:
@@ -47,13 +51,21 @@ def main(url, file=None, num=None, lst=False, urlonly=False, exts=EXTS):
         except IndexError:
             print('Video #%d could not be found at %s' % (num, url))
             return
-        if urlonly:
+        if url_only:
             print(url)
             return
         print('Found video:', url)
-        resp = urllib.request.urlopen(url)
-    elif urlonly:
+        method = 'HEAD' if size_only else 'GET'
+        req = urllib.request.Request(url, headers=headers, method=method)
+        resp = urllib.request.urlopen(req)
+    elif url_only:
         print(url)
+        resp.close()
+        return
+
+    if size_only:
+        print(resp.headers.get('Content-Length', 'unknown size'))
+        resp.close()
         return
 
     if file is None or os.path.isdir(file):
@@ -102,10 +114,12 @@ if __name__ == '__main__':
     p.add_argument('-n', '--vidnum', type=int)
     p.add_argument('-l', '--list', action='store_true')
     p.add_argument('-u', '--url-only', action='store_true')
+    p.add_argument('-d', '--force-download', action='store_true')
+    p.add_argument('-s', '--size', action='store_true')
     p.add_argument('-x', '--exts', default=EXTS)
     args = p.parse_args()
     try:
         main(args.url, args.file, args.vidnum, args.list, args.url_only,
-             args.exts)
+             args.force_download, args.size, args.exts)
     except Exception as e:
         print('%s: %s' % (type(e).__name__, e))

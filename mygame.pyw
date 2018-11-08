@@ -40,7 +40,7 @@ def oppaxis(axis):
 
 
 ## UTILITY FUNCTIONS
-def load_image(name, colorkey = (255, 0, 255)):
+def load_image(name, colorkey=(255, 0, 255)):
     base = os.path.dirname(__file__)
     fullname = os.path.join(base, 'images', name + '.png')
     image = pygame.image.load(fullname)
@@ -54,7 +54,7 @@ def load_image(name, colorkey = (255, 0, 255)):
 
 ## CORE CLASSES
 class Animation(list):
-    def __init__(self, image, length = 1, offset = (0,0), speed = 1):
+    def __init__(self, image, length=1, offset=(0, 0), speed=1):
         self.name = None
         if not isinstance(image, pygame.Surface):
             self.name = image
@@ -68,7 +68,7 @@ class Animation(list):
         for i in range(length):
             self.append(image.subsurface(i * width, 0, width, height))
 
-    def get_rect(self, pos = (0, 0)):
+    def get_rect(self, pos=(0, 0)):
         x, y = pos
         offsetx, offsety = self.offset
         return pygame.Rect(x - offsetx, y - offsety,
@@ -102,9 +102,15 @@ class Character(pygame.sprite.Sprite):
         self.move_locked = 0
         self.action_locked = 0
         self.dir_locked = 0
+        self.death_timer = 0
         self.boundrect = self.BOUNDRECT.move(pos)
 
     def update(self):
+        if self.death_timer:
+            self.death_timer -= 1
+            if self.death_timer == 0:
+                self.despawn()
+                return
         if self.move_locked:
             self.move_locked -= 1
 ##            if self.move_locked == 0:
@@ -132,9 +138,17 @@ class Character(pygame.sprite.Sprite):
             self.pos[Y] += self.speed[Y]
 
     def take_damage(self):
-        self.set_anim(self.ANIMS['die'])
-        self.action_locked = 26
         print(self, 'damaged')
+        self.die()
+
+    def die(self):
+        print(self, 'died')
+        self.set_anim(self.ANIMS['die'])
+        self.action_locked = self.death_timer = 26
+
+    def despawn(self):
+        print(self, 'despawned')
+        self.kill()
 
     def test_collision_with(self, other, offset=(0, 0)):
         rect = self.boundrect.move(*offset)
@@ -243,9 +257,9 @@ class Player(Character):
                 Animation('linkwalkingback', 10, (16, 24)),
             ],
             attack = [
-                Animation('linkswordright', 9, (21, 35)),
+                Animation('linkswordright', 9, (24, 40)),
                 Animation('linkswordfront', 9, (24, 40)),
-                Animation('linkswordleft', 9, (21, 35)),
+                Animation('linkswordleft', 9, (24, 40)),
                 Animation('linkswordback', 9, (24, 24)),
             ],
         )
@@ -369,26 +383,6 @@ class NPC(Character):
     def __init__(self, pos, game=None, *groups):
         super().__init__(pos, game, *groups)
 
-    @classmethod
-    def spawn(cls, area=None, game=None, *groups):
-        if area is None:
-            area = game.screen.get_rect()
-        step = cls.BASESPEED
-        while True:
-            char = cls((random.randrange(area.x, area.right, step),
-                        random.randrange(area.y, area.bottom, step)),
-                       game, *groups)
-            if char.test_collisions():
-                char.remove(*groups)
-            else:
-                return char
-
-    @classmethod
-    def spawn_n(cls, num, area=None, game=None, *groups):
-        if area is None:
-            area = game.screen.get_rect()
-        return [cls.spawn(area, game, *groups) for i in range(num)]
-
 
 class Enemy(NPC):
     def __init__(self, pos, game=None, *groups):
@@ -473,15 +467,87 @@ class Game:
         Player.load()
         Octorok.load()
 
+    def spawn(self, clas, area=None, *groups):
+        if area is None:
+            area = self.screen.get_rect()
+        step = clas.BASESPEED
+        while True:
+            x = random.randrange(area.x, area.right, step)
+            y = random.randrange(area.y, area.bottom, step)
+            char = clas((x, y), self, *groups)
+            if char.test_collisions():
+                char.remove(*groups)
+            else:
+                return char
+
+    def spawn_n(self, clas, num, area=None, *groups):
+        if area is None:
+            area = self.screen.get_rect()
+        return [self.spawn(clas, area, *groups) for i in range(num)]
+
+    def handle_events(self):
+        player = self.player
+        for e in pygame.event.get():
+            if e.type == KEYDOWN:
+                if e.key == K_UP:
+                    player.walk(UP)
+                elif e.key == K_DOWN:
+                    player.walk(DOWN)
+                elif e.key == K_LEFT:
+                    player.walk(LEFT)
+                elif e.key == K_RIGHT:
+                    player.walk(RIGHT)
+                elif e.key == K_SPACE:
+                    player.attack()
+
+                elif e.key == K_ESCAPE or \
+                     e.key == K_F4 and e.mod & KMOD_ALT:
+                    self.quit()
+
+            elif e.type == KEYUP:
+                if e.key == K_UP:
+                    player.stop(UP)
+                elif e.key == K_DOWN:
+                    player.stop(DOWN)
+                elif e.key == K_LEFT:
+                    player.stop(LEFT)
+                elif e.key == K_RIGHT:
+                    player.stop(RIGHT)
+
+            elif e.type == QUIT:
+                self.quit()
+
+    def update(self):
+        self.allsprites.update()
+        self.handle_events()
+
+    def draw(self):
+        screen = self.screen
+
+        self.allsprites._spritelist.sort(key=lambda s: s.pos[Y])
+
+##        allsprites.clear(screen, self.draw_background)
+        self.draw_background(screen)
+        updates = self.allsprites.draw(screen)
+
+######### Debug drawing
+##        pygame.draw.rect(screen, (0, 0, 0), self.player.get_swordrect(), 1)
+##        for s in self.allsprites:
+##            pygame.draw.rect(screen, (0, 0, 0), s.rect, 1)
+##            pygame.draw.rect(screen, (0, 0, 0), s.boundrect, 1)
+##            pygame.draw.circle(screen, (0, 0, 0), s.pos, 2)
+######### End
+
+
     ### GAME START ###
     def main(self):
         self.init()
         screen = self.screen
 
         self.walls = pygame.Rect((0, 0), SCREENSIZE)
-        allsprites = self.allsprites = pygame.sprite.OrderedUpdates()
-        player = Player((48, 48), self, allsprites)
-        Octorok.spawn_n(random.randint(5,15), None, self, allsprites)
+        self.allsprites = allsprites = pygame.sprite.OrderedUpdates()
+        self.player = player = Player((48, 48), self, allsprites)
+        self.spawn_n(Octorok, random.randint(5,15), None, allsprites)
 
         clock = pygame.time.Clock()
         self.running = True
@@ -489,52 +555,8 @@ class Game:
         ## GAME LOOP
         while self.running:
             clock.tick(FRAMERATE)
-
-            for e in pygame.event.get():
-                if e.type == KEYDOWN:
-                    if e.key == K_UP:
-                        player.walk(UP)
-                    elif e.key == K_DOWN:
-                        player.walk(DOWN)
-                    elif e.key == K_LEFT:
-                        player.walk(LEFT)
-                    elif e.key == K_RIGHT:
-                        player.walk(RIGHT)
-                    elif e.key == K_SPACE:
-                        player.attack()
-
-                    elif e.key == K_ESCAPE or \
-                         e.key == K_F4 and e.mod & KMOD_ALT:
-                        self.quit()
-
-                elif e.type == KEYUP:
-                    if e.key == K_UP:
-                        player.stop(UP)
-                    elif e.key == K_DOWN:
-                        player.stop(DOWN)
-                    elif e.key == K_LEFT:
-                        player.stop(LEFT)
-                    elif e.key == K_RIGHT:
-                        player.stop(RIGHT)
-
-                elif e.type == QUIT:
-                    self.quit()
-
-            allsprites.update()
-            allsprites._spritelist.sort(key=lambda s: s.pos[Y])
-
-##            allsprites.clear(screen, self.draw_background)
-            self.draw_background(screen)
-            updates = allsprites.draw(screen)
-
-############# Debug drawing
-##            pygame.draw.rect(screen, (0, 0, 0), player.get_swordrect(), 1)
-##            for s in allsprites:
-##                pygame.draw.rect(screen, (0, 0, 0), s.rect, 1)
-##                pygame.draw.rect(screen, (0, 0, 0), s.boundrect, 1)
-##                pygame.draw.circle(screen, (0, 0, 0), s.pos, 2)
-############# End
-
+            self.update()
+            self.draw()
             pygame.display.update()
 
 def main():

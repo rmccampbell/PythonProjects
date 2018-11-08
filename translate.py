@@ -1,34 +1,43 @@
 #!/usr/bin/env python3
 import sys
+import io
+import argparse
 import urllib.parse
+import json
 import requests
-import bs4
 
-def translate(phrase, lang1, lang2=None, *, utf8=False):
-    if not lang2:
-        lang1, lang2 = 'english', lang1
-    lang1, lang2 = lang1.lower(), lang2.lower()
-    base = 'http://translate.reference.com/{}/{}/{}/'
+base = 'https://translate.googleapis.com/translate_a/single?client=gtx&sl={lang1}&tl={lang2}&dt=t&q={text}'
+
+def translate(phrase, lang1, lang2=None):
+    if lang2 is None:
+        lang1, lang2 = 'auto', lang1
     if phrase == '-':
-        if utf8:
-            phrase = sys.stdin.buffer.read().decode()
-        else:
-            phrase = sys.stdin.read()
+        phrase = sys.stdin.read()
     phrase = urllib.parse.quote(phrase)
-    url = base.format(lang1, lang2, phrase)
+    url = base.format(lang1=lang1, lang2=lang2, text=phrase)
     res = requests.get(url)
-    doc = bs4.BeautifulSoup(res.text, 'html.parser')
-    ta = doc.find(id='clipboard-text')
-    if ta:
-        if utf8:
-            sys.stdout.buffer.write(ta.text.encode() + b'\n')
-        else:
-            print(ta.text)
-    else:
-        print('Error: language not found')
+    js = json.loads(res.text)
+    if not js[0]:
+        raise Exception('language not recognized')
+    return js[0][0][0]
+
+def change_encoding(file, encoding='utf-8'):
+    if file.encoding == encoding:
+        return file
+    file2 = io.TextIOWrapper(file.buffer, encoding, file.errors,
+                             line_buffering=file.line_buffering)
+    file2.mode = file.mode
+    file.detach()
+    return file2
 
 if __name__ == '__main__':
-    utf8 = '--utf8' in sys.argv
-    if utf8:
-        sys.argv.remove('--utf8')
-    translate(*sys.argv[1:], utf8=utf8)
+    p = argparse.ArgumentParser()
+    p.add_argument('phrase')
+    p.add_argument('lang1')
+    p.add_argument('lang2', nargs='?')
+    p.add_argument('-u', '--utf8', action='store_true')
+    args = p.parse_args()
+    if args.utf8:
+        sys.stdin = change_encoding(sys.stdin, 'utf-8')
+        sys.stdout = change_encoding(sys.stdout, 'utf-8')
+    print(translate(args.phrase, args.lang1, args.lang2))

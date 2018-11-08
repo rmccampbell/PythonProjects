@@ -998,7 +998,7 @@ class Tree:
     def size(self):
         return sum(node.size() for node in self) + 1
     def height(self):
-        return (len(self) and max(node.height() for node in self)) + 1
+        return max((node.height() for node in self), default=0) + 1
     def __getitem__(self, index):
         return self.children[index]
     def __setitem__(self, index, value):
@@ -1056,13 +1056,15 @@ class DataTree(Tree):
         if self.data == data:
             return self
         for child in self.children:
-            return child.find(data)
+            node = child.find(data)
+            if node is not None:
+                return node
         return None
 
     def __eq__(self, other):
         if isinstance(other, DataTree):
-            return (self.data == other.data and
-                    self.children == other.children)
+            return self.data == other.data and self.children == other.children
+        return NotImplemented
 
     def __repr__(self):
         return '{}({})'.format(type(self).__name__,
@@ -1224,10 +1226,10 @@ class BinTree:
 
     def simple_print(self, indent=0):
         if self.left:
-            self.left.print_no_branches(indent + 1)
+            self.left.simple_print(indent + 1)
         print('\t' * indent + str(self.data))
         if self.right:
-            self.right.print_no_branches(indent + 1)
+            self.right.simple_print(indent + 1)
 
     def print_tree(self, side='', prefix=''):
         lprefix = prefix + ('|   ' if side == 'r' else '    ')

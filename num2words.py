@@ -1,4 +1,6 @@
 import math
+from fractions import Fraction
+from decimal import Decimal
 
 ones = [
     'zero', 'one', 'two', 'three', 'four', 'five', 'six', 'seven', 'eight',
@@ -35,7 +37,7 @@ tens_map = {n: i for i, n in enumerate(tens) if n}
 thousands_map = {n: i for i, n in enumerate(thousands) if n}
 
 def smalln2words(n):
-    if n < 0 or n > 999:
+    if n < 0 or n >= 1000:
         raise ValueError('n must be between 0 and 999')
     h, n = divmod(n, 100)
     s = ones[h] + ' hundred ' if h else ''
@@ -55,14 +57,13 @@ def smalln2words(n):
 ##        s = num2words(n, e+1) + (' ' + s if r else '')
 ##    return sgn + s
 
-def num2words(n):
-    if isinstance(n, float):
+def num2words(n, limit_denom=1000000):
+    sgn, n = n < 0, abs(n)
+    if not isinstance(n, int):
         n, f = int(n), n % 1
         if f:
-            return '{} and {} {}ths'.format(
-                num2words(n), *map(num2words, f.as_integer_ratio()))
-    sgn = n < 0
-    n, r = divmod(abs(n), 1000)
+            return frac2words(sgn, n, f, limit_denom)
+    n, r = divmod(n, 1000)
     e = 0
     ss = [smalln2words(r)] if r or not n else []
     while n:
@@ -73,6 +74,30 @@ def num2words(n):
     if sgn:
         ss.append('negative')
     return ' '.join(ss[::-1])
+
+
+def frac2words(sgn, i, f, limit_denom=1000000):
+    f = Fraction(f)
+    if limit_denom:
+        f = f.limit_denominator(limit_denom)
+    num, den = f.numerator, f.denominator
+    numw, denw = num2words(num), num2words(den)
+    if denw.endswith('one'):
+        denw = denw[:-3] + 'first'
+    elif denw.endswith('two'):
+        denw = denw[:-3] + ('half' if den == 2 else 'second')
+    elif denw.endswith('three'):
+        denw = denw[:-5] + 'third'
+    elif denw.endswith('ty'):
+        denw = denw[:-1] + 'ieth'
+    else:
+        denw += 'th'
+    if num > 1:
+        denw += 's'
+    sgnw = 'negative ' if sgn else ''
+    if i:
+        return '{}{} and {} {}'.format(sgnw, num2words(i), numw, denw)
+    return '{}{} {}'.format(sgnw, numw, denw)
 
 
 def words2num(s):
@@ -101,7 +126,7 @@ def words2num(s):
             x += tens_map[w] * 10
             last_type = 'tens'
         elif w == 'hundred':
-            if last_type != 'ones' or x > 9:
+            if last_type != 'ones' or x >= 10:
                 raise ValueError('"hundred" not preceded by ones')
             x *= 100
             last_type = 'hundreds'
@@ -118,14 +143,14 @@ def words2num(s):
             x = 0
         else:
             try:
-                m = float(w)
+                m = Decimal(w)
             except ValueError:
                 raise ValueError('invalid number')
-            if m > 999:
+            if m >= 1000:
                 raise ValueError('numeric literal greater than 999')
-            if m > 99 and last_type == 'hundreds':
+            if m >= 100 and last_type == 'hundreds':
                 raise ValueError('two hundreds in a row')
-            if m > 9 and (last_type == 'tens' or x % 100):
+            if m >= 10 and (last_type == 'tens' or x % 100):
                 raise ValueError('two tens in a row')
             if last_type == 'ones' or x % 10:
                 raise ValueError('two ones in a row')

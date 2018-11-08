@@ -52,6 +52,7 @@ try:
 except ImportError:
     pass
 
+
 T, F, N = True, False, None
 
 _empty = functools2.Sentinel('<empty>')
@@ -185,8 +186,8 @@ def rename(obj, name=None, qualname=None):
         if qualname is None:
             obj.__qualname__ = name
         elif qualname is True:
-            pref = obj.__qualname__.rsplit('.', 1)[0]
-            obj.__qualname__ = pref + '.' + name
+            pref = obj.__qualname__.rpartition('.')[0]
+            obj.__qualname__ = pref + '.' + name if pref else name
         elif qualname is not False:
             obj.__qualname__ = qualname
     if name is not None:
@@ -209,6 +210,7 @@ def loop(it):
 def each(func, it=None):
     if it is None:
         return pipe(lambda it: each(func, it))
+##    loop(map(func, it))
     for x in it:
         func(x)
 
@@ -268,22 +270,21 @@ def nextchr(c, off=1):
     return chrf(ord(c) + off)
 
 def prevchr(c, off=1):
-    chr = bchr if isinstance(c, bytes) else chr
-    return chr(ord(c) - off)
+    chrf = bchr if isinstance(c, bytes) else chr
+    return chrf(ord(c) - off)
 
 def letters(num=26):
     return ''.join(islice(itertools.cycle(string.ascii_lowercase), num))
 
+@alias('rletters')
 def randletters(num=10, mixedcase=False):
     letters = string.ascii_letters if mixedcase else string.ascii_lowercase
     return ''.join(random.choice(letters) for i in range(num))
 
+@alias('rwords')
 def randwords(num=10, size=10, stdev=1, mixedcase=False):
     return [randletters(max(1, int(random.gauss(size, stdev))), mixedcase)
             for i in range(num)]
-
-rletters = randletters
-rwords = randwords
 
 def shuffled(it):
     lst = list(it)
@@ -294,10 +295,10 @@ def shuffled(it):
 def randcolor(h=(0, 360), s=(75, 100), v=(75, 100), a=100):
     from pygame import Color
     c = Color(0, 0, 0)
-    h = random.randrange(*h) if isinstance(h, tuple) else h
-    s = random.randint(*s) if isinstance(s, tuple) else s
-    v = random.randint(*v) if isinstance(v, tuple) else v
-    a = random.randint(*a) if isinstance(a, tuple) else a
+    h = random.uniform(*h) if isinstance(h, tuple) else h
+    s = random.uniform(*s) if isinstance(s, tuple) else s
+    v = random.uniform(*v) if isinstance(v, tuple) else v
+    a = random.uniform(*a) if isinstance(a, tuple) else a
     c.hsva = (h, s, v, a)
     return c
 
@@ -309,8 +310,8 @@ def interp_angle(a0, a1, t, max=2*math.pi):
 
 def interp_color(c0, c1, t):
     from pygame import Color
-    h0, s0, v0, a0 = c0.hsva
-    h1, s1, v1, a1 = c1.hsva
+    h0, s0, v0, a0 = Color(*c0).hsva
+    h1, s1, v1, a1 = Color(*c1).hsva
     h = interp_angle(h0, h1, t, 360)
     s = s0 + (s1 - s0)*t
     v = v0 + (v1 - v0)*t
@@ -382,28 +383,30 @@ def vpad(s, h, bottom=False):
     padding = '\n' * (h - s.count('\n') - 1)
     return s + padding if bottom else padding + s
 
-def strbin(s, enc='utf-8', sep=' '):
+@alias('strbin')
+def str_bin(s, enc='utf-8', sep=' '):
     if isinstance(s, str):
         s = s.encode(enc)
     return sep.join(map('{:08b}'.format, s))
 
-def strhex(s, enc=None):
+@alias('strhex')
+def str_hex(s, enc=None):
     import binascii
     if isinstance(s, str):
         if enc is None:
-            maxc = max(s)
+            maxc = s and max(s)
             enc = ('latin-1' if maxc <= '\xff' else
                    'utf-16be' if maxc <= '\uffff' else 'utf-32be')
         s = s.encode(enc)
     return binascii.hexlify(s).decode('ascii')
 
-def bytesfrombin(s):
+def bytes_frombin(s):
     return bytes(int(bits, 2) for bits in schunk(''.join(s.split()), 8))
 
-def strfrombin(s, enc='utf-8'):
-    return bytesfrombin(s).decode(enc)
+def str_frombin(s, enc='utf-8'):
+    return bytes_frombin(s).decode(enc)
 
-def strfromhex(s, enc='utf-8'):
+def str_fromhex(s, enc='utf-8'):
     return bytes.fromhex(s).decode(enc)
 
 def unsigned(x, n=8):
@@ -439,6 +442,7 @@ def blen(n, signed=False):
         return (n if n >= 0 else ~n).bit_length() + 1
     return n.bit_length()
 
+@alias('binf')
 def binfmt(n, bits=8, sign=False, prefix=False):
     if hasattr(n, 'dtype'):
         bits = n.dtype.itemsize * 8
@@ -447,8 +451,8 @@ def binfmt(n, bits=8, sign=False, prefix=False):
     if sign:
         return '{: {}0{}b}'.format(signed(n, bits), pref, prefw+bits+1)
     return '{:{}0{}b}'.format(unsigned(n, bits), pref, prefw+bits)
-binf = binfmt
 
+@alias('hexf')
 def hexfmt(n, digs=8, sign=False, prefix=False):
     if hasattr(n, 'dtype'):
         digs = n.dtype.itemsize * 2
@@ -457,7 +461,6 @@ def hexfmt(n, digs=8, sign=False, prefix=False):
     if sign:
         return '{: {}0{}x}'.format(signed(n, digs*4), pref, prefw+digs+1)
     return '{:{}0{}x}'.format(unsigned(n, digs*4), pref, prefw+digs)
-hexf = hexfmt
 
 def binint(x):
     return int(x, 2)
@@ -580,11 +583,12 @@ def print2d(arr, pad=2, just='left'):
         print((' '*pad).join(just(s, w) for s, w in zip(r, widths)).rstrip())
 
 
-def odict(obj=None):
+def odict(obj=(), **kwargs):
     if isinstance(obj, str):
-        return OrderedDict((k, eval(v, {})) for k, v in
-                           re.findall(r'(\w+)\s*=\s*([^,]+)', obj))
-    return OrderedDict(obj)
+        import ast
+        return OrderedDict(((k, ast.literal_eval(v)) for k, v in
+                            re.findall(r'(\w+)\s*=\s*([^,]+)', obj)), **kwargs)
+    return OrderedDict(obj, **kwargs)
 
 def _is_ordereddict(d):
     if isinstance(d, OrderedDict):
@@ -606,7 +610,7 @@ def printd(dct):
     for k, v in items:
         rep = repr(v)
         sep = '\n' if '\n' in rep else ' '
-        print(str(k).ljust(ksize) + ' =', rep, sep=sep)
+        print(str(k).ljust(ksize) + ' =' + sep + rep)
 
 
 @pipe
@@ -633,7 +637,8 @@ def anames(obj, val):
 
 def aname(obj, val):
     names = anames(obj, val)
-    if names: return names.pop()
+    if names:
+        return min(names)
 
 def dfilter(dct, cond=None, typ=None):
     cond = cond or bool
@@ -655,9 +660,11 @@ def dvmap(dct, func):
     return {k: func(v) for k, v in dct.items()}
 
 def subdict(dct, keys):
+    keys = set(keys)
     return {k: v for k, v in dct.items() if k in keys}
 
 def ddiff(dct, exclude):
+    exclude = set(exclude)
     return {k: v for k, v in dct.items() if k not in exclude}
 
 def dunion(dct1, dct2):
@@ -756,10 +763,14 @@ def escape(s):
 def unescape(s):
     return s.encode('latin-1', 'backslashreplace').decode('unicode_escape')
 
-def bchr(i):
-    return i.to_bytes(1, 'little')
-##    return b'%c' % i
-##    return chr(i).encode('latin-1')
+if not _PY3:
+    bchr = chr
+elif sys.version_info >= (3, 5):
+    def bchr(i):
+        return b'%c' % i
+else:
+    def bchr(i):
+        return i.to_bytes(1, 'little')
 
 @pipe_alias('bp')
 def bprint(bts):
@@ -811,11 +822,19 @@ def avg(it, *args):
     l = list(it)
     return sum(l) / len(l)
 
-def geom_mean(it, *args):
+def geom_avg(it, *args):
     if args:
         it = (it,) + args
     l = list(it)
-    return reduce(l, operator.mul) ** 1/len(l)
+    return reduce(operator.mul, l) ** (1/len(l))
+
+def cumsum(it):
+    l = []
+    s = 0
+    for x in it:
+        s += x
+        l.append(s)
+    return l
 
 @pipe_alias('fr')
 def frac(n, d=None, maxd=1000000):
@@ -964,12 +983,6 @@ def clear_vars():
             del d[n]
 
 
-##@pipe
-##def decomp(o):
-##    import unpyc3
-##    print(unpyc3.decompile(o))
-
-
 def isbuiltinmod(mod):
     if isinstance(mod, str):
         mod = sys.modules[mod]
@@ -1070,7 +1083,7 @@ def sympy():
     import sympy
     exec(pr('import sympy, sympy as sp; from sympy import *\n'
             'R = Rational\n'
-            'var("x, y, z, a, b, c, t")'),
+            'var("x, y, z, a, b, c, t", real=True)'),
          fglobals(1))
     return sympy
 
@@ -1221,7 +1234,7 @@ def setdefaults(dct, defaults):
         dct.setdefault(k, v)
 
 
-def multimap(seq, funcs):
+def multiapply(seq, funcs):
     return [f(o) for f, o in zip(funcs, seq)]
 
 
@@ -1292,13 +1305,13 @@ def atleast_col(a):
 def probs(a, axis=None):
     import numpy as np
     a = np.asarray(a)
-    return a / a.sum(axis=axis)
+    return a / a.sum(axis=axis, keepdims=True)
 
 
 def unit(v, axis=None):
     import numpy as np
     v = np.asarray(v)
-    return v / np.linalg.norm(v, axis=axis)
+    return v / np.linalg.norm(v, axis=axis, keepdims=True)
 
 
 def eq(a, b=None):
@@ -1312,6 +1325,27 @@ def multi_shuffle(*arrs):
     import numpy as np
     inds = np.random.permutation(len(arrs[0]))
     return tuple(np.asarray(arr)[inds] for arr in arrs)
+
+
+def geom_mean(a, axis=None, keepdims=None):
+    import numpy as np
+    if keepdims is None:
+        keepdims = np._NoValue
+    a = np.asanyarray(a)
+    out = np.prod(a, axis, float, keepdims=keepdims)
+    n = a.size // out.size
+    if n == 2:
+        return np.sqrt(out)
+    if n == 3:
+        return np.cbrt(out)
+    return out ** (1/n)
+
+
+##def geom_mean(a, axis=None, keepdims=None):
+##    import numpy as np
+##    if keepdims is None:
+##        keepdims = np._NoValue
+##    return np.exp(np.mean(np.log(a), axis=axis, keepdims=keepdims))
 
 
 ##def summer(s=0):
