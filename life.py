@@ -154,17 +154,14 @@ class Life:
 
     def tick(self):
         #neighbors = convolve2d(self.board, [[1,1,1],[1,0,1],[1,1,1]], 'same')
-        expanded = np.pad(self.board, 1, 'wrap' if self.wrap else 'constant')
+        padded = np.pad(self.board, 1, 'wrap' if self.wrap else 'constant')
         neighbors = np.zeros_like(self.board, int)
         for di, dj in [(-1, -1), (-1, 0), (-1, 1), (0, 1),
                        (1, 1),   (1, 0),  (1, -1), (0, -1)]:
-            neighbors += expanded[1+di : self.width+1+di,
-                                  1+dj : self.height+1+dj]
-        board2 = np.zeros_like(self.board)
-        same = neighbors == 2
-        board2[same] = self.board[same]
-        board2[neighbors == 3] = True
-        self.board = board2
+            neighbors += padded[1+di : self.width+1+di,
+                                1+dj : self.height+1+dj]
+        self.board[neighbors != 2] = False
+        self.board[neighbors == 3] = True
 
     def display(self):
         px = self.px
