@@ -58,3 +58,13 @@ def str_to_7seg(s):
 
 def num_to_7seg(n, hex=False):
     return str_to_7seg(format(n, 'x' if hex else 'd'))
+
+
+if __name__ == '__main__':
+    import sys
+    if len(sys.argv) > 1:
+        for arg in sys.argv[1:]:
+            print(str_to_7seg(arg))
+    else:
+        for line in sys.stdin:
+            print(str_to_7seg(line.rstrip('\n')))
