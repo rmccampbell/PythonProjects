@@ -1,4 +1,5 @@
-import math, re, struct, functools, string, itertools
+# -*- coding: utf-8 -*-
+import math, re, struct, functools, operator, string, itertools
 
 def isprime_re(n):
     return not re.match(r'^1?$|^(11+?)\1+$', '1'*n)
@@ -136,7 +137,7 @@ def double_frombits(s):
     return struct.unpack('<d', s.to_bytes(8, 'little'))[0]
 
 
-def from_roman(s):
+def parse_roman(s):
     s = s.upper()
     digs = dict(I=1, V=5, X=10, L=50, C=100, D=500, M=1000)
     x = 0
@@ -255,10 +256,11 @@ def frac2dec(f, prec=None):
 
 
 def human_readable(n, prec=1, strip=True):
-    power = max((int(n).bit_length() - 1) // 10, 0)
+    n = int(n)
+    power = max((n.bit_length() - 1) // 10, 0)
     num = '{:.{}f}'.format(n / 1024**power, prec)
-    if strip:
-        num = num.rstrip('.0')
+    if strip and '.' in num:
+        num = num.rstrip('0').rstrip('.')
     return num + 'BKMGTPE'[power]
 
 
@@ -286,3 +288,75 @@ def least_upper_bound(t1, t2):
 
 def rescale(x, a1, b1, a2, b2):
     return (x - a1) * (b2 - a2) / (b1 - a1) + a2
+
+
+MORSE_TABLE = {
+    'A': '.-', 'B': '-...', 'C': '-.-.', 'D': '-..', 'E': '.', 'F': '..-.',
+    'G': '--.', 'H': '....', 'I': '..', 'J': '.---', 'K': '-.-', 'L': '.-..',
+    'M': '--', 'N': '-.', 'O': '---', 'P': '.--.', 'Q': '--.-', 'R': '.-.',
+    'S': '...', 'T': '-', 'U': '..-', 'V': '...-', 'W': '.--', 'X': '-..-',
+    'Y': '-.--', 'Z': '--..', '0': '-----', '1': '.----', '2': '..---',
+    '3': '...--', '4': '....-', '5': '.....', '6': '-....', '7': '--...',
+    '8': '---..', '9': '----.', '.': '.-.-.-', ',': '--..--', '?': '..--..',
+    "'": '.----.', '!': '-.-.--', '/': '-..-.', '(': '-.--.', ')': '-.--.-',
+    '&': '.-...', ':': '---...', ';': '-.-.-.', '=': '-...-', '+': '.-.-.',
+    '-': '-....-', '_': '..--.-', '"': '.-..-.', '$': '...-..-', '@': '.--.-.'}
+
+MORSE_TABLE_R = {v: k for k, v in MORSE_TABLE.items()}
+
+def morse_encode(s):
+    return ' '.join(MORSE_TABLE.get(c.upper(), '') for c in s)
+
+def morse_decode(s):
+    return ' '.join(''.join(MORSE_TABLE_R.get(c, c)
+                            for c in w.split()) for w in s.split('  '))
+
+
+ASCII_SUBS_R = {
+    '"': ['“', '”', '″'],
+    "'": ['‘', '’', '′'],
+    '-': ['‒', '–', '—', '―', '−'],
+    '|': ['¦'],
+    '<': ['⟨'],
+    '>': ['⟩'],
+}
+
+ASCII_SUBS = {vi: k for k, v in ASCII_SUBS_R.items() for vi in v}
+
+ASCII_SUBS_MULTI = {
+    '…': '...',
+    '←': '<-',
+    '→': '->',
+    '↔': '<->',
+    '⇐': '<=',
+    '⇒': '=>',
+    '⇔': '<=>',
+}
+
+def asciify(s, multi_subs=True):
+    s = unicodedata.normalize('NFKD', s)
+    s2 = []
+    for c in s:
+        c = ASCII_SUBS.get(c, c)
+        if multi_subs:
+            c = ASCII_SUBS_MULTI.get(c, c)
+        if c.isspace():
+            c = ' '
+        if c <= '~' and c.isprintable():
+            s2.append(c)
+    return ''.join(s2)
+
+
+def comb(n, m):
+    if m > n: return 0
+    m = min(m, n-m)
+    A = [1] * (m+1)
+    for i in range(1, n-m+1):
+        for j in range(1, m+1):
+            A[j] += A[j-1]
+    return A[m]
+
+def comb(n, m):
+    if m > n: return 0
+    m = min(m, n-m)
+    return prod(n-i for i in range(m)) // prod(i for i in range(1, m+1))

@@ -8,7 +8,7 @@ _PY3 = sys.version_info[0] >= 3
 import os, collections, functools, itertools, operator, types, math, cmath, re
 import io, random, inspect, textwrap, dis, timeit, time, datetime, string
 import fractions, decimal, unicodedata, codecs, locale, shutil, numbers
-import subprocess
+import subprocess, json, base64
 from math import pi, e, sqrt, exp, log, log10, floor, ceil, factorial, \
      sin, cos, tan, asin, acos, atan, atan2
 inf = float('inf')
@@ -827,6 +827,11 @@ def geom_avg(it, *args):
         it = (it,) + args
     l = list(it)
     return reduce(operator.mul, l) ** (1/len(l))
+
+
+def prod(x):
+    return functools.reduce(operator.mul, x)
+
 
 def cumsum(it):
     l = []
