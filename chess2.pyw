@@ -1,4 +1,6 @@
 #!/usr/bin/env python3
+"""Usage: chess2.pyw [WHITE_CPU=0] [BLACK_CPU=1] [MINIMAX_DEPTH=4]"""
+
 import sys, os, random, threading
 import pygame as pg
 
@@ -604,6 +606,10 @@ def getside(piece):
 def main():
     white_cpu, black_cpu = WHITE_CPU, BLACK_CPU
     minimax_depth = MINIMAX_DEPTH
+    if len(sys.argv) > 1 and sys.argv[1] in ('-h', '--help'):
+        # Won't print if run via pythonw.exe
+        print('usage: chess2.pyw [WHITE_CPU=0] [BLACK_CPU=1] [MINIMAX_DEPTH=4]')
+        return
     if len(sys.argv) > 2:
         white_cpu = bool(int(sys.argv[1]))
         black_cpu = bool(int(sys.argv[2]))

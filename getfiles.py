@@ -32,17 +32,20 @@ def maybeclose(file, close=True):
     if close:
         file.close()
 
-def chars(file):
-    return chunk(file, 1)
-
-def chunk(file, blocksize=8192):
+def iterchunks(file, blocksize=8192):
     s = file.read(blocksize)
     while s:
         yield s
         s = file.read(blocksize)
 
+def iterchars(file):
+    return iterchunks(file, 1)
+
+chunk = iterchunks
+chars = iterchars
+
 def getfiles(paths=None, mode='r', encoding=None, errors=ERRORS,
-             default='-', stdio=True, recursive=True):
+             default='-', stdio=True, recursive=True, close=True):
     """Return an iterator yielding file objects matching glob patterns."""
     openf = stdopen if stdio else guess_open
     if not stdio and default == '-':
@@ -52,13 +55,16 @@ def getfiles(paths=None, mode='r', encoding=None, errors=ERRORS,
     if not paths and default:
         paths = [default]
     for path in paths:
-        if not isinstance(path, str):
+        if not isinstance(path, (str, bytes)):
             yield path
             continue
         for file in expandpaths([path], recursive):
             try:
                 f = openf(file, mode, encoding=encoding, errors=errors)
-                with safeclose(f):
+                if close:
+                    with safeclose(f):
+                        yield f
+                else:
                     yield f
             except IOError:
                 printerr()
@@ -119,6 +125,8 @@ def detect_enc(file):
 def change_encoding(file, encoding=None, errors=ERRORS):
     encoding = encoding or file.encoding
     errors = errors or file.errors
+    if encoding == file.encoding and errors == file.errors:
+        return file
     codecs.lookup_error(errors)
     newfile = io.TextIOWrapper(file.buffer, encoding, errors,
                                line_buffering=file.line_buffering)
@@ -126,7 +134,7 @@ def change_encoding(file, encoding=None, errors=ERRORS):
     newfile._changed_encoding = True
     return newfile
 
-def set_encoding(encoding=None, errors=ERRORS):
+def set_stdout_encoding(encoding=None, errors=ERRORS):
     stdout = sys.stdout
     try:
         sys.stdout = change_encoding(stdout, encoding, errors)
@@ -134,7 +142,7 @@ def set_encoding(encoding=None, errors=ERRORS):
         pass
     return stdout
 
-def reset_encoding(stdout=None):
+def reset_stdout_encoding(stdout=None):
     stdout = stdout or sys.__stdout__
     if stdout and sys.stdout is not stdout:
         sys.stdout.detach()
@@ -142,6 +150,6 @@ def reset_encoding(stdout=None):
 
 @contextlib.contextmanager
 def stdout_encoding(encoding=None, errors=ERRORS):
-    stdout = set_encoding(encoding, errors)
+    stdout = set_stdout_encoding(encoding, errors)
     yield
-    reset_encoding(stdout)
+    reset_stdout_encoding(stdout)
