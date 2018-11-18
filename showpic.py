@@ -1,8 +1,10 @@
 #!/usr/bin/env python3
-import sys, os, pygame, urllib.request, io, threading, bs4
+import sys, os, glob, pygame, urllib.request, io, threading
 from PIL import Image
 
-def _load_img(url, scale=1, maxh=0, base=None, cache={}):
+IMG_EXTS = {'.jpg', '.jpeg', '.png', '.gif', '.tiff', '.tif', '.bmp'}
+
+def load_img(url, scale=1, maxh=0, interp=Image.BICUBIC, base=None, cache={}):
     subcache = cache.setdefault((scale, maxh), set())
     if isinstance(url, pygame.Surface):
         if url in subcache:
@@ -13,11 +15,13 @@ def _load_img(url, scale=1, maxh=0, base=None, cache={}):
         i = url
         w, h = url.size
     else:
+        if 'bs4' in sys.modules:
+            import bs4
+            if isinstance(url, bs4.Tag):
+                url = url['src']
         try:
             i = pygame.image.load(url)
         except pygame.error:
-            if isinstance(url, bs4.Tag):
-                url = url['src']
             url = urllib.parse.urljoin(base, url)
             req = urllib.request.Request(url, headers=
                                          {'User-Agent': 'Chrome'})
@@ -33,7 +37,9 @@ def _load_img(url, scale=1, maxh=0, base=None, cache={}):
         w, h = int(w * scale), int(h * scale)
         if maxh and h > maxh:
             w, h = w * maxh // h, maxh
-        i = i.resize((w, h), Image.BICUBIC)
+        if isinstance(interp, str):
+            interp = getattr(Image, interp.upper())
+        i = i.resize((w, h), interp)
 
     if isinstance(i, Image.Image):
         i = pygame.image.fromstring(i.tobytes(), i.size, i.mode)
@@ -41,11 +47,12 @@ def _load_img(url, scale=1, maxh=0, base=None, cache={}):
     subcache.add(i)
     return i
 
-def show_pic(url, scale=1, maxh=0, blocking=True):
-    i = _load_img(url, scale, maxh)
+def show_pic(url, scale=1, maxh=0, interp=Image.BICUBIC, blocking=True):
+    i = load_img(url, scale, maxh, interp)
     pygame.init()
     s = pygame.display.set_mode(i.get_size(), pygame.RESIZABLE)
-    s.blit(i, (0,0))
+    s.fill((255, 255, 255))
+    s.blit(i, (0, 0))
     pygame.display.flip()
     if blocking:
         try:
@@ -60,25 +67,25 @@ def show_pic(url, scale=1, maxh=0, blocking=True):
         finally:
             pygame.display.quit()
 
-def _load_async(imgs, scale, maxh, url, can_load=None):
+def _load_async(imgs, scale, maxh, interp, url, can_load=None):
     for i, img in enumerate(imgs):
         if can_load: can_load.wait()
         try:
-            imgs[i] = _load_img(img, scale, maxh, url)
-        except urllib.error.HTTPError as e:
-            print(e)
+            imgs[i] = load_img(img, scale, maxh, interp, url)
+        except Exception as e:
+            print('%s: %s' % (type(e).__name__, e))
 
-def gallery(imgs, scale=1, maxh=0, base=None):
+def gallery(imgs, scale=1, maxh=0, interp=Image.BICUBIC, base=None):
     imgs = list(imgs)
-    threading.Thread(target=_load_async, args=(imgs, scale, maxh, base),
+    threading.Thread(target=_load_async, args=(imgs, scale, maxh, interp, base),
                      daemon=True).start()
 
     try:
         i = 0
         running = True
         while running and imgs:
-            img = imgs[i] = _load_img(imgs[i], scale, maxh, base)
-            show_pic(img, scale, maxh, False)
+            img = imgs[i] = load_img(imgs[i], scale, maxh, interp, base)
+            show_pic(img, scale, maxh, interp, False)
             waiting = True
             while waiting:
                 for e in pygame.event.get():
@@ -98,7 +105,8 @@ def gallery(imgs, scale=1, maxh=0, base=None):
     finally:
         pygame.display.quit()
 
-def web_gallery(url, begin=None, end=None, scale=1, maxh=0):
+def web_gallery(url, begin=None, end=None, scale=1, maxh=0,
+                interp=Image.BICUBIC):
     if not url.startswith('http://'):
         url = 'http://' + url
     req = urllib.request.Request(url, headers={'User-Agent': 'Chrome'})
@@ -106,7 +114,8 @@ def web_gallery(url, begin=None, end=None, scale=1, maxh=0):
     imgs = doc.find_all('img')[begin:end]
     gallery(imgs, scale, maxh, url)
 
-def linked_gallery(url, begin=None, end=None, scale=1, maxh=0, _close=True):
+def linked_gallery(url, begin=None, end=None, scale=1, maxh=0,
+                   interp=Image.BICUBIC, _close=True):
     if not url.startswith('http://'):
         url = 'http://' + url
     req = urllib.request.Request(url, headers={'User-Agent': 'Chrome'})
@@ -117,15 +126,15 @@ def linked_gallery(url, begin=None, end=None, scale=1, maxh=0, _close=True):
     can_load = threading.Event()
     can_load.set()
     threading.Thread(target=_load_async,
-                     args=(imgs, scale, maxh, url, can_load),
+                     args=(imgs, scale, maxh, interp, url, can_load),
                      daemon=True).start()
 
     try:
         i = 0
         running = True
         while running and imgs:
-            img = imgs[i] = _load_img(imgs[i], scale, maxh, url)
-            show_pic(img, scale, maxh, False)
+            img = imgs[i] = load_img(imgs[i], scale, maxh, interp, url)
+            show_pic(img, scale, maxh, interp, False)
             waiting = True
             while waiting:
                 for e in pygame.event.get():
@@ -145,9 +154,9 @@ def linked_gallery(url, begin=None, end=None, scale=1, maxh=0, _close=True):
                         elif e.key == pygame.K_SPACE and links[i]:
                             href = urllib.parse.urljoin(url, links[i]['href'])
                             can_load.clear()
-                            if (os.path.splitext(href)[1] in ('.jpg', '.png')):
+                            if (os.path.splitext(href)[1] in IMG_EXTS):
                                 try:
-                                    show_pic(href, scale, maxh)
+                                    show_pic(href, scale, maxh, interp)
                                 except urllib.error.HTTPError as e:
                                     print(e)
                             else:
@@ -157,7 +166,7 @@ def linked_gallery(url, begin=None, end=None, scale=1, maxh=0, _close=True):
                                 except urllib.error.HTTPError as e:
                                     print(e)
                             can_load.set()
-                            show_pic(img, scale, maxh, False)
+                            show_pic(img, scale, maxh, interp, False)
 ##                    elif e.type == pygame.VIDEORESIZE:
 ##                        print(e)
     finally:
@@ -170,28 +179,36 @@ if __name__ == '__main__':
     import argparse
     p = argparse.ArgumentParser()
     p.add_argument('url', nargs='?')
-    p.add_argument('-g', '--gallery', action='store_true')
+    p.add_argument('-g', '--gallery', nargs='*')
     p.add_argument('-w', '--webgal', action='store_true')
     p.add_argument('-l', '--linkgal', action='store_true')
     p.add_argument('-s', '--scale', type=float, default=1)
     p.add_argument('-m', '--maxh', type=int, default=0)
+    p.add_argument('-i', '--interp', choices=['nearest', 'bilinear', 'bicubic'],
+                   default='bicubic')
     p.add_argument('-b', '--begin', type=int)
     p.add_argument('-e', '--end', type=int)
     args = p.parse_args()
-    if not args.url:
+    if args.url is None and args.gallery is None:
         args.url = input('URL or path: ')
 
     if args.linkgal:
-        linked_gallery(args.url, args.begin, args.end, args.scale, args.maxh)
+        linked_gallery(args.url, args.begin, args.end, args.scale, args.maxh,
+                       args.interp)
     elif args.webgal:
-        web_gallery(args.url, args.begin, args.end, args.scale, args.maxh)
-    elif args.gallery:
-        paths = []
-        for f in os.listdir(args.url):
-            f = os.path.join(args.url, f) 
-            if os.path.isfile(f) and \
-               os.path.splitext(f)[1] in ('.jpg', '.png'):
-                paths.append(f)
-        gallery(paths, args.scale, args.maxh)
+        web_gallery(args.url, args.begin, args.end, args.scale, args.maxh,
+                    args.interp)
+    elif args.gallery is not None:
+        paths = args.gallery or [input('Path: ')]
+        paths = [file for path in paths for file in glob.glob(path) or (path,)]
+        if len(paths) == 1 and os.path.isdir(paths[0]):
+            dir = paths[0]
+            paths = []
+            for f in os.listdir(dir):
+                f = os.path.join(dir, f) 
+                if os.path.isfile(f) and \
+                   os.path.splitext(f)[1] in IMG_EXTS:
+                    paths.append(f)
+        gallery(paths, args.scale, args.maxh, args.interp)
     else:
-        show_pic(args.url, args.scale, args.maxh)
+        show_pic(args.url, args.scale, args.maxh, args.interp)
