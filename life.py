@@ -6,7 +6,7 @@ import numpy as np
 import argparse
 
 FPS = 30
-SPEED = [2, 10, 30]
+SPEEDS = [2, 10, 30]
 
 BGCOLOR = (239, 239, 239)
 COLOR0 = (255, 255, 255)
@@ -17,14 +17,14 @@ SEED_FACTOR = .09
 PIXEL = 4
 WIDTH = 500
 HEIGHT = 500
-SWIDTH = 150
-SHEIGHT = 150
+SWIDTH = 1200
+SHEIGHT = 800
 
 SCRLSPD = 10
 
 class Life:
-    def __init__(self, seed=None, w=None, h=None, xoff=0, yoff=0,
-                 screen=(SWIDTH, SHEIGHT), pixel=PIXEL, wrap=False, pause=False):
+    def __init__(self, seed=None, w=None, h=None, xoff=None, yoff=None,
+                 screen=None, pixel=PIXEL, wrap=False, pause=False):
         if seed is None:
             seed = SEED_FACTOR
         elif isinstance(seed, str):
@@ -43,21 +43,43 @@ class Life:
                     seed = parsetxt(seed)
             self.board = np.asarray(seed, bool)
             if w and h:
-                self.board, temp = np.zeros((w, h), bool), self.board
+                temp = self.board
                 w0, h0 = temp.shape
-                if xoff < 0: xoff += w
-                if yoff < 0: yoff += h
+                # w, h = max(w, w0), max(h, h0)
+                self.board = np.zeros((w, h), bool)
+                if xoff is None:
+                    xoff = (w - w0) // 2
+                elif xoff < 0:
+                    xoff += w
+                if yoff is None:
+                    yoff = (h - h0) // 2
+                elif yoff < 0:
+                    yoff += h
+                xoff = min(max(0, xoff), w)
+                yoff = min(max(0, yoff), h)
                 self.board[xoff: xoff+w0, yoff: yoff+h0] = temp[:w-xoff, :h-yoff]
         self.width, self.height = self.board.shape
-        self.swidth, self.sheight = screen
         self.scrollx = 0
         self.scrolly = 0
-        self.speed = SPEED[1]
+        self.speed = SPEEDS[1]
         self.px = pixel
         self.wrap = wrap
         self.paused = pause
 
         pygame.init()
+
+        if screen is None:
+            vi = pygame.display.Info()
+            if self.width*self.px < vi.current_w and \
+               self.height*self.px < vi.current_h:
+                self.swidth = self.width
+                self.sheight = self.height
+            else:
+                self.swidth = SWIDTH//self.px
+                self.sheight = SHEIGHT//self.px
+        else:
+            self.swidth, self.sheight = screen
+
         self.screen = pygame.display.set_mode(
             (self.px*self.swidth, self.px*self.sheight), RESIZABLE)
         pygame.key.set_repeat(300, 50)
@@ -83,8 +105,8 @@ class Life:
                        event.key == K_F4 and event.mod & KMOD_ALT:
                         self.running = False
                     elif event.key == K_SPACE:
-                        self.speed = SPEED[(SPEED.index(self.speed) + 1)
-                                           % len(SPEED)]
+                        self.speed = SPEEDS[(SPEEDS.index(self.speed) + 1)
+                                           % len(SPEEDS)]
                     elif event.key == K_RETURN:
                         step = True
                     elif event.key == K_p:
@@ -191,8 +213,8 @@ def parseimg(file):
     return (np.array(im) < 128).T.copy()
 
 
-def run(seed=None, w=None, h=None, xoff=0, yoff=0, screen=(SWIDTH, SHEIGHT),
-        pixel=4, nowrap=False, pause=False):
+def run(seed=None, w=None, h=None, xoff=0, yoff=0, screen=None, pixel=4,
+        nowrap=False, pause=False):
     Life(seed, w, h, xoff, yoff, screen, pixel, nowrap, pause).run()
 
 
@@ -200,8 +222,7 @@ if __name__ == '__main__':
     p = argparse.ArgumentParser(
         usage='%(prog)s [-h] [-s W H] [-x PIXEL] [-w] [-p] '
         '[file] [w h] [xoff yoff]')
-    p.add_argument('-s', '--screen', metavar=('W', 'H'), type=int, nargs=2,
-                   default=[SWIDTH, SHEIGHT])
+    p.add_argument('-s', '--screen', metavar=('W', 'H'), type=int, nargs=2)
     p.add_argument('-x', '--pixel', type=int, default=PIXEL)
     p.add_argument('-w', '--wrap', action='store_true')
     p.add_argument('-p', '--pause', action='store_true')
@@ -209,7 +230,7 @@ if __name__ == '__main__':
     ns = p.parse_args()
     args = ns.args
 
-    file, w, h, xoff, yoff = None, None, None, 0, 0
+    file, w, h, xoff, yoff = None, None, None, None, None
     if len(args) == 4 or len(args) > 5:
         p.error('wrong number of arguments')
     if len(args) == 5:
