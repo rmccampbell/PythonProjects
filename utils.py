@@ -8,7 +8,8 @@ _PY3 = sys.version_info[0] >= 3
 import os, collections, functools, itertools, operator, types, math, cmath, re
 import io, random, inspect, textwrap, dis, timeit, time, datetime, string
 import fractions, decimal, unicodedata, codecs, locale, shutil, numbers
-import subprocess, json, base64
+import subprocess, json, base64, pprint
+import os.path as osp
 from math import pi, e, sqrt, exp, log, log10, floor, ceil, factorial, \
      sin, cos, tan, asin, acos, atan, atan2
 inf = float('inf')
@@ -21,6 +22,8 @@ from fractions import Fraction
 from decimal import Decimal
 if _PY3:
     from itertools import zip_longest
+    try: from math import tau
+    except ImportError: pass
     try: from math import log2
     except ImportError: pass
     try: from math import gcd
@@ -58,14 +61,36 @@ T, F, N = True, False, None
 _empty = functools2.Sentinel('<empty>')
 
 
-def alias(obj, *names):
+def alias(obj, *names, **kwargs): # _depth=0
+    _depth=kwargs.get('_depth', 0)
     if isinstance(obj, str):
         names = (obj,) + names
-        return lambda obj: alias(obj, *names)
-    globs = fglobals(1)
+        return lambda obj: alias(obj, *names, _depth=_depth+1)
+    globs = fglobals(_depth+1)
     for name in names:
         globs[name] = obj
     return obj
+
+
+def lwrap(f, name=None):
+    def f2(*args, **kwargs):
+        return list(f(*args, **kwargs))
+    assigned = set(functools.WRAPPER_ASSIGNMENTS) - {'__module__'}
+    if name:
+        rename(f2, name)
+        assigned -= {'__name__', '__qualname__'}
+    _update_wrapper(f2, f, assigned, ())
+    return f2
+
+def lwrap_alias(f=None, name=None, **kwargs): # _depth=0
+    _depth=kwargs.get('_depth', 0)
+    if f is None or isinstance(f, str):
+        return partial(lwrap_alias, name=f or name)
+    if name is None:
+        name = 'l' + f.__name__
+    f2 = lwrap(f, name)
+    fglobals(_depth+1)[name] = f2
+    return f
 
 
 def flocals(depth=0):
@@ -118,10 +143,11 @@ class pipe(object):
     def __getattr__(self, name):
         return getattr(self.callable, name)
 
-def pipe_alias(f, *names, **kwargs):
+def pipe_alias(f, *names, **kwargs): # __depth
+    __depth = kwargs.pop('__depth', 0)
     if isinstance(f, str):
-        return rpartial(pipe_alias, f, *names, **kwargs)
-    alias(pipe(f, **kwargs), *names)
+        return rpartial(pipe_alias, f, *names, __depth=__depth+1, **kwargs)
+    alias(pipe(f, **kwargs), *names, _depth=__depth+1)
     return f
 
 
@@ -292,45 +318,24 @@ def shuffled(it):
     return lst
 
 
-def randcolor(h=(0, 360), s=(75, 100), v=(75, 100), a=100):
-    from pygame import Color
-    c = Color(0, 0, 0)
-    h = random.uniform(*h) if isinstance(h, tuple) else h
-    s = random.uniform(*s) if isinstance(s, tuple) else s
-    v = random.uniform(*v) if isinstance(v, tuple) else v
-    a = random.uniform(*a) if isinstance(a, tuple) else a
-    c.hsva = (h, s, v, a)
-    return c
+def randstream(it):
+    vals = list(it)
+    while True:
+        yield random.choice(vals)
 
 
-def interp_angle(a0, a1, t, max=2*math.pi):
-    min_angle = ((a1 - a0) + max/2) % max - max/2
-    return (a0 + min_angle*t) % max
-
-
-def interp_color(c0, c1, t):
-    from pygame import Color
-    h0, s0, v0, a0 = Color(*c0).hsva
-    h1, s1, v1, a1 = Color(*c1).hsva
-    h = interp_angle(h0, h1, t, 360)
-    s = s0 + (s1 - s0)*t
-    v = v0 + (v1 - v0)*t
-    a = a0 + (a1 - a0)*t
-    c = Color(0, 0, 0)
-    c.hsva = (h, s, v, a)
-    return c
-
-
+@lwrap_alias
 def schunk(s, size=2):
     for i in range(0, len(s), size):
         yield s[i : i+size]
-##    return map(''.join, chunk(s, size, dofill=False))
 
 def sgroup(s, size=2, sep=' '):
     if isinstance(s, bytes) and isinstance(sep, str):
         sep = sep.encode()
     return sep.join(schunk(s, size))
 
+@alias('ssplit')
+@lwrap
 def sbreak(s, *inds):
     prev = 0
     for ind in inds:
@@ -469,6 +474,8 @@ def hexint(x):
     return int(x, 16)
 
 def float_binf(num, p=23, pad0=False, prefix=False):
+    if not math.isfinite(num):
+        return str(num)
     if p is None or p < 0: p = 1074
     num, whole = math.modf(num)
     num = abs(num)
@@ -481,10 +488,12 @@ def float_binf(num, p=23, pad0=False, prefix=False):
     return ''.join(ss)
 
 def float_hexf(num, p=13, pad0=False, prefix=False):
+    if not math.isfinite(num):
+        return str(num)
     if p is None or p < 0: p = 269
     num, whole = math.modf(num)
     num = abs(num)
-    ss = [format(int(whole), '#x' if pref else 'x'), '.']
+    ss = [format(int(whole), '#x' if prefix else 'x'), '.']
     for i in range(p):
         if not (num or pad0):
             break
@@ -493,7 +502,7 @@ def float_hexf(num, p=13, pad0=False, prefix=False):
     return ''.join(ss)
 
 def float_bin(num, p=23):
-    if p < 0: p = 52
+    if p is None or p < 0: p = 52
     s = float(num).hex()
     if '0x' in s:
         i = s.index('.')+1
@@ -548,39 +557,45 @@ def printr(o):
     return o
 
 @pipe_alias('pa')
-def printall(seq, sep='\n'):
+@pipe_alias('par', rep=True)
+@pipe_alias('pj', 'wa', sep='')
+@pipe_alias('ps', sep=' ')
+def printall(seq, sep='\n', rep=False):
     for o in seq:
-        print(o, end=sep)
+        print(repr(o) if rep else o, end=sep)
 
 _justs = {'left': str.ljust, 'right': str.rjust, 'center': str.center,
           '<': str.ljust, '>': str.rjust, '^': str.center}
 
 @pipe_alias('pc')
-def printcols(seq, rows=False, swidth=None, pad=2, just='left'):
+@pipe_alias('pcr', rows=True)
+def printcols(seq, rows=False, swidth=None, sep='', pad=2, just='left'):
     if not swidth:
         swidth, _ = shutil.get_terminal_size()
+    sep = sep.ljust(pad)
     just = _justs[just]
     seq = list(map(str, seq))
     if not seq: return
     width = max(map(len, seq))
-    ncols = max((swidth + pad) // (width + pad), 1)
+    ncols = max((swidth + len(sep)) // (width + len(sep)), 1)
     if rows:
         rows = chunk(seq, ncols)
     else:
         nrows = (len(seq)-1) // ncols + 1
         rows = zip(*chunk(seq, nrows, ''))
     for r in rows:
-        print((' '*pad).join(just(s, width) for s in r).rstrip())
+        print(sep.join(just(s, width) for s in r).rstrip())
 
 @pipe_alias('p2d')
-def print2d(arr, pad=2, just='left'):
+def print2d(arr, sep='', pad=2, just='left'):
+    sep = sep.ljust(pad)
     just = _justs[just]
     arr = [[str(o) for o in r] for r in arr]
     if not arr: return
     widths = [max(len(r[i]) for r in arr if i < len(r))
               for i in range(max(map(len, arr)))]
     for r in arr:
-        print((' '*pad).join(just(s, w) for s, w in zip(r, widths)).rstrip())
+        print(sep.join(just(s, w) for s, w in zip(r, widths)).rstrip())
 
 
 def odict(obj=(), **kwargs):
@@ -689,9 +704,20 @@ def dvsort(dct, key=None):
     key = key or ident
     return OrderedDict(sorted(dct.items(), key=lambda i: key(i[1])))
 
+@pipe
+def dhead(dct=None, n=10):
+    if dct is None:
+        return pipe(dhead, n=n)
+    if isinstance(dct, int):
+        return pipe(dhead, n=dct)
+    return dict(islice(dct.items(), n))
+
 def search(seq, s):
     if isinstance(seq, types.ModuleType): seq = dir(seq)
     return [s2 for s2 in seq if re.search(s, s2, re.IGNORECASE)]
+
+def replace(seq, x, y):
+    return [o if o != x else y for o in seq]
 
 @pipe
 def usfilt(it):
@@ -701,10 +727,12 @@ def usfilt(it):
 def usdfilt(dct):
     return dkfilter(dct, lambda s: not s.startswith('_'))
 
+@lwrap_alias
 def zmap(func, *seqs):
     return (tup + (func(*tup),) for tup in zip(*seqs))
 #    return zip(*seqs + (map(func, *seqs),))
 
+@lwrap_alias
 def zmaps(seq, *funcs):
     return (tuple([func(x) if func else x for func in funcs]) for x in seqs)
 #    return zip(*(map(func, seq) if func else seq for func in funcs))
@@ -716,9 +744,11 @@ def dzmap(func, seq):
     return {k: func(k) for k in seq}
 #    return dict(zip(seq, map(func, seq)))
 
+@lwrap_alias
 def rzip(*seqs):
     return zip(*map(reversed, seqs))
 
+@lwrap_alias
 def renumerate(seq):
     return rzip(range(len(seq)), seq)
 
@@ -727,27 +757,7 @@ def lists(its):
     return [list(it) for it in its]
 
 
-def lwrap(f, name=None):
-    def f2(*args, **kwargs):
-        return list(f(*args, **kwargs))
-    assigned = set(functools.WRAPPER_ASSIGNMENTS) - {'__module__'}
-    if name:
-        rename(f2, name)
-        assigned -= {'__name__', '__qualname__'}
-    _update_wrapper(f2, f, assigned, ())
-    return f2
-
-def lwrap_alias(f=None, name=None):
-    if f is None or isinstance(f, str):
-        return partial(lwrap_alias, name=f or name)
-    if name is None:
-        name = 'l' + f.__name__
-    f2 = lwrap(f, name)
-    fglobals(1)[name] = f2
-    return f
-
-for f in (map, zip, range, filter, reversed, enumerate, islice,
-          chunk, schunk, sbreak, unique, zmap, zmaps, rzip, renumerate):
+for f in (map, zip, range, filter, reversed, enumerate, islice, chunk, unique):
     lwrap_alias(f)
 del f
 
@@ -802,9 +812,11 @@ def cround(z, n=0):
 
 @pipe
 def thresh(n, p=14):
+    if isinstance(n, (list, tuple)):
+        return type(n)(thresh(m, p) for m in n)
     if isinstance(n, complex):
-        return cround(n, p)
-    return round(n, p)
+        return cround(n, p) + 0.0
+    return round(n, p) + 0.0
 
 
 def divmods(x, *divs):
@@ -862,7 +874,7 @@ class SlicePipe(object):
 
 sl = SlicePipe()
 
-class IIndexPipe:
+class IIndexPipe(object):
     def __getitem__(self, item):
         return pipe(iindex, idx=item)
 
@@ -890,9 +902,6 @@ bf = lambda bits=8, sign=False, prefix=False: \
 hf = lambda digs=8, sign=False, prefix=False: \
      pipe(lambda n: print(hexfmt(n, digs, sign, prefix)))
 pf = lambda p=4: pipe(lambda f: print('%.*g' % (p, f)))
-wa = pj = pipe(printall, sep='')
-ps = pipe(printall, sep=' ')
-pcr = pipe(printcols, rows=True)
 hd = lambda n=10, wrap=True: pipe(head, n=n, wrap=wrap)
 tl = lambda n=10, wrap=True: pipe(tail, n=n, wrap=wrap)
 doc = pipe(inspect.getdoc)
@@ -997,7 +1006,13 @@ def isbuiltinmod(mod):
 def isbuiltinclass(obj):
     if not isinstance(obj, type):
         obj = type(obj)
-    return isbuiltinmod(obj.__module__)
+    try:
+        obj.__x = None
+    except TypeError:
+        return True
+    else:
+        del obj.__x
+        return False
 
 
 def setdisplayhook(func, typ=object):
@@ -1029,7 +1044,7 @@ def cd(path=None):
 
 ### Module import shortcuts ###
 
-class lazy_loader:
+class lazy_loader(object):
     def __init__(self, func):
         self.func = func
     def __call__(self, *args, **kwargs):
@@ -1038,11 +1053,12 @@ class lazy_loader:
         return getattr(self.func(), name)
 
 
-@lazy_loader
+#@lazy_loader
 def np():
     import numpy
     exec(pr('import numpy, numpy as np\n'
-            'np.set_printoptions(suppress=True)'), fglobals(2))
+            'np.inv = np.linalg.inv; np.norm = np.linalg.norm\n'
+            'np.set_printoptions(suppress=True)'), fglobals(1))
     return numpy
 
 def qt4():
@@ -1064,10 +1080,13 @@ def qt5():
 def mpl(interactive=True):
     import matplotlib
     exec(pr('import matplotlib as mpl\n'
-            'import matplotlib.pyplot as plt'
+            'import matplotlib.pyplot as plt\n'
+            'import numpy as np'
             + ('\nplt.ion()' if interactive else '')),
          fglobals(1))
     return matplotlib
+
+plt = mpl
 
 def pylab(interactive=True):
     import pylab
@@ -1084,11 +1103,12 @@ def pylab3d():
             "ax = subplot(111, projection='3d')"), fglobals(1))
     return pylab
 
-def sympy():
+def sympy(all=True):
     import sympy
-    exec(pr('import sympy, sympy as sp; from sympy import *\n'
-            'R = Rational\n'
-            'var("x, y, z, a, b, c, t", real=True)'),
+    exec(pr('import sympy, sympy as sp\n'
+            + ('from sympy import *\n' if all else '') +
+            'R = sympy.Rational\n'
+            'sympy.var("x, y, z, a, b, c, t", real=True)'),
          fglobals(1))
     return sympy
 
@@ -1114,13 +1134,12 @@ def PIL():
 
 def ctypes():
     import ctypes
-    exec(pr('''\
-import ctypes; from ctypes import *
-from ctypes.util import *
-try: from ctypes.wintypes import *
-except: pass
-try: libc = cdll.msvcrt
-except: libc = CDLL(find_library('c'))'''), fglobals(1))
+    exec(pr('import ctypes; from ctypes import *\n'
+            'from ctypes.util import *\n'
+            + ('from ctypes.wintypes import *\n'
+               'libc = cdll.msvcrt'
+               if os.name == 'nt' else
+               "libc = CDLL(find_library('c'))")), fglobals(1))
     return ctypes
 
 def requests():
@@ -1138,6 +1157,39 @@ def argparse():
     exec(pr('import argparse\n'
             'p = argparse.ArgumentParser()'), fglobals(1))
     return argparse
+
+def tf():
+    import tensorflow
+    exec(pr('import tensorflow as tf'), fglobals(1))
+    return tensorflow
+
+def torch():
+    import torch
+    exec(pr('import torch, torchvision\n'
+            'import torch.utils.data\n'
+            'import torch.nn as nn, torch.nn.functional as F\n'
+            'from torch import tensor'), fglobals(1))
+    return torch
+
+def Crypto():
+    import Crypto
+    exec(pr('import Crypto; from Crypto import *\n'
+            'from Crypto.Cipher import AES\n'
+            'from Crypto.Hash import SHA256\n'
+            'from Crypto.Util import Padding\n'
+            'from Crypto.Protocol import KDF\n'
+            'import Crypto.PublicKey.RSA\n'
+            'import Crypto.Cipher.PKCS1_OAEP\n'
+            'import Crypto.Signature.pkcs1_15'),
+         fglobals(1))
+    return Crypto
+
+def OpenGL():
+    import OpenGL
+    exec(pr('import OpenGL\n'
+            'from OpenGL import GL, GLU, GLUT'),
+         fglobals(1))
+    return OpenGL
 
 
 ################
@@ -1265,7 +1317,7 @@ def execfile(file):
 
 @pipe
 def thousands(n, sep='_'):
-    return format(n, '_').replace('_', sep)
+    return format(n, ',').replace(',', sep)
 
 
 def prunicode(s):
@@ -1346,11 +1398,11 @@ def geom_mean(a, axis=None, keepdims=None):
     return out ** (1/n)
 
 
-##def geom_mean(a, axis=None, keepdims=None):
-##    import numpy as np
-##    if keepdims is None:
-##        keepdims = np._NoValue
-##    return np.exp(np.mean(np.log(a), axis=axis, keepdims=keepdims))
+def geom_mean2(a, axis=None, keepdims=None):
+    import numpy as np
+    if keepdims is None:
+        keepdims = np._NoValue
+    return np.exp(np.mean(np.log(a), axis=axis, keepdims=keepdims))
 
 
 ##def summer(s=0):
@@ -1360,7 +1412,7 @@ def geom_mean(a, axis=None, keepdims=None):
 ##        return s
 ##    return summer
 
-class Summer:
+class Summer(object):
     def __init__(self, s=0):
         self.s = s
     def __call__(self, x):

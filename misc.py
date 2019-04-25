@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-import math, re, struct, functools, operator, string, itertools
+import math, cmath, re, struct, functools, operator, string, itertools
 
 def isprime_re(n):
     return not re.match(r'^1?$|^(11+?)\1+$', '1'*n)
@@ -147,6 +147,7 @@ def parse_roman(s):
             n = -n
         x += n
     return x
+from_roman = parse_roman
 
 def roman(n):
     ones = ' I II III IV V VI VII VIII IX'.split(' ')
@@ -257,7 +258,7 @@ def frac2dec(f, prec=None):
 
 def human_readable(n, prec=1, strip=True):
     n = int(n)
-    power = max((n.bit_length() - 1) // 10, 0)
+    power = min(max((n.bit_length() - 1) // 10, 0), 6)
     num = '{:.{}f}'.format(n / 1024**power, prec)
     if strip and '.' in num:
         num = num.rstrip('0').rstrip('.')
@@ -356,7 +357,97 @@ def comb(n, m):
             A[j] += A[j-1]
     return A[m]
 
+def prod(x):
+    return functools.reduce(operator.mul, x, 1)
+
 def comb(n, m):
     if m > n: return 0
     m = min(m, n-m)
     return prod(n-i for i in range(m)) // prod(i for i in range(1, m+1))
+
+
+def nthroots(z, n):
+    r = abs(z)**(1/n)
+    a = cmath.phase(z)
+    return [r * cmath.exp((a+2*math.pi*k)*1j/n) for k in range(n)]
+
+
+def randcolor(h=(0, 1), s=(.75, 1), v=(.75, 1), a=None):
+    import colorsys
+    h = random.uniform(*h) if isinstance(h, tuple) else h
+    s = random.uniform(*s) if isinstance(s, tuple) else s
+    v = random.uniform(*v) if isinstance(v, tuple) else v
+    c = colorsys.hsv_to_rgb(h, s, v)
+    if a is not None:
+        a = random.uniform(*a) if isinstance(a, tuple) else a
+        c += (a,)
+    return c
+
+def randcolor_pg(h=(0, 360), s=(75, 100), v=(75, 100), a=100):
+    from pygame import Color
+    c = Color(0, 0, 0)
+    h = random.uniform(*h) if isinstance(h, tuple) else h
+    s = random.uniform(*s) if isinstance(s, tuple) else s
+    v = random.uniform(*v) if isinstance(v, tuple) else v
+    a = random.uniform(*a) if isinstance(a, tuple) else a
+    c.hsva = (h, s, v, a)
+    return c
+
+
+def lerp(x0, x1, t):
+    return x0*t + x1*(1-t)
+
+def unlerp(x0, x1, x):
+    return (x - x0) / (x1 - x0)
+
+def lerp_angle(a0, a1, t, max=2*math.pi):
+    min_angle = ((a1 - a0) - max/2) % -max + max/2
+    return (a0 + min_angle*t) % max
+
+
+def lerp_color(c0, c1, t):
+    import colorsys
+    a = None
+    if len(c0) == 4 and len(c1) == 4:
+        c0, a0 = c0[:3], c0[3]
+        c1, a1 = c1[:3], c1[3]
+        a = a0 + (a1 - a0)*t
+    h0, s0, v0 = colorsys.rgb_to_hsv(*c0)
+    h1, s1, v1 = colorsys.rgb_to_hsv(*c1)
+    h = lerp_angle(h0, h1, t, 1)
+    s = s0 + (s1 - s0)*t
+    v = v0 + (v1 - v0)*t
+    c = colorsys.hsv_to_rgb(h, s, v)
+    if a is not None:
+        c += (a,)
+    return c
+
+def lerp_color_pg(c0, c1, t):
+    from pygame import Color
+    h0, s0, v0, a0 = Color(*c0).hsva
+    h1, s1, v1, a1 = Color(*c1).hsva
+    h = lerp_angle(h0, h1, t, 360)
+    s = s0 + (s1 - s0)*t
+    v = v0 + (v1 - v0)*t
+    a = a0 + (a1 - a0)*t
+    c = Color(0, 0, 0)
+    c.hsva = (h, s, v, a)
+    return c
+
+
+def geom_cdf(p, k):
+    return -math.expm1(k*math.log1p(-p))
+
+
+def gauss_kernel_1d(k, sigma=None):
+    import numpy as np
+    if sigma is None:
+        sigma = (k-1)/6
+    x = np.arange(k) - (k-1)/2
+    z = np.exp(-x**2/(2*sigma**2))
+    return z / z.sum()
+
+def gauss_kernel_2d(k, sigma=None):
+    import numpy as np
+    k1 = gauss_kernel_1d(k, sigma)
+    return np.outer(k1, k1)

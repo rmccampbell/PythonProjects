@@ -107,10 +107,10 @@ def autocurrying(func): #, reverse=False):
     @wraps_signature(func)
     def curried(*args, **kwargs):
         arguments = sig.bind_partial(*args, **kwargs).arguments
-        if required - arguments.keys():
-            return autocurrying(partial(func, *args, **kwargs))
-        else:
+        if required <= arguments.keys():
             return func(*args, **kwargs)
+        else:
+            return autocurrying(partial(func, *args, **kwargs))
     curried._autocurrying = True
     curried.func = func
     return curried
@@ -176,7 +176,7 @@ def typechecking(func=None, check_return=False):
     sig = inspect.signature(func)
     for name, param in sig.parameters.items():
         ann, default = param.annotation, param.default
-        if default != _empty and ann != _empty and isinstance(ann, type):
+        if default != _empty and ann != _empty and _istype(ann):
             _check_type(default, ann, name)
 
     @wraps_signature(func)
@@ -185,7 +185,7 @@ def typechecking(func=None, check_return=False):
         for name, barg in bargs.items():
             param = sig.parameters[name]
             ann = param.annotation
-            if ann != _empty and isinstance(ann, type):
+            if ann != _empty and _istype(ann):
                 if param.kind == _VAR_POSITIONAL:
                     for arg in barg:
                         _check_type(arg, ann, name)
@@ -198,7 +198,7 @@ def typechecking(func=None, check_return=False):
         result = func(*args, **kwargs)
         if check_return:
             ret_ann = sig.return_annotation
-            if ret_ann != _empty and isinstance(ret_ann, type):
+            if ret_ann != _empty and _istype(ret_ann):
                 _check_type(result, ret_ann, ret=True)
 
         return result
@@ -206,11 +206,15 @@ def typechecking(func=None, check_return=False):
     func2._typechecking = True
     return func2
 
+def _istype(ann):
+    return (isinstance(ann, type) or
+            isinstance(ann, tuple) and all(map(_istype, ann)))
+
 def _check_type(val, typ, name=None, ret=False):
     name = repr(name) if name else 'return value' if ret else 'argument'
     if not isinstance(val, typ):
         raise TypeError("{} must be of type {}, not {}".format(
-            name, typ.__name__, type(val).__name__))
+            name, getattr(typ, '__name__', typ), type(val).__name__))
 
 
 
@@ -231,15 +235,15 @@ class Composable(FunctionWrapper):
 class Placeholder(object):
     unop = '''\
 def __{name}__(self):
-    return lambda _: {op} _
+    return lambda x: {op} x
 '''
     binop = '''\
 def __{name}__(self, other):
     if isinstance(other, Placeholder):
-        return autocurrying(lambda _1, _2: _1 {op} _2)
-    return lambda _: _ {op} other
+        return autocurrying(lambda x, y: x {op} y)
+    return lambda x: x {op} other
 def __r{name}__(self, other):
-    return lambda _: other {op} _
+    return lambda y: other {op} y
 '''
     for name, op in dict(pos='+', neg='-', invert='~').items():
         exec(unop.format(name=name, op=op))
@@ -264,9 +268,9 @@ def is_sorted(it):
     it = iter(it)
     last = next(it, None)
     for x in it:
-        if x > last:
+        if x < last:
             return False
-        last == x
+        last = x
     return True
 
 def runs(it):
@@ -576,10 +580,10 @@ def first(it, default=_empty):
     raise IndexError
 
 def last(it, default=_empty):
-    empty = True
+    x = sentinel = object()
     for x in it:
-        empty = False
-    if empty:
+        pass
+    if x is sentinel:
         if default is not _empty:
             return default
         raise IndexError
@@ -775,7 +779,12 @@ def powerset(iterable):
     return chain.from_iterable(combinations(s, r) for r in range(len(s)+1))
 
 
-def unzip(it, n):
+def unzip(it, n=None):
+    it = iter(it)
+    if n is None:
+        xs = next(it, ())
+        return tuple([itertools.chain((x,), tee)
+                      for x, tee in zip(xs, unzip(it, len(xs)))])
     tees = itertools.tee(it, n)
     return tuple([map(operator.itemgetter(i), tee)
                   for i, tee in enumerate(tees)])
