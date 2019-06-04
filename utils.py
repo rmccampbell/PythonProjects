@@ -324,7 +324,7 @@ def randstream(it):
         yield random.choice(vals)
 
 
-@lwrap_alias
+@lwrap
 def schunk(s, size=2):
     for i in range(0, len(s), size):
         yield s[i : i+size]
@@ -655,15 +655,18 @@ def aname(obj, val):
     if names:
         return min(names)
 
-def dfilter(dct, cond=None, typ=None):
-    cond = cond or bool
-    if typ:
-        cond = lambda v: isinstance(v, typ)
-    return {k: v for k, v in dct.items() if cond(v)}
+def dfilter(dct, cond):
+    return {k: v for k, v in dct.items() if cond(k, v)}
 
 def dkfilter(dct, cond=None):
     cond = cond or bool
     return {k: v for k, v in dct.items() if cond(k)}
+
+def dvfilter(dct, cond=None, typ=None):
+    cond = cond or bool
+    if typ:
+        cond = lambda v: isinstance(v, typ)
+    return {k: v for k, v in dct.items() if cond(v)}
 
 def dmap(dct, func):
     return dict(func(k, v) for k, v in dct.items())
@@ -915,8 +918,9 @@ enum = pipe(lenumerate)
 mp = lambda f: pipe(lmap, f)
 stmp = lambda f: pipe(itertools.starmap, f)
 flt = lambda f=None: pipe(lfilter, f)
-dflt = lambda f=None, typ=None: pipe(dfilter, cond=f, typ=typ)
+dflt = lambda f=None: pipe(dfilter, cond=f)
 dkflt = lambda f=None: pipe(dkfilter, cond=f)
+dvflt = lambda f=None, typ=None: pipe(dvfilter, cond=f, typ=typ)
 dmp = lambda f: pipe(dmap, func=f)
 dkmp = lambda f: pipe(dkmap, func=f)
 dvmp = lambda f: pipe(dvmap, func=f)
@@ -1057,7 +1061,7 @@ class lazy_loader(object):
 def np():
     import numpy
     exec(pr('import numpy, numpy as np\n'
-            'np.inv = np.linalg.inv; np.norm = np.linalg.norm\n'
+            'import numpy.linalg as LA\n'
             'np.set_printoptions(suppress=True)'), fglobals(1))
     return numpy
 
@@ -1168,7 +1172,8 @@ def torch():
     exec(pr('import torch, torchvision\n'
             'import torch.utils.data\n'
             'import torch.nn as nn, torch.nn.functional as F\n'
-            'from torch import tensor'), fglobals(1))
+            'from torch import tensor\n'
+            'import numpy as np'), fglobals(1))
     return torch
 
 def Crypto():
@@ -1187,7 +1192,10 @@ def Crypto():
 def OpenGL():
     import OpenGL
     exec(pr('import OpenGL\n'
-            'from OpenGL import GL, GLU, GLUT'),
+            'from OpenGL import GL, GLU, GLUT\n'
+            'from OpenGL.GL import shaders\n'
+            'from OpenGL.arrays.vbo import VBO\n'
+            'import glm'),
          fglobals(1))
     return OpenGL
 
@@ -1439,3 +1447,14 @@ def delay_iter(it, delay=1.0, first=False):
         else:
             time.sleep(delay)
         yield x
+
+
+def glm_to_numpy(mat, copy=True, transpose=False):
+    import glm, ctypes, numpy as np
+    w, h = len(mat), len(mat[0])
+    p = glm.value_ptr(mat)
+    ca = ctypes.cast(p, ctypes.POINTER(ctypes.c_float * h * w)).contents
+    a = np.array(ca, copy=copy)
+    if transpose:
+        return a.T
+    return a

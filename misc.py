@@ -395,14 +395,18 @@ def randcolor_pg(h=(0, 360), s=(75, 100), v=(75, 100), a=100):
 
 
 def lerp(x0, x1, t):
-    return x0*t + x1*(1-t)
+    return x0*(1-t) + x1*t
 
 def unlerp(x0, x1, x):
     return (x - x0) / (x1 - x0)
 
-def lerp_angle(a0, a1, t, max=2*math.pi):
-    min_angle = ((a1 - a0) - max/2) % -max + max/2
-    return (a0 + min_angle*t) % max
+def log_interp(x0, x1, t):
+##    return x0**(1-t) * x1**t
+    return x0 * (x1 / x0)**t
+
+def lerp_angle(a0, a1, t, amax=2*math.pi):
+    min_angle = ((a1 - a0) - amax/2) % -amax + amax/2
+    return (a0 + min_angle*t) % amax
 
 
 def lerp_color(c0, c1, t):

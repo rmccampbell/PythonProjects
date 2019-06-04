@@ -1310,31 +1310,40 @@ class CInStream:
 
 
 class ModInt(int):
-	def __new__(cls, val, mod):
-		self = super().__new__(cls, val % mod)
-		self.mod = mod
-		return self
+    def __new__(cls, val, mod):
+        self = super().__new__(cls, val % mod)
+        self.mod = mod
+        return self
 
-	template = '''\
+    template = '''\
 def __{0}__(self, other):
-	return type(self)(super().__{0}__(other), self.mod)
+    return type(self)(super(ModInt, self).__{0}__(other), self.mod)
 '''
-	for op in 'add sub mul truediv mod pow'.split():
-		exec(template.format(op))
-		exec(template.format('r' + op))
+    for op in 'add sub mul floordiv mod pow'.split():
+        exec(template.format(op))
+        exec(template.format('r' + op))
 
-##	def template(op):
-##		def f(self, other):
-##			return type(self)(getattr(super(), op)(other), self.mod)
-##		f.__name__ = op
-##		f.__qualname__ = 'ModInt.' + op
-##		return f
+    template = '''\
+def __{0}__(self):
+    return type(self)(super(ModInt, self).__{0}__(), self.mod)
+'''
+    for op in 'pos neg'.split():
+        exec(template.format(op))
+
+    del template, op
+
+##    def template(op):
+##        def f(self, other):
+##            return type(self)(getattr(super(), op)(other), self.mod)
+##        f.__name__ = op
+##        f.__qualname__ = 'ModInt.' + op
+##        return f
 ##
-##	for op in 'add sub mul truediv mod pow'.split():
-##		rop = '__r' + op + '__'
-##		op = '__' + op + '__'
-##		locals()[op] = template(op)
-##		locals()[rop] = template(rop)
+##    for op in 'add sub mul floordiv mod pow'.split():
+##        rop = '__r' + op + '__'
+##        op = '__' + op + '__'
+##        locals()[op] = template(op)
+##        locals()[rop] = template(rop)
 
 
 
