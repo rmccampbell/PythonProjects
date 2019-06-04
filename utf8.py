@@ -14,19 +14,19 @@ def decode_utf8(bs):
         n = leading_1s(b)
         if n == 0:
             if rem != 0:
-                raise ValueError('single-byte char inside multibyte char')
+                raise UnicodeDecodeError('single-byte char inside multibyte char')
             cs.append(chr(b))
         elif n == 1:
             if rem == 0:
-                raise ValueError('continuation byte outside multibyte char')
-            c = c << 6 | b & 0x3f
+                raise UnicodeDecodeError('continuation byte outside multibyte char')
+            c = (c << 6) | (b & 0x3f)
             rem -= 1
             if rem == 0:
                 cs.append(chr(c))
         else:
             if rem != 0:
-                raise ValueError('multibyte char start inside multibyte char')
-            c = b & 0x7f >> n
+                raise UnicodeDecodeError('multibyte char start inside multibyte char')
+            c = b & (0x7f >> n)
             rem = n - 1
     return ''.join(cs)
 
@@ -40,10 +40,10 @@ def encode_utf8(s):
             b = bytearray()
             n = 1
             # while c.bit_length() > 7-n:
-            while c > 0x7f >> n:
+            while c > (0x7f >> n):
                 b.append(c & 0x3f | 0x80)
                 c >>= 6
                 n += 1
-            bs.append(-0x100 >> n & 0xff | c)
+            bs.append((-0x100 >> n) & 0xff | c)
             bs.extend(b[::-1])
     return bytes(bs)
