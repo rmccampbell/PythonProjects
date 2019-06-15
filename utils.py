@@ -170,7 +170,7 @@ def func(code, name=None, globs=None):
         raise ValueError('nothing to return')
 
 
-@pipe_alias('impt', 'im', 'i', _depth=1)
+@pipe_alias('im', _depth=1)
 def autoimport(string, _depth=0):
     if not isinstance(string, str): return string
     globs = fglobals(_depth+1)

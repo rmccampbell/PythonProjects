@@ -4,14 +4,14 @@ import pymouse, pykeyboard
 
 # Note: High DPI scaling must be disabled for python.exe on windows
 
-class MouseRecorder(pymouse.PyMouseEvent):
-    def __init__(self, track_movement=True):
+class Recorder:
+    def __init__(self):
         super().__init__()
         self.events = []
-        self.track_movement = track_movement
+        self.starttime = self.time = 0
 
     def run(self):
-        self.time = time.time()
+        self.starttime = self.time = time.perf_counter()
         super().run()
 
     def run_until_escape(self):
@@ -20,18 +20,33 @@ class MouseRecorder(pymouse.PyMouseEvent):
         escaper = pykeyboard.PyKeyboardEvent()
         escaper.start()
         try:
-            while escaper.is_alive():
-                time.sleep(.1)
+            escaper.join()
         except KeyboardInterrupt:
             pass
         self.stop()
         self.join()
 
     def tick(self):
-        ctime = time.time()
+        ctime = time.perf_counter()
         dtime = ctime - self.time
         self.time = ctime
         return dtime
+
+    def tottime(self):
+        return self.time - self.starttime
+
+    def stop(self):
+        super().stop()
+        self.events.append(('wait', self.tick()))
+
+    def save(self, file=None):
+        return save(file, self.events)
+
+
+class MouseRecorder(Recorder, pymouse.PyMouseEvent):
+    def __init__(self, track_movement=True):
+        super().__init__()
+        self.track_movement = track_movement
 
     def click(self, x, y, button, press):
         self.events.append(('click', self.tick(), x, y, button, press))
@@ -43,20 +58,40 @@ class MouseRecorder(pymouse.PyMouseEvent):
         if self.track_movement:
             self.events.append(('move', self.tick(), x, y))
 
-    def stop(self):
-        super().stop()
-        self.events.append(('wait', self.tick()))
 
-    def save(self, file=None):
-        save(file, self.events)
+class KeyRecorder(Recorder, pykeyboard.PyKeyboardEvent):
+    def __init__(self, escape_key=None, remove_dups=True):
+        super().__init__()
+        self.escape_key = escape_key
+        self.remove_dups = remove_dups
+        self.pressed_keys = set()
+
+    def run_until_escape(self):
+        if not self.is_alive():
+            self.start()
+        self.join()
+
+    def tap(self, keycode, character, press):
+        if self.remove_dups and press and keycode in self.pressed_keys:
+            return
+        self.events.append(('key', self.tick(), keycode, character, press))
+        if press:
+            self.pressed_keys.add(keycode)
+        else:
+            self.pressed_keys.discard(keycode)
+
+    def escape(self, event):
+        if self.escape_key is not None:
+            return event.KeyID == self.escape_key
+        return super().escape(event)
 
 recorder = None
 
-def record(track_movement=True, run_until_escape=True):
-    global recorder, escaper
-    recorder = MouseRecorder(track_movement)
+def record(keys=False, track_movement=True, escape_key=None, blocking=True):
+    global recorder
+    recorder = KeyRecorder(escape_key) if keys else MouseRecorder(track_movement)
     recorder.start()
-    if run_until_escape:
+    if blocking:
         recorder.run_until_escape()
     return recorder
 
@@ -80,7 +115,8 @@ def save(file=None, events=None):
     if events is None:
         events = recorder.events
     with file:
-        json.dump(events, file)
+        json.dump(events, file, indent=1)
+    return getattr(file, 'name', None)
 
 def load(file):
     global recorder
@@ -88,10 +124,10 @@ def load(file):
         file = open(file, 'r')
     with file:
         events = json.load(file)
-        if recorder == None:
-            recorder = MouseRecorder()
-        recorder.events = events
-        return events
+    if recorder is None:
+        recorder = MouseRecorder()
+    recorder.events = events
+    return events
 
 def playback(events=None, speed=1.0, repeat=False):
     global recorder
@@ -100,16 +136,19 @@ def playback(events=None, speed=1.0, repeat=False):
     if repeat:
         events = itertools.cycle(events)
     mouse = pymouse.PyMouse()
+    keyboard = pykeyboard.PyKeyboard()
     escaper = pykeyboard.PyKeyboardEvent()
     escaper.start()
-    tottime = 0.0
+    tottime = realtime = 0.0
+    starttime = time.perf_counter()
     for event in events:
         # keyboard event stops on escape key
         if not escaper.is_alive():
             return False, tottime
         type, dtime, *rest = event
         tottime += dtime
-        time.sleep(dtime / speed)
+        realtime = time.perf_counter() - starttime
+        time.sleep(max(tottime / speed - realtime, 0))
         if type == 'click':
             x, y, button, press = rest
             if press:
@@ -123,9 +162,15 @@ def playback(events=None, speed=1.0, repeat=False):
         elif type == 'move':
             x, y = rest
             mouse.move(x, y)
+        elif type == 'key':
+            keycode, character, press = rest
+            if press:
+                keyboard.press_key(keycode)
+            else:
+                keyboard.release_key(keycode)
         elif type == 'wait':
             pass
-    return True, tottime
+    return True, realtime
 
 def macro_length(events):
     return sum(event[1] for event in events)
@@ -135,10 +180,10 @@ def macro_slice(events, starttime=0.0, endtime=float('inf')):
     newevents = []
     for event in events:
         curtime += event[1]
-        if starttime <= curtime <= endtime:
-            newevents.append(event)
-        elif curtime > endtime:
+        if curtime > endtime:
             break
+        elif curtime >= starttime:
+            newevents.append(event)
     return newevents
 
 def macro_speedup(events, speed=1.0):
@@ -153,7 +198,9 @@ if __name__ == '__main__':
 
     p1 = sp.add_parser('record')
     p1.add_argument('file', nargs='?')
+    p1.add_argument('-k', '--keys', action='store_true')
     p1.add_argument('-T', '--no-track', action='store_true')
+    p1.add_argument('-e', '--escape-key', type=int)
 
     p2 = sp.add_parser('play')
     p2.add_argument('file')
@@ -184,10 +231,10 @@ if __name__ == '__main__':
 
     if args.command == 'record':
         print('Recording...')
-        recorder = record(track_movement=not args.no_track,
-                          run_until_escape=True)
-        recorder.save(args.file)
-        print('\aSaved')
+        recorder = record(keys=args.keys, track_movement=not args.no_track,
+                          escape_key=args.escape_key, blocking=True)
+        print('\aStopped: {:.2f} s'.format(recorder.tottime()))
+        print('Saved:', recorder.save(args.file))
 
     elif args.command == 'play':
         print('Playing...')
@@ -204,7 +251,7 @@ if __name__ == '__main__':
             events.append(('wait', args.delay))
         events += events2
         with open(args.outfile, 'w') as f3:
-            json.dump(events, f3)
+            json.dump(events, f3, indent=1)
 
     elif args.command in ('length', 'len'):
         with open(args.file) as f:
@@ -216,11 +263,11 @@ if __name__ == '__main__':
             events = json.load(f1)
         newevents = macro_slice(events, args.starttime, args.endtime)
         with open(args.outfile, 'w') as f2:
-            json.dump(newevents, f2)
+            json.dump(newevents, f2, indent=1)
 
     elif args.command == 'speed':
         with open(args.file) as f1:
             events = json.load(f1)
         newevents = macro_speedup(events, args.speed)
         with open(args.outfile, 'w') as f2:
-            json.dump(newevents, f2)
+            json.dump(newevents, f2, indent=1)
