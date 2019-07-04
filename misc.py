@@ -13,27 +13,48 @@ def tobase(n, b):
     return ''.join(digs)[::-1] or '0'
 
 def frombase(s, b):
-    digs = dict(zip('0123456789abcdefghijklmnopqrstuvwxyz', range(b)))
-    # return sum(digs[c]*b**i for i, c in enumerate(reversed(s)))
-    return functools.reduce(lambda n, c: n*b + digs[c], s, 0)
+    digs = dict(zip('0123456789abcdefghijklmnopqrstuvwxyz', range(math.ceil(b))))
+    # return sum(digs[c]*b**i for i, c in enumerate(reversed(s.lower())))
+    return functools.reduce(lambda n, c: n*b + digs[c], s.lower(), 0)
 
 
-def float_tobase(num, b, p=10):
-    num, whole = math.modf(num)
+##def float_tobase(num, b, p=10, pad0=False):
+##    p = max(p, 0)
+##    ss = ['-'] if num < 0 else []
+##    num = abs(num)
+##    for i in range(int(math.log(max(num, 1), b)), -p-1, -1):
+##        if i < 0 and not (num or pad0):
+##            break
+##        dig = int(num * b**-i)
+##        if dig >= b:
+##            dig -= 1
+##        num -= dig * b**i
+##        ss.append('0123456789abcdefghijklmnopqrstuvwxyz'[dig])
+##        if i == 0:
+##            ss.append('.')
+##    return ''.join(ss)
+
+def float_tobase(num, b, p=10, pad0=False):
+    p = max(p, 0)
+    ss = ['-'] if num < 0 else []
     num = abs(num)
-    ss = [tobase(int(whole), b), '.']
-    for i in range(p):
-        if not (num or pad0):
+    e = int(math.log(max(num, 1), b))
+    num *= b**-e
+    for i in range(e + p + 1):
+        if i > e and not (num or pad0):
             break
-        num, whole = math.modf(num * 2)
-        ss.append('0123456789abcdefghijklmnopqrstuvwxyz'[int(whole)])
+        num, dig = math.modf(num)
+        num *= b
+        ss.append('0123456789abcdefghijklmnopqrstuvwxyz'[int(dig)])
+        if i == e:
+            ss.append('.')
     return ''.join(ss)
 
 def float_frombase(s, b):
     exp = 0
     point = s.find('.')
     if point >= 0:
-        exp = len(s) - point - 1
+        exp = point + 1 - len(s)
         s = s[:point] + s[point + 1:]
     return float(frombase(s, b) * b**exp)
 

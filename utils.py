@@ -8,7 +8,7 @@ _PY3 = sys.version_info[0] >= 3
 import os, collections, functools, itertools, operator, types, math, cmath, re
 import io, random, inspect, textwrap, dis, timeit, time, datetime, string
 import fractions, decimal, unicodedata, codecs, locale, shutil, numbers
-import subprocess, json, base64, pprint
+import subprocess, json, base64
 import os.path as osp
 from math import pi, e, sqrt, exp, log, log10, floor, ceil, factorial, \
      sin, cos, tan, asin, acos, atan, atan2
@@ -20,6 +20,7 @@ from itertools import islice, chain, starmap
 from collections import OrderedDict, Counter
 from fractions import Fraction
 from decimal import Decimal
+from pprint import pprint
 if _PY3:
     from itertools import zip_longest
     try: from math import tau
@@ -103,17 +104,18 @@ def fglobals(depth=0):
 @alias('call', 'c')
 class pipe(object):
     def __init__(self, callable_, *args, **kwargs):
+        if isinstance(callable_, pipe):
+            callable_ = callable_.callable
         if args or kwargs:
             self.callable = partial(callable_, *args, **kwargs)
+            self.callable.__doc__ = callable_.__doc__
         else:
             self.callable = callable_
 
-        updated = (() if isinstance(callable_, (type, pipe))
-                   else functools.WRAPPER_UPDATES)
         try:
-            _update_wrapper(self, callable_, updated=updated)
+            _update_wrapper(self, self.callable, updated=())
         except AttributeError:
-            _update_wrapper(self, callable_, ('__doc__',), updated)
+            _update_wrapper(self, self.callable, ('__doc__',), ())
 
     def __repr__(self):
         return '<utils.pipe of {!r}>'.format(self.callable)
@@ -170,7 +172,7 @@ def func(code, name=None, globs=None):
         raise ValueError('nothing to return')
 
 
-@pipe_alias('impt', 'im', 'i', _depth=1)
+@pipe_alias('im', _depth=1)
 def autoimport(string, _depth=0):
     if not isinstance(string, str): return string
     globs = fglobals(_depth+1)
@@ -428,8 +430,8 @@ def tobytes(n, length=None, byteorder=sys.byteorder, signed=False):
     byteorder = {'<': 'little', '>': 'big', '=': sys.byteorder}.get(
         byteorder, byteorder)
     if length is None:
-        bl = (n if n >= 0 else ~n).bit_length() + 1 if signed \
-             else n.bit_length()
+        bl = ((n if n >= 0 else ~n).bit_length() + 1 if signed
+              else n.bit_length())
         length = (bl + 7) // 8
     elif signed:
         n = _signed(n, 8*length)
@@ -621,6 +623,7 @@ def printd(dct):
     if _is_ordereddict(dct):
         try: items = sorted(items)
         except TypeError: pass
+    if not dct: return
     ksize = max(len(str(k)) for k in dct.keys())
     for k, v in items:
         rep = repr(v)
@@ -692,11 +695,11 @@ def dunion(dct1, dct2):
 
 def dsearch(dct, s):
     if isinstance(dct, types.ModuleType): dct = vars(dct)
-    return {k: v for k, v in dct.items() if re.search(s, k, re.IGNORECASE)}
+    return {k: v for k, v in dct.items() if re.search(s, str(k), re.IGNORECASE)}
 
 def dvsearch(dct, s):
     if isinstance(dct, types.ModuleType): dct = vars(dct)
-    return {k: v for k, v in dct.items() if re.search(s, v, re.IGNORECASE)}
+    return {k: v for k, v in dct.items() if re.search(s, str(v), re.IGNORECASE)}
 
 @pipe
 def dsort(dct, key=None):
@@ -717,7 +720,7 @@ def dhead(dct=None, n=10):
 
 def search(seq, s):
     if isinstance(seq, types.ModuleType): seq = dir(seq)
-    return [s2 for s2 in seq if re.search(s, s2, re.IGNORECASE)]
+    return [s2 for s2 in seq if re.search(s, str(s2), re.IGNORECASE)]
 
 def replace(seq, x, y):
     return [o if o != x else y for o in seq]
@@ -899,6 +902,7 @@ lns = pipe(str.splitlines)
 j = pipe(lambda x: ''.join(map(str, x)))
 srt = pipe(sorted)
 p = cat = pipe(print)
+pp = pipe(pprint)
 w = pipe(print, end='')
 bf = lambda bits=8, sign=False, prefix=False: \
      pipe(lambda n: print(binfmt(n, bits, sign, prefix)))
@@ -1198,6 +1202,12 @@ def OpenGL():
             'import glm'),
          fglobals(1))
     return OpenGL
+
+
+def pyassimp():
+    import pyassimp
+    exec(pr('import pyassimp'), fglobals(1))
+    return pyassimp
 
 
 ################

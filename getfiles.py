@@ -153,3 +153,10 @@ def stdout_encoding(encoding=None, errors=ERRORS):
     stdout = set_stdout_encoding(encoding, errors)
     yield
     reset_stdout_encoding(stdout)
+
+
+def stdcon(mode='w', **kwargs):
+    if os.name == 'nt':
+        return open('con', mode, **kwargs)
+    else:
+        return open('/dev/tty', mode, **kwargs)
