@@ -271,6 +271,7 @@ def seta(_obj, _name=None, _value=None, **kws):
 def void(*args):
     pass
 
+@alias('clamp')
 def clip(n, low, high):
     return min(max(n, low), high)
 
