@@ -1261,7 +1261,8 @@ def getdefault(seq, i, default=None):
     except LookupError:
         return default
 
-def unpackdefs(seq, defaults=None, num=None):
+
+def unpack_defaults(seq, defaults=None, num=None):
     if num is not None:
         defaults = itertools.repeat(defaults, num)
     if defaults is None:
@@ -1271,7 +1272,7 @@ def unpackdefs(seq, defaults=None, num=None):
             itertools.zip_longest(seq, defaults, fillvalue=sentinel)]
 
 
-def unpackdict(dct, keys, defaults=None, default=_empty, rest=False):
+def unpack_dict(dct, keys, defaults=None, default=_empty, rest=False):
     keys = list(keys)
     vals = []
     if defaults and not isinstance(defaults, dict):
@@ -1310,8 +1311,8 @@ def setdefaults(dct, defaults):
         dct.setdefault(k, v)
 
 
-def multiapply(seq, funcs):
-    return [f(o) for f, o in zip(funcs, seq)]
+def applyseq(funcs, *seqs):
+    return [f(*xs) for f, xs in zip(funcs, zip(*seqs))]
 
 
 def multidict(items):
