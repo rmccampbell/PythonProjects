@@ -110,7 +110,9 @@ def autocurrying(func): #, reverse=False):
         if required <= arguments.keys():
             return func(*args, **kwargs)
         else:
-            return autocurrying(partial(func, *args, **kwargs))
+            pf = partial(func, *args, **kwargs)
+            pf.__doc__ = func.__doc__
+            return autocurrying(pf)
     curried._autocurrying = True
     curried.func = func
     return curried

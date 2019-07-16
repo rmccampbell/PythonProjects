@@ -101,7 +101,7 @@ def fglobals(depth=0):
     return sys._getframe(depth + 1).f_globals
 
 
-@alias('call', 'c')
+@alias('c')
 class pipe(object):
     def __init__(self, callable_, *args, **kwargs):
         if isinstance(callable_, pipe):
@@ -123,6 +123,7 @@ class pipe(object):
     def __or__(self, other):
         if isinstance(other, pipe):
             return other.__ror__(self)
+        return NotImplemented
 
     def __ror__(self, other):
         if isinstance(other, tuple):
@@ -132,8 +133,6 @@ class pipe(object):
                 res = self.callable(other)
         else:
             res = self.callable(other)
-        if getattr(res, '_autocurrying', False):
-            return pipe(res)
         return res
 
     def __call__(self, *args, **kwargs):
