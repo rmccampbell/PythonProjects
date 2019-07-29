@@ -121,14 +121,21 @@ def parity32(n):
     return n & 1
 
 
-def byteswap(n, nb=2):
-    return sum((n >> 8*i & 255) << 8*(nb-i-1) for i in range(nb))
+def byteswap(n, b=2):
+    return sum((n >> 8*i & 255) << 8*(b-i-1) for i in range(b))
 
 def byteswap16(n):
     return (n & 255) << 8 | n >> 8
 
 def byteswap32(n):
     return (n & 255) << 24 | (n & 65280) << 8 | n >> 8 & 65280 | n >> 24
+
+
+def splitwords(n, inb=8, outb=4):
+    return [(n >> 8*outb*i) & ((1 << 8*outb) - 1) for i in range(inb//outb)]
+
+def split64_32(n):
+    return n & 0xffffffff, n >> 32
 
 
 def float_bits(num):
@@ -384,7 +391,7 @@ def prod(x):
 def comb(n, m):
     if m > n: return 0
     m = min(m, n-m)
-    return prod(n-i for i in range(m)) // prod(i for i in range(1, m+1))
+    return prod(n-i for i in range(m)) // prod(range(1, m+1))
 
 
 def nthroots(z, n):

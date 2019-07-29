@@ -145,6 +145,16 @@ def iterfunc(func, init, cond=None, stop=_empty):
         yield init
         init = func(init)
 
+def accumulate(func, seq, init=_empty, include_init=False):
+    res = []
+    x = init
+    if include_init and x is not _empty:
+        res.append(x)
+    for y in seq:
+        x = func(x, y) if x is not _empty else y
+        res.append(x)
+    return res
+
 
 def trycall(func, default=None, exc=Exception, args=(), kwargs=None):
     try:

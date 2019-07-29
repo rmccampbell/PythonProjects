@@ -848,12 +848,12 @@ def geom_avg(it, *args):
 
 
 def prod(x):
-    return functools.reduce(operator.mul, x)
+    return functools.reduce(operator.mul, x, 1)
 
 
-def cumsum(it):
+def cumsum(it, init=0):
     l = []
-    s = 0
+    s = init
     for x in it:
         s += x
         l.append(s)
@@ -863,7 +863,8 @@ def cumsum(it):
 def frac(n, d=None, maxd=1000000):
     if d is not None and isinstance(n, (float, Decimal)):
         d, maxd = None, d
-    return Fraction(n, d).limit_denominator(maxd)
+    f = Fraction(n, d)
+    return f.limit_denominator(maxd) if maxd else f
 
 
 def timef(f, *args, **kwargs):
@@ -1259,7 +1260,6 @@ def getdefault(seq, i, default=None):
         return seq[i]
     except LookupError:
         return default
-
 
 def unpack_defaults(seq, defaults=None, num=None):
     if num is not None:
