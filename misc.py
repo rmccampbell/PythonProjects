@@ -483,3 +483,13 @@ def gauss_kernel_2d(k, sigma=None):
     import numpy as np
     k1 = gauss_kernel_1d(k, sigma)
     return np.outer(k1, k1)
+
+def getimbytes(arr, format=None):
+    import numpy as np
+    import matplotlib.pyplot as plt
+    arr = np.asarray(arr)
+    if arr.dtype == int:
+        arr = arr.astype(np.uint8)
+    f = io.BytesIO()
+    plt.imsave(f, arr, format=format)
+    return f.getvalue()
