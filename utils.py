@@ -810,7 +810,7 @@ def b2s(bts, enc='utf-8'):
 def lcm(x, y):
     return abs(x * y) // gcd(x, y)
 
-def sgn(x):
+def sign(x):
     return x // abs(x or 1)
 
 def cround(z, n=0):
@@ -1458,14 +1458,3 @@ def delay_iter(it, delay=1.0, first=False):
         else:
             time.sleep(delay)
         yield x
-
-
-def glm_to_numpy(mat, copy=True, transpose=False):
-    import glm, ctypes, numpy as np
-    w, h = len(mat), len(mat[0])
-    p = glm.value_ptr(mat)
-    ca = ctypes.cast(p, ctypes.POINTER(ctypes.c_float * h * w)).contents
-    a = np.array(ca, copy=copy)
-    if transpose:
-        return a.T
-    return a
