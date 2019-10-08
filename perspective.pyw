@@ -18,13 +18,6 @@ ES = EZ - SZ
 
 DEG = math.pi/180
 
-def draw_rot_ellipse(surf, x, y, rx, ry, angle, color, width=1, res=200):
-    from numpy import linspace, pi, cos, sin, column_stack
-    t = linspace(0, 2*pi, res, False)
-    X = x + rx*cos(t)*cos(angle) - ry*sin(t)*sin(angle)
-    Y = y + rx*cos(t)*sin(angle) + ry*sin(t)*cos(angle)
-    pygame.draw.lines(surf, color, True, column_stack((X, Y)), width)
-
 def project(point):
     x, y, z = point
     scale = ES/(EZ - z)
@@ -35,10 +28,24 @@ def project_r(r, z):
 
 def project_sphere(r, point):
     x, y, z = point
-    xr = r * ES / math.sqrt((EZ - z)**2 - r**2)
-    yr = xr
+    z -= EZ
+    r2 = r**2
+    z2 = z**2
+    l2 = x**2 + y**2 + z**2
+    cx = -ES * z * x / (z2-r2)
+    cy = -ES * z * y / (z2-r2)
+    rx = ES * math.sqrt(-r2*(r2-l2)/((l2-z2)*(r2-z2)*(r2-z2))*(x**2 + y**2))
+    ry = ES * math.sqrt(-r2*(r2-l2)/((l2-z2)*(r2-z2)*(r2-l2))*(x**2 + y**2))
     theta = math.atan2(y, x)
-    return xr, yr, theta
+    return (cx, cy), rx, ry, theta
+
+def draw_ellipse(surf, cx, cy, rx, ry, angle, color, width=1, res=200):
+    from numpy import linspace, pi, cos, sin, column_stack
+    t = linspace(0, 2*pi, res, False)
+    X, Y = rx*cos(t), ry*sin(t)
+    X2 = cx + X*cos(angle) + Y*sin(angle)
+    Y2 = cy - X*sin(angle) + Y*cos(angle)
+    pygame.draw.lines(surf, color, True, column_stack((X2, Y2)), width)
 
 def pixelize(point):
     x, y = point
@@ -281,17 +288,17 @@ def main(points=points, polys=polys, spheres=spheres):
 
             pygame.draw.lines(screen, COLOR, False, pixs, 1)
 
-##        for i, (p, r) in enumerate(spheres):
-##            p = rotate_y(p, yrspeed)
-##            p = rotate_x(p, xrspeed)
-##            spheres[i] = (p, r)
-##
-##            proj = project(p)
-##            projxr, projyr, theta = project_sphere(r, p)
-##            pixp = pixelize(proj)
-##            pixr = pixel_r(projxr)
-##
-##            pygame.draw.circle(screen, COLOR, pixp, pixr, 1)
+        for i, (p, r) in enumerate(spheres):
+            p = rotate_y(p, yrspeed)
+            p = rotate_x(p, xrspeed)
+            spheres[i] = (p, r)
+
+            projc, projrx, projry, theta = project_sphere(r, p)
+            pixx, pixy = pixelize(projc)
+            pixrx = pixel_r(projrx)
+            pixry = pixel_r(projry)
+
+            draw_ellipse(screen, pixx, pixy, pixrx, pixry, theta, COLOR, 1)
 
         pygame.display.flip()
         pygame.time.wait(10)

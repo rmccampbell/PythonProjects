@@ -13,9 +13,9 @@ DEBUG = False
 WHITE_CPU = False
 BLACK_CPU = True
 
-### If you set MINIMAX_DEPTH to 4, it will get harder in theory. It will
+### If you set MINIMAX_DEPTH to 5, it will get harder in theory. It will
 ### also get a lot slower.
-### Warning: don't set it higher than 4 or it will take forever. 
+### Warning: don't set it higher than 5 or it will take forever. 
 MINIMAX_DEPTH = 4
 
 # PyInstaller
@@ -154,7 +154,7 @@ class Game:
         self.in_promotion = False
         self.check = self.is_check()
         if DEBUG and self.check: print('Check')
-        if not self.any_moves_left():
+        if not self.any_moves_left() or self.is_draw():
             self.gameover()
             return
         if self.cpu_turn:
@@ -284,11 +284,20 @@ class Game:
         self.start_turn(1 - self.turn)
 
     def any_moves_left(self):
-        board = self.board
         for src, piece in self.enum_pieces(self.turn):
             for move in self.enum_moves(src, piece):
                 return True
         return False
+
+    # Only kings
+    def is_draw(self):
+        for src, piece in self.enum_pieces(BLACK):
+            if piece.type != KING:
+                return False
+        for src, piece in self.enum_pieces(WHITE):
+            if piece.type != KING:
+                return False
+        return True
 
     def draw_title(self):
         screen = self.screen
@@ -393,6 +402,7 @@ class Game:
             self.cpu_selection_timer -= 1
             if self.cpu_selection_timer == 0:
                 src, dest = self.cpu_move_result
+                assert self.can_move(src, dest)
                 self.move(src, dest)
         elif self.cpu_move_complete:
             src, dest = self.cpu_move_result
@@ -435,7 +445,8 @@ class Game:
         src_piece = board[sx][sy]
         dest_piece = board[dx][dy]
         if dest_piece and dest_piece.type == KING:
-            return self.score_board(board, turn) + PIECE_VALUES[KING]
+            # Multiply by depth to weight sooner checks higher
+            return self.score_board(board, turn) + PIECE_VALUES[KING]*depth
         board[sx][sy] = None
         board[dx][dy] = src_piece
         if src_piece.type == PAWN and dy in (0, 7):
@@ -469,6 +480,8 @@ class Piece:
         return 'Piece({}, {})'.format(SIDES[self.side], TYPES[self.type])
 
     def can_move(self, src, dest, board):
+        if src == dest:
+            return False
         typ = self.type
         x1, y1 = src
         x2, y2 = dest
@@ -604,11 +617,12 @@ def getside(piece):
 
 
 def main():
+    global game
     white_cpu, black_cpu = WHITE_CPU, BLACK_CPU
     minimax_depth = MINIMAX_DEPTH
     if len(sys.argv) > 1 and sys.argv[1] in ('-h', '--help'):
         # Won't print if run via pythonw.exe
-        print('usage: chess2.pyw [WHITE_CPU=0] [BLACK_CPU=1] [MINIMAX_DEPTH=4]')
+        print(__doc__)
         return
     if len(sys.argv) > 2:
         white_cpu = bool(int(sys.argv[1]))
