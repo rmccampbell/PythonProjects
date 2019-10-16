@@ -1,4 +1,6 @@
 #!/usr/bin/env python3
+import sys
+import math
 import numpy as np
 import pygame as pg
 # import pygame.gfxdraw
@@ -30,56 +32,62 @@ def propagate(z, v, wrap=False):
     v += a
     z += v
 
-def update_balls(z, ballx, bally):
+def update_balls(z, balls, wrap=False):
     dzdx, dzdy = np.gradient(z * BALLACCEL)
-    xind = ballx.round().astype(int).clip(0, WIDTH-1)
-    yind = bally.round().astype(int).clip(0, HEIGHT-1)
-    ballx += dzdx[xind, yind]
-    bally += dzdy[xind, yind]
+    for i, (x, y) in enumerate(balls):
+        xind = math.floor(np.clip(x, 0, WIDTH-1))
+        yind = math.floor(np.clip(y, 0, HEIGHT-1))
+        x += dzdx[xind, yind]
+        y += dzdy[xind, yind]
+        if wrap:
+            x, y = x % WIDTH, y % HEIGHT
+        else:
+            x, y = np.clip(x, 0, WIDTH), np.clip(y, 0, HEIGHT)
+        balls[i] = (x, y)
 
-def interp_color(z, c0, c1):
-    color = z[..., np.newaxis] * (c1 - c0) + c0
+def interp_colors(t, c0, c1):
+    color = t[..., np.newaxis] * (c1 - c0) + c0
     return color.round().astype('uint8')
 
 def draw(screen, z):
     norm = np.clip((z - MINVAL) / (MAXVAL - MINVAL), 0, 1)
-    rgb = interp_color(norm, COLOR0, COLOR1)
-    px = rgb.repeat(PIX, 0).repeat(PIX, 1)
-    surf = pg.surfarray.make_surface(px)
-    screen.blit(surf, (0, 0))
+    rgb = interp_colors(norm, COLOR0, COLOR1)
+    pix = rgb.repeat(PIX, 0).repeat(PIX, 1)
+    pg.surfarray.blit_array(screen, pix)
 
-def draw_balls(screen, ballx, bally):
-    coords = np.column_stack((ballx, bally)).round().astype(int) * PIX
-    for x, y in coords:
-        # pg.gfxdraw.filled_circle(screen, x, y, 4, BALLCOLOR)
-        pg.draw.circle(screen, BALLCOLOR, (x, y), 4)
+def draw_balls(screen, balls):
+    for x, y in balls:
+        px = math.floor(x * PIX)
+        py = math.floor(y * PIX)
+        # pg.gfxdraw.filled_circle(screen, px, py, 4, BALLCOLOR)
+        pg.draw.circle(screen, BALLCOLOR, (px, py), 4)
 
 def splash(z, v, down, px, py):
     x, y = px // PIX, py // PIX
     v[x, y] += -SPLASH if down else SPLASH
 
-def add_ball(ballx, bally, px, py):
-    x, y = px // PIX, py // PIX
-    ballx = np.concatenate((ballx, [x]))
-    bally = np.concatenate((bally, [y]))
-    return ballx, bally
+def add_ball(balls, px, py):
+    balls.append((px // PIX, py // PIX))
 
 def noise(width, height):
     return np.random.normal(0, .5, (width, height))
 
-def clear(z, v):
+def clear(z, v, balls):
     v[:] = 0
     z[:] = noise(*z.shape)
-    return np.array([]), np.array([])
+    balls.clear()
 
 def main():
+    wrap = '-w' in sys.argv[1:] or WRAP
     z = np.zeros((WIDTH, HEIGHT))
     v = np.zeros((WIDTH, HEIGHT))
-    ballx, bally = clear(z, v)
+    balls = []
+    clear(z, v, balls)
     screen = pg.display.set_mode((PIX*WIDTH, PIX*HEIGHT))
     draw(screen, z)
     clock = pg.time.Clock()
     running = True
+
     while running:
         mods = pg.key.get_mods()
         for evt in pg.event.get():
@@ -91,19 +99,20 @@ def main():
                    evt.key == pg.K_w and evt.mod & pg.KMOD_META:
                     running = False
                 elif evt.key == pg.K_c:
-                    ballx, bally = clear(z, v)
+                    clear(z, v, balls)
             elif evt.type == pg.MOUSEBUTTONDOWN:
                 if evt.button == 2 or mods & pg.KMOD_CTRL:
-                    ballx, bally = add_ball(ballx, bally, *evt.pos)
+                    add_ball(balls, *evt.pos)
         mouse = pg.mouse.get_pressed()
         if (mouse[0] or mouse[2]) and not mods & pg.KMOD_CTRL:
             splash(z, v, mouse[0], *pg.mouse.get_pos())
+
         clock.tick(FPS)
-        propagate(z, v, WRAP)
+        propagate(z, v, wrap)
         draw(screen, z)
-        if ballx.size:
-            update_balls(z, ballx, bally)
-            draw_balls(screen, ballx, bally)
+        if balls:
+            update_balls(z, balls)
+            draw_balls(screen, balls)
         pg.display.flip()
 
 if __name__ == '__main__':
