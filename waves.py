@@ -111,7 +111,7 @@ def main():
         propagate(z, v, wrap)
         draw(screen, z)
         if balls:
-            update_balls(z, balls)
+            update_balls(z, balls, wrap)
             draw_balls(screen, balls)
         pg.display.flip()
 
