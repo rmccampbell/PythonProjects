@@ -1,0 +1,87 @@
+#!/usr/bin/env python3
+import sys, os, subprocess, re, urllib.parse, json, base64, argparse
+import requests
+
+def decode(codes, key):
+    return ''.join(chr(int(re.sub(rb'\D', b'', base64.b64decode(s))) - key)
+                   for s in codes)
+
+def get_video_url(url):
+    resp = requests.get(url)
+    resp.raise_for_status()
+    match = re.search(r'var [a-zA-Z]{3} = (\[[^\]]+\])', resp.text)
+    codes = json.loads(match.group(1))
+    key = int(re.search(r'\) - (\d+)\);', resp.text).group(1))
+
+    iframe = decode(codes, key)
+    src = re.search(r'src="([^"]+)"', iframe).group(1)
+    url2 = urllib.parse.urljoin(url, src)
+
+    resp = requests.get(url2)
+    resp.raise_for_status()
+    urlre = r'get\("([^"]+)"\)\.then'
+    url3 = re.search(urlre, resp.text).group(1)
+    url3 = urllib.parse.urljoin(url2, url3)
+
+    resp = requests.get(url3, headers={'X-Requested-With': 'XMLHttpRequest'})
+    js = json.loads(resp.text)
+    vidurl = js['server'] + '/getvid?evid=' + js['enc']
+##    print(vidurl)
+##    resp2 = requests.head(vidurl, allow_redirects=True)
+##    print(resp2)
+##    import pprint; pprint.pprint(resp2.headers)
+    return vidurl
+
+def url2file(url, restrict=False):
+    path = urllib.parse.urlsplit(url).path
+    path = urllib.parse.unquote(path)
+    file = os.path.basename(path)
+    if not file:
+        file = 'file'
+    if restrict:
+        file = file.replace(' ', '_')
+        file = re.sub(r'[^A-Za-z0-9_\-.]', '', file)
+    return file
+
+def download(url, filename=None, restrict=False, wget_params=()):
+    if not filename:
+        filename = url2file(url, restrict)
+    elif os.path.isdir(filename):
+        filename = os.path.join(filename, url2file(url, restrict))
+    useragent = requests.utils.default_user_agent()
+    subprocess.call(['wget', '-O', filename, '-U', useragent, url, *wget_params])
+
+def get_size(url):
+    resp = requests.head(url, allow_redirects=True)
+    resp.raise_for_status()
+    size = resp.headers.get('Content-Length')
+    return size and int(size)
+
+def human_readable(n, prec=1, strip=True):
+    power = max((int(n).bit_length() - 1) // 10, 0)
+    num = '{:.{}f}'.format(n / 1024**power, prec)
+    if strip and '.' in num:
+        num = num.rstrip('0').rstrip('.')
+    return num + 'BKMGTPE'[power]
+
+
+if __name__ == '__main__':
+    p = argparse.ArgumentParser()
+    p.add_argument('-r', '--restrict', action='store_true')
+    p.add_argument('-u', '--url-only', action='store_true')
+    p.add_argument('-s', '--size', action='store_true')
+    p.add_argument('-a', '--user-agent', action='store_true')
+    p.add_argument('-w', '--wget-params', nargs=argparse.REMAINDER, default=[])
+    p.add_argument('url')
+    p.add_argument('filename', nargs='?')
+    args = p.parse_args()
+    vurl = get_video_url(args.url)
+    if args.url_only:
+        print(vurl)
+    if args.size:
+        size = get_size(vurl)
+        print(human_readable(size) if size is not None else 'Unknown size')
+    if args.user_agent:
+        print(requests.utils.default_user_agent())
+    if not (args.url_only or args.size):
+        download(vurl, args.filename, args.restrict, args.wget_params)
