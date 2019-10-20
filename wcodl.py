@@ -1,4 +1,7 @@
 #!/usr/bin/env python3
+"""
+Downloads videos from watchcartoononline.io
+"""
 import sys, os, subprocess, re, urllib.parse, json, base64, argparse
 import requests
 
@@ -32,22 +35,33 @@ def get_video_url(url):
 ##    import pprint; pprint.pprint(resp2.headers)
     return vidurl
 
-def url2file(url, restrict=False):
+def url2file(url, restrict=False, default=''):
     path = urllib.parse.urlsplit(url).path
     path = urllib.parse.unquote(path)
     file = os.path.basename(path)
     if not file:
-        file = 'file'
+        return default
     if restrict:
         file = file.replace(' ', '_')
         file = re.sub(r'[^A-Za-z0-9_\-.]', '', file)
     return file
 
-def download(url, filename=None, restrict=False, wget_params=()):
+def get_filename(filename, url, orig_url=None, restrict=False):
+    dir = None
+    if filename and os.path.isdir(filename):
+        dir, filename = filename, None
     if not filename:
-        filename = url2file(url, restrict)
-    elif os.path.isdir(filename):
-        filename = os.path.join(filename, url2file(url, restrict))
+        filename = url2file(url, restrict, 'video')
+        if filename in ('video', 'getvid') and orig_url:
+            filename = url2file(orig_url, restrict, 'video')
+        if not os.path.splitext(filename)[1]:
+            filename += '.mp4'
+        if dir:
+            filename = os.path.join(dir, filename)
+    return filename
+
+def download(url, filename=None, orig_url=None, restrict=False, wget_params=()):
+    filename = get_filename(filename, url, orig_url, restrict=False)
     useragent = requests.utils.default_user_agent()
     subprocess.call(['wget', '-O', filename, '-U', useragent, url, *wget_params])
 
@@ -84,4 +98,5 @@ if __name__ == '__main__':
     if args.user_agent:
         print(requests.utils.default_user_agent())
     if not (args.url_only or args.size):
-        download(vurl, args.filename, args.restrict, args.wget_params)
+        download(vurl, args.filename, orig_url=args.url, restrict=args.restrict,
+                 wget_params=args.wget_params)
