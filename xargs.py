@@ -1,14 +1,6 @@
 #!/usr/bin/env python3
 import sys, os, argparse, subprocess, shlex, shutil
 
-def winsplit(s=None):
-    lex = shlex.shlex(s, posix=True)
-    lex.quotes = '"'
-    lex.commenters = ''
-    lex.escape = ''
-    lex.whitespace_split = True
-    return list(lex)
-
 def chunk(l, n):
     for i in range(0, len(l), n):
         yield l[i : i+n]
@@ -44,8 +36,6 @@ if __name__ == '__main__':
         xargs = file.read().splitlines()
     elif delim:
         xargs = file.read().split(delim)
-    elif os.name == 'nt':
-        xargs = winsplit(file)
     else:
         xargs = shlex.split(file)
 

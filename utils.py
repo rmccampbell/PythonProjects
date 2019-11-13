@@ -83,14 +83,13 @@ def lwrap(f, name=None):
     _update_wrapper(f2, f, assigned, ())
     return f2
 
-def lwrap_alias(f=None, name=None, **kwargs): # _depth=0
-    _depth=kwargs.get('_depth', 0)
+def lwrap_alias(f=None, name=None):
     if f is None or isinstance(f, str):
         return partial(lwrap_alias, name=f or name)
     if name is None:
         name = 'l' + f.__name__
     f2 = lwrap(f, name)
-    fglobals(_depth+1)[name] = f2
+    fglobals(1)[name] = f2
     return f
 
 
@@ -245,7 +244,7 @@ def getl(name, depth=0):
     return flocals(depth + 1)[name]
 
 def setl(_name=None, _value=None, _depth=0, **kws):
-    flocals(_depth+1).update(kws)
+    flocals(_depth + 1).update(kws)
     if _name is not None:
         flocals(_depth + 1)[_name] = _value
         return _value
@@ -266,6 +265,7 @@ def seta(_obj, _name=None, _value=None, **kws):
         setattr(_obj, name, value)
     return _obj
 
+@alias('v')
 @pipe
 def void(*args):
     pass
@@ -1086,6 +1086,7 @@ def qt5():
             'app = QApplication([])'), fglobals(1))
     return Qt
 
+@alias('plt')
 def mpl(interactive=True):
     import matplotlib
     exec(pr('import matplotlib as mpl\n'
@@ -1094,8 +1095,6 @@ def mpl(interactive=True):
             + ('\nplt.ion()' if interactive else '')),
          fglobals(1))
     return matplotlib
-
-plt = mpl
 
 def pylab(interactive=True):
     import pylab
@@ -1109,7 +1108,7 @@ def pylab3d():
     exec(pr('from pylab import *\n'
             'ion()\n'
             'import mpl_toolkits.mplot3d\n'
-            "ax = subplot(111, projection='3d')"), fglobals(1))
+            "ax = subplot(projection='3d')"), fglobals(1))
     return pylab
 
 def sympy(all=True):
@@ -1123,7 +1122,8 @@ def sympy(all=True):
 
 def scipy():
     import scipy
-    exec(pr('import scipy, scipy as sp\n'
+    exec(pr('import numpy, numpy as np\n'
+            'import scipy, scipy as sp\n'
             'import scipy.misc, scipy.special, scipy.ndimage, scipy.sparse, '
             'scipy.integrate, scipy.signal, scipy.constants'), fglobals(1))
     return scipy
@@ -1158,7 +1158,8 @@ def requests():
 
 def pandas():
     import pandas
-    exec(pr('import pandas as pd'), fglobals(1))
+    exec(pr('import pandas as pd\n'
+            'import numpy as np'), fglobals(1))
     return pandas
 
 def argparse():

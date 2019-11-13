@@ -432,9 +432,9 @@ def log_interp(x0, x1, t):
 ##    return x0**(1-t) * x1**t
     return x0 * (x1 / x0)**t
 
-def lerp_angle(a0, a1, t, amax=2*math.pi):
-    min_angle = ((a1 - a0) - amax/2) % -amax + amax/2
-    return (a0 + min_angle*t) % amax
+def lerp_angle(a0, a1, t, period=2*math.pi):
+    min_angle = ((a1 - a0) - period/2) % -period + period/2
+    return (a0 + min_angle*t) % period
 
 
 def lerp_color(c0, c1, t):
