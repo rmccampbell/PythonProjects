@@ -90,7 +90,8 @@ def main():
         glUniformMatrix4fv(glGetUniformLocation(shader, "projection"),
                            1, False, glm.value_ptr(projection))
 
-        view = glm.lookAt([0., 0., 2.], [0., 0., 0.], [0., 1., 0.])
+        view = glm.lookAt(
+            glm.vec3(0, 0, 2), glm.vec3(0, 0, 0), glm.vec3(0, 1, 0))
 
         t = pg.time.get_ticks()/1000
         modelview = glm.rotate(view, t*math.pi/2, [0, 1, 0])
