@@ -42,7 +42,7 @@ def oppaxis(axis):
 ## UTILITY FUNCTIONS
 def load_image(name, colorkey=(255, 0, 255)):
     base = os.path.dirname(__file__)
-    fullname = os.path.join(base, 'images', name + '.png')
+    fullname = os.path.join(base, 'images/mygame', name + '.png')
     image = pygame.image.load(fullname)
     if colorkey:
         image.set_colorkey(colorkey)

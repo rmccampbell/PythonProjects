@@ -24,7 +24,7 @@ if getattr(sys, 'frozen', False):
 else:
     DIR = os.path.dirname(sys.argv[0])
 FONTFILE = os.path.join(DIR, 'data', 'old-english-text-mt.ttf')
-IMAGEDIR = os.path.join(DIR, 'images')
+IMAGEDIR = os.path.join(DIR, 'images/chess')
 
 # Update delay in ms
 TICK = 50
@@ -245,12 +245,12 @@ class Game:
         board[dx][dy] = dest_piece
         return check
 
-    def enum_pieces(self, side, board=None):
+    def enum_pieces(self, side=None, board=None):
         board = board or self.board
         for x in range(8):
             for y in range(8):
                 piece = board[x][y]
-                if piece and piece.side == side:
+                if piece and side in (None, piece.side):
                     yield (x, y), piece
 
     def is_check(self, king_pos=None):
@@ -291,18 +291,13 @@ class Game:
 
     # Only kings
     def is_draw(self):
-        for src, piece in self.enum_pieces(BLACK):
-            if piece.type != KING:
-                return False
-        for src, piece in self.enum_pieces(WHITE):
+        for src, piece in self.enum_pieces():
             if piece.type != KING:
                 return False
         return True
 
-    def draw_title(self):
+    def draw_board(self):
         screen = self.screen
-        screen.fill(BGCOLOR)
-
         for x in range(8):
             for y in range(8):
                 color = (BCOLOR, WCOLOR)[(x + y) % 2]
@@ -311,6 +306,11 @@ class Game:
                 piece = self.board[x][y]
                 if piece:
                     screen.blit(piece.image, (px, py))
+
+    def draw_title(self):
+        screen = self.screen
+        screen.fill(BGCOLOR)
+        self.draw_board()
 
         rect = self.title_image.get_rect(center=(WIDTH//2, HEIGHT//2))
         screen.blit(self.title_image, rect)
@@ -343,14 +343,7 @@ class Game:
         screen = self.screen
         screen.fill(BGCOLOR)
 
-        for x in range(8):
-            for y in range(8):
-                color = (BCOLOR, WCOLOR)[(x + y) % 2]
-                px, py = grid2pix(x, y)
-                pg.draw.rect(screen, color, (px, py, SQSIZE, SQSIZE))
-                piece = self.board[x][y]
-                if piece:
-                    screen.blit(piece.image, (px, py))
+        self.draw_board()
 
         if self.selected:
             if self.in_promotion:
