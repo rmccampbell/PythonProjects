@@ -1,7 +1,6 @@
-#!/usr/bin/env python3
 from itertools import zip_longest
 
-def sbreak(s, *inds):
+def ssplit(s, *inds):
     prev = 0
     for ind in inds:
         yield s[prev:ind]
@@ -10,14 +9,15 @@ def sbreak(s, *inds):
 
 def hsplit(string, *inds):
     return list(map('\n'.join,
-                    zip(*(sbreak(s, *inds) for s in string.splitlines()))))
+                    zip(*(ssplit(s, *inds) for s in string.splitlines()))))
 
-_digs = '''\
+DIGS = '''\
  _     _  _     _  _  _  _  _  _     _     _  _ 
 | |  | _| _||_||_ |_   ||_||_||_||_ |   _||_ |_ 
-|_|  ||_  _|  | _||_|  ||_| _|| ||_||_ |_||_ |  '''
+|_|  ||_  _|  | _||_|  ||_| _|| ||_||_ |_||_ |
+'''
 
-DIGS = hsplit(_digs, *range(3, 3*16, 3))
+DIGS = hsplit(DIGS, *range(3, 3*16, 3))
 
 PATTERN = '''\
  _ 
@@ -39,13 +39,15 @@ def hconcat(*strings):
         for row in zip_longest(*line_lists, fillvalue='')
     )
 
-def decode(n):
+def decode(x):
+    if hasattr(x, '__iter__') and not isinstance(x, str):
+        return hconcat(*(decode(y) for y in x))
     return ''.join(
-        c if (not d.isdigit()) or (n >> int(d) & 1) else ' '
+        c if (not d.isdigit()) or (x >> int(d) & 1) else ' '
         for c, d in zip(PATTERN, TEMPLATE)
     )
 
-def char_to_7seg(c):
+def sevenseg_char(c):
     if c == ' ':
         return '\n'.join('   ')
     if c == ':':
@@ -54,18 +56,18 @@ def char_to_7seg(c):
         return '\n'.join('  .')
     return DIGS[int(c, 16)]
 
-def str_to_7seg(s):
-    return hconcat(*map(char_to_7seg, s))
+def sevenseg_str(s):
+    return hconcat(*map(sevenseg_char, s))
 
-def num_to_7seg(n, hex=False):
-    return str_to_7seg(format(n, 'x' if hex else 'd'))
+def sevenseg_num(n, hex=False):
+    return sevenseg_str(format(n, 'x' if hex else 'd'))
 
 
 if __name__ == '__main__':
     import sys
     if len(sys.argv) > 1:
         for arg in sys.argv[1:]:
-            print(str_to_7seg(arg))
+            print(sevenseg_str(arg))
     else:
         for line in sys.stdin:
-            print(str_to_7seg(line.rstrip('\n')))
+            print(sevenseg_str(line.rstrip('\n')))

@@ -1,4 +1,4 @@
-import math
+import sys, math
 from fractions import Fraction
 from decimal import Decimal
 
@@ -158,3 +158,8 @@ def words2num(s):
             last_type = 'ones'
     n += x
     return int(n)
+
+
+if __name__ == '__main__':
+    for n in sys.argv[1:] or sys.stdin:
+        print(num2words(int(n)))
