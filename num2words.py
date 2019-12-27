@@ -109,6 +109,7 @@ def words2num(s):
         return int(s.replace(',', ''))
     except ValueError:
         pass
+    s = s.replace('-', ' ')
     for w in s.lower().split():
         if w in ones_map:
             if last_type == 'ones' or x % 10:
@@ -161,5 +162,13 @@ def words2num(s):
 
 
 if __name__ == '__main__':
-    for n in sys.argv[1:] or sys.stdin:
-        print(num2words(int(n)))
+    import argparse
+    p = argparse.ArgumentParser()
+    p.add_argument('args', nargs='*')
+    p.add_argument('-w', '--words2num', action='store_true')
+    args = p.parse_args()
+    for s in args.args or sys.stdin:
+        if args.words2num:
+            print(words2num(s))
+        else:
+            print(num2words(int(s)))
