@@ -7,19 +7,25 @@ ERRORS = 'replace'
 
 PROGNAME = os.path.basename(sys.argv[0] or sys.executable)
 
-def printerr(msg='{prog}: {error}', *args, **kwargs):
+PATHTYPES = (str, bytes)
+if sys.version_info >= (3,6):
+    PATHTYPES += (os.PathLike,)
+
+def printerr(msg='{prog}: {error}', file=None, *args, **kwargs):
 ##    import traceback
 ##    traceback.print_exc()
     etype, error, tb = sys.exc_info()
     kws = dict(prog=PROGNAME, error=error, etype=etype and etype.__name__)
     kws.update(kwargs)
-    print(msg.format(*args, **kws), file=sys.stderr)
+    print(msg.format(*args, **kws), file=file or sys.stderr)
 
 @contextlib.contextmanager
 def safeclose(file):
     yield file
+    if file.closed:
+        return
     try:
-        if not file.closed and file.fileno() > 2:
+        if file.fileno() > 2:
             file.close()
         elif hasattr(file, '_changed_encoding') and file.buffer:
             file.detach()
@@ -31,6 +37,30 @@ def maybeclose(file, close=True):
     yield file
     if close:
         file.close()
+
+@contextlib.contextmanager
+def maybeopen(file, *args, **kwargs):
+    if isinstance(file, PATHTYPES):
+        with open(file, *args, **kwargs) as file:
+            yield file
+    else:
+        yield file
+
+@contextlib.contextmanager
+def maybe_stdopen(file, *args, **kwargs):
+    if isinstance(file, PATHTYPES):
+        with safeclose(stdopen(file, *args, **kwargs)) as file:
+            yield file
+    else:
+        yield file
+
+@contextlib.contextmanager
+def maybe_guess_open(file, *args, **kwargs):
+    if isinstance(file, PATHTYPES):
+        with safeclose(guess_open(file, *args, **kwargs)) as file:
+            yield file
+    else:
+        yield file
 
 def iterchunks(file, blocksize=8192):
     s = file.read(blocksize)
@@ -55,7 +85,7 @@ def getfiles(paths=None, mode='r', encoding=None, errors=ERRORS,
     if not paths and default:
         paths = [default]
     for path in paths:
-        if not isinstance(path, (str, bytes)):
+        if not isinstance(path, PATHTYPES):
             yield path
             continue
         for file in expandpaths([path], recursive):
@@ -87,7 +117,8 @@ def stdopen(file, mode='r', encoding=None, errors=ERRORS):
         else:
             raise ValueError("mode '{}' not allowed for '-'".format(mode))
         if _PY3:
-            encoding = encoding if encoding != '-' else None
+            if encoding in ('-', ''):
+                encoding = None
             if 'b' in mode:
                 file = file.buffer
             elif encoding or errors:
@@ -107,7 +138,7 @@ def guess_open(file, mode='r', encoding=None, errors=ERRORS):
         with open(file, 'rb') as f:
             if f.seekable() and not f.isatty():
                 encoding = detect_enc(f)
-    elif encoding == '-':
+    if encoding in ('-', ''):
         encoding = None
     if 'b' in mode:
         errors = None

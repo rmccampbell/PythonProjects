@@ -33,6 +33,8 @@ if _PY3:
     except ImportError: from imp import reload
     import urllib.request
     from urllib.request import urlopen
+    try: import typing
+    except: pass
 
 # My imports
 import utils, functools2
@@ -1179,6 +1181,7 @@ def torch():
             'import torch.utils.data\n'
             'import torch.nn as nn, torch.nn.functional as F\n'
             'from torch import tensor\n'
+            'from torchvision import transforms\n'
             'import numpy as np'), fglobals(1))
     return torch
 
@@ -1370,13 +1373,22 @@ def column(a):
     import numpy as np
     return np.asanyarray(a).reshape(-1, 1)
 
-
 def atleast_col(a):
     import numpy as np
     a = np.asanyarray(a)
     if a.ndim < 2:
         return a.reshape(-1, 1)
     return a
+
+
+def slc(i):
+    return slice(i, i+1 or None)
+
+def row(i):
+    return slc(i)
+
+def col(i):
+    return (slice(None), slc(i))
 
 
 def probs(a, axis=None):

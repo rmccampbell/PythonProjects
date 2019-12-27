@@ -119,14 +119,14 @@ def autocurrying(func): #, reverse=False):
 ##autocurrying = autocurrying(autocurrying)
 
 
-def repeat(func, init, n):
-    """Evaluates func recursively n times with initial value"""
+def iterate(func, init, n):
+    """Applies func iteratively n times to initial value"""
     for i in range(n):
         init = func(init)
     return init
 
-def repeated(func, n):
-    """Returned function evaluates func recursively n times"""
+def iterated(func, n):
+    """Returned function applies func iteratively n times"""
     f = lambda x: x
     for i in range(n):
         f = (lambda f=f: lambda x: func(f(x)))()
@@ -157,8 +157,10 @@ def accumulate(func, seq, init=_empty, include_init=False):
 
 
 def trycall(func, default=None, exc=Exception, args=(), kwargs=None):
+    args = tuple(args)
+    kwargs = dict(**kwargs) if kwargs else {}
     try:
-        return func(*args, **(kwargs or {}))
+        return func(*args, **kwargs)
     except exc:
         return default
 

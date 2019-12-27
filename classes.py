@@ -218,31 +218,23 @@ class LazyList(list):
         for obj in self._iter:
             super().append(obj)
 
+    def fill_to(self, n):
+        if n < 0:
+            return self.fill()
+        m = max(n - len(self), 0)
+        for obj in itertools.islice(self._iter, m):
+            super().append(obj)
+
     def __getitem__(self, index):
-        if index < 0:
-            self.fill()
-            return super().__getitem__(index)
-        while index >= len(self):
-            try: super().append(next(self._iter))
-            except StopIteration: break
+        self.fill_to(index + 1 if index >= 0 else -1)
         return super().__getitem__(index)
 
     def __setitem__(self, index, value):
-        if index < 0:
-            self.fill()
-            return super().__setitem__(index, value)
-        while index >= len(self):
-            try: super().append(next(self._iter))
-            except StopIteration: break
+        self.fill_to(index + 1 if index >= 0 else -1)
         super().__setitem__(index, value)
 
     def __delitem__(self, index):
-        if index < 0:
-            self.fill()
-            return super().__delitem__(index)
-        while index >= len(self):
-            try: super().append(next(self._iter))
-            except StopIteration: break
+        self.fill_to(index + 1 if index >= 0 else -1)
         super().__delitem__(index)
 
     def append(self, object):
@@ -252,6 +244,14 @@ class LazyList(list):
     def extend(self, iterable):
         self.fill()
         super().extend(iterable)
+
+    def insert(self, index, object):
+        self.fill_to(index)
+        super().insert(index, object)
+
+    def pop(self, index=-1):
+        self.fill_to(index + 1 if index >= 0 else -1)
+        return super().pop(index)
 
 
 
@@ -1911,3 +1911,9 @@ class view:
     def __repr__(self):
         return '<view({})>'.format(list(self))
 
+
+class DynamicPrompt:
+    def __init__(self, func):
+        self.func = func
+    def __str__(self):
+        return self.func()
