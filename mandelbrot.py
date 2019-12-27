@@ -2,11 +2,33 @@
 import sys, copy, argparse
 import numpy as np
 import matplotlib.pyplot as plt
-from matplotlib.colors import LogNorm
+from matplotlib.colors import Normalize, LogNorm
 
 params = {}
 
 SMOOTHRAD = 8
+CYCLIC_CMAP = 'twilight'
+CYCLIC_PERIOD = 2
+
+
+class CyclicNorm(Normalize):
+    def __init__(self, period=1, offset=0):
+        super().__init__()
+        self.period = period
+        self.offset = offset
+
+    def __call__(self, value, clip=None):
+        return (value / self.period + self.offset) % 1
+
+    def inverse(self, value):
+        return (value - self.offset) * self.period
+
+class CyclicLogNorm(CyclicNorm):
+    def __call__(self, value, clip=None):
+        return super().__call__(np.log(value))
+
+    def inverse(self, value):
+        return np.exp(super().inverse(value))
 
 
 def mandelbrot(bounds=(-2, 1, -1.2, 1.2), size=(1201, 961),
@@ -20,7 +42,7 @@ def mandelbrot(bounds=(-2, 1, -1.2, 1.2), size=(1201, 961),
     zmask = z.ravel()
     rad2 = radius**2
     for i in range(1, maxiters):
-        mask[mask] = zmask.real**2 + zmask.imag**2 < rad2
+        mask[mask] = zmask.real**2 + zmask.imag**2 <= rad2
         iters[mask] += 1
         z[mask] = zmask = z[mask]**2 + c[mask]
     return np.ma.array(z, mask=mask), np.ma.array(iters, mask=mask)
@@ -31,21 +53,25 @@ def smooth_color(z, iters):
 
 
 def draw_mandelbrot(bounds=(-2, 1, -1.2, 1.2), size=(1201, 961),
-                    maxiters=80, smooth=False, radius=None,
+                    maxiters=80, smooth=True, cyclic=False, radius=None,
                     cmap=None, interp='nearest'):
-    params.update(bounds=bounds, size=size, maxiters=maxiters,
-                  smooth=smooth, radius=radius, cmap=cmap, interp=interp)
+    params.update(bounds=bounds, size=size, maxiters=maxiters, smooth=smooth,
+                  cyclic=cyclic, radius=radius, cmap=cmap, interp=interp)
     x0, x1, y0, y1 = bounds
-    radius = radius or SMOOTHRAD if smooth else 2
+    radius = radius or (SMOOTHRAD if smooth else 2)
     z, iters = mandelbrot(bounds, size, maxiters, radius)
     if smooth:
         iters = smooth_color(z, iters)
+    norm = LogNorm()
+    if cyclic:
+        norm = CyclicLogNorm(CYCLIC_PERIOD)
+        cmap = cmap or CYCLIC_CMAP
     cmap = copy.copy(plt.get_cmap(cmap))
     cmap.set_bad('black')
     dx = (x1 - x0) / (2 * (size[0] - 1))
     dy = (y1 - y0) / (2 * (size[1] - 1))
     plt.cla()
-    plt.imshow(iters, cmap=cmap, interpolation=interp, norm=LogNorm(),
+    plt.imshow(iters, cmap=cmap, interpolation=interp, norm=norm,
                origin='lower', extent=(x0-dx, x1+dx, y0-dy, y1+dy))
     plt.tight_layout()
     plt.draw()
@@ -79,7 +105,8 @@ if __name__ == '__main__':
                    metavar=('WIDTH', 'HEIGHT'), help='default: %(default)s')
     p.add_argument('-i', '--iters', type=int, default=80,
                    help='default: %(default)s')
-    p.add_argument('-S', '--smooth', action='store_true')
+    p.add_argument('-S', '--nosmooth', dest='smooth', action='store_false')
+    p.add_argument('-C', '--cyclic', action='store_true')
     p.add_argument('-r', '--radius', type=int,
                    help='default: %d for smooth, 2 otherwise' % SMOOTHRAD)
     p.add_argument('-c', '--cmap')
@@ -93,5 +120,5 @@ if __name__ == '__main__':
         pass
     plt.connect('button_press_event', on_click)
     draw_mandelbrot(bounds=args.bounds, size=args.size, maxiters=args.iters,
-                    radius=args.radius, smooth=args.smooth,
+                    radius=args.radius, smooth=args.smooth, cyclic=args.cyclic,
                     cmap=args.cmap, interp=args.interp)
