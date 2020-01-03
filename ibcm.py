@@ -18,10 +18,10 @@ JMPE  = 0xd
 JMPL  = 0xe
 BRL   = 0xf
 
-READH = SHIFTL = 0x0
-READC = SHIFTR = 0x1
-PRINTH = ROTL = 0x2
-PRINTC = ROTR = 0x3
+READH  = SHIFTL = 0x0
+READC  = SHIFTR = 0x1
+PRINTH = ROTL   = 0x2
+PRINTC = ROTR   = 0x3
 
 OPCODES = {
     'halt':     HALT,
@@ -49,17 +49,17 @@ OPCODES = {
 }
 
 IO_OPS = {
-    'readh':    0x0,
-    'readc':     0x1,
-    'printh':   0x2,
-    'printc':    0x3,
+    'readh':    READH,
+    'readc':    READC,
+    'printh':   PRINTH,
+    'printc':   PRINTC,
 }
 
 SHIFT_OPS = {
-    'shiftl':   0x0,
-    'shiftr':   0x1,
-    'rotl':     0x2,
-    'rotr':     0x3,
+    'shiftl':   SHIFTL,
+    'shiftr':   SHIFTR,
+    'rotl':     ROTL,
+    'rotr':     ROTR,
 }
 
 
@@ -78,7 +78,9 @@ def parse_array(s):
         if isinstance(obj, int):
             arr.append(obj & 0xffff)
         elif isinstance(obj, str):
-            arr.extend(ord(c) & 0xffff for c in obj)
+            arr.extend(obj.encode('utf-8'))
+        elif isinstance(obj, bytes):
+            arr.extend(obj)
         else:
             raise ValueError(msg)
     if not arr:
@@ -143,7 +145,7 @@ def assemble(code, raw=False, binary=False):
         return '\n'.join(mcode) + '\n'
 
 
-def execute(code, binary=False):
+def execute(code, binary=False, eof=0):
     mem = [0] * 0x1000
     if binary:
         arr = array.array('H')
@@ -165,12 +167,12 @@ def execute(code, binary=False):
             if ioop == READH:
                 accum = int(input(), 16)
             elif ioop == READC:
-                char = sys.stdin.read(1)
-                accum = ord(char) if char else 0 # 0 for EOF
+                char = sys.stdin.buffer.read(1)
+                accum = ord(char) if char else eof
             elif ioop == PRINTH:
                 print(format(accum, '04x'))
             elif ioop == PRINTC:
-                sys.stdout.write(chr(accum))
+                sys.stdout.buffer.write(bytes([accum & 0xff]))
         elif op == SHIFT:
             shiftop = args >> 10
             cnt = args & 0xf
@@ -223,11 +225,14 @@ def binary_file(file):
 
 if __name__ == '__main__':
     p = argparse.ArgumentParser()
-    p.add_argument('ifile', nargs='?', type=argparse.FileType('r'), default='-')
-    p.add_argument('ofile', nargs='?', type=argparse.FileType('w'), default='-')
+    p.add_argument('ifile', nargs='?', default='-',
+                   type=argparse.FileType('r', encoding='utf-8'))
+    p.add_argument('ofile', nargs='?', default='-',
+                   type=argparse.FileType('w', encoding='utf-8'))
     p.add_argument('-a', '--assemble', action='store_true')
-    p.add_argument('-b', '--binary', action='store_true')
     p.add_argument('-r', '--raw', action='store_true')
+    p.add_argument('-b', '--binary', action='store_true')
+    p.add_argument('-e', '--eof', action='store_const', default=0, const=-1)
     args = p.parse_args()
     if args.assemble:
         mcode = assemble(args.ifile.read(), raw=args.raw, binary=args.binary)
@@ -235,4 +240,4 @@ if __name__ == '__main__':
         ofile.write(mcode)
     else:
         ifile = binary_file(args.ifile) if args.binary else args.ifile
-        execute(ifile.read(), binary=args.binary)
+        execute(ifile.read(), binary=args.binary, eof=args.eof)

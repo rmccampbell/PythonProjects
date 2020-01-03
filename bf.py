@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
 import sys, argparse, io
 
-MEMSIZE = 30000
+MEMSIZE = 0x10000
 
-def run(source, debug=False, text=False, unbuffered=False, eof_nochange=False):
+def run(source, debug=False, newline_conv=False, eof_nochange=False):
     commands = set('><+-.,[]' + ('dpi' if debug else ''))
     code = []
     brackets = []
@@ -21,14 +21,14 @@ def run(source, debug=False, text=False, unbuffered=False, eof_nochange=False):
     array = [0] * MEMSIZE
     p = 0
     i = 0
-    if text:
-        stdin, stdout = sys.stdin, sys.stdout
+    if newline_conv:
+        stdin = io.TextIOWrapper(sys.stdin.buffer, 'latin-1')
+        stdout = io.TextIOWrapper(sys.stdout.buffer.raw, 'latin-1',
+                                  write_through=True)
         chr_ = chr
     else:
-        stdin, stdout = sys.stdin.buffer, sys.stdout.buffer
-        chr_ = lambda i: chr(i).encode('latin-1')
-        if unbuffered:
-            stdin, stdout = stdin.raw, stdout.raw
+        stdin, stdout = sys.stdin.buffer, sys.stdout.buffer.raw
+        chr_ = lambda i: bytes([i])
     while i < len(code):
         c = code[i]
         if c == '>':
@@ -40,10 +40,8 @@ def run(source, debug=False, text=False, unbuffered=False, eof_nochange=False):
         elif c == '-':
             array[p] = (array[p] - 1) & 0xff
         elif c == '.':
-            try:
-                stdout.write(chr_(array[p]))
-            except OSError:
-                break
+            stdout.write(chr_(array[p]))
+            # stdout.flush()
         elif c == ',':
             b = stdin.read(1)
             if b or not eof_nochange:
@@ -58,25 +56,37 @@ def run(source, debug=False, text=False, unbuffered=False, eof_nochange=False):
                 i = code[i]
         elif debug:
             if c == 'd':
-                end = next((i for i in range(MEMSIZE-1, -1, -1) if array[i]), 0)
+                end = next((i for i in range(256)[::-1] if array[i]), 0)
+                x = array[p]
+                array[p] = Highlighter(x)
                 print(p, array[:max(end+1, 20)])
+                array[p] = x
             elif c == 'p':
                 print(array[p])
             elif c == 'i':
                 array[p] = int(input()) & 0xff
         i += 1
 
+class Highlighter:
+    def __init__(self, x):
+        self.x = x
+    def __repr__(self):
+        return '\x1b[7m%r\x1b[0m' % self.x
+
 if __name__ == '__main__':
     p = argparse.ArgumentParser()
     p.add_argument('-d', '--debug', action='store_true')
-    p.add_argument('-t', '--text', action='store_true')
-    p.add_argument('-u', '--unbuffered', action='store_true')
+    p.add_argument('-n', '--newline-conv', action='store_true')
     p.add_argument('-e', '--eof-nochange', action='store_true')
     p.add_argument('-c', '--cmd')
     p.add_argument('file', nargs='?', type=argparse.FileType(), default='-')
     args = p.parse_args()
     code = args.cmd or args.file.read()
     try:
-        run(code, args.debug, args.text, args.unbuffered, args.eof_nochange)
-    except KeyboardInterrupt:
+        run(code, args.debug, args.newline_conv, args.eof_nochange)
+    except (KeyboardInterrupt, BrokenPipeError):
         pass
+    except OSError as e:
+        # Broken pipe
+        if e.errno != 22:
+            raise
