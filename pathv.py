@@ -2,7 +2,7 @@
 import sys, os, argparse, ctypes
 import os.path as op
 
-def main(add=None, index=None, remove=None, contains=(), lines=False):
+def main(add=None, index=None, remove=None, contains=None, lines=False):
     value = os.environ['PATH']
     values = value.split(os.pathsep)
     if contains:
@@ -38,7 +38,7 @@ if __name__ == '__main__':
     parser.add_argument('-a', '--add')
     parser.add_argument('-i', '--index', type=int)
     parser.add_argument('-r', '--remove')
-    parser.add_argument('-c', '--contains', default=[], action='append')
+    parser.add_argument('-c', '--contains', nargs='+')
     parser.add_argument('-l', '--lines', action='store_true')
     args = parser.parse_args()
     main(**vars(args))

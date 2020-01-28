@@ -9,7 +9,7 @@ HWND_BROADCAST = 0xffff
 WM_SETTINGCHANGE = 0x1a
 SMTO_NORMAL = 0
 
-def main(add=None, index=None, remove=None, contains=(), system=False,
+def main(add=None, index=None, remove=None, contains=None, system=False,
          lines=False):
     if system:
         key = HKEY_LOCAL_MACHINE
@@ -61,7 +61,7 @@ if __name__ == '__main__':
     parser.add_argument('-a', '--add')
     parser.add_argument('-i', '--index', type=int)
     parser.add_argument('-r', '--remove')
-    parser.add_argument('-c', '--contains', default=[], action='append')
+    parser.add_argument('-c', '--contains', nargs='+')
     parser.add_argument('-s', '--system', action='store_true')
     parser.add_argument('-l', '--lines', action='store_true')
     args = parser.parse_args()
