@@ -13,6 +13,7 @@ FPS = 40
 PIX = 2
 WIDTH = 350
 HEIGHT = 300
+CLAMP = True
 WRAP = False
 DAMP_EDGE = 0
 
@@ -29,8 +30,8 @@ COLOR0 = np.array([255, 255, 255])
 COLOR1 = np.array([0, 0, 255])
 BALLCOLOR = np.array([255, 0, 0])
 
-def propagate(z, v, damping, wrap=WRAP):
-    pad = np.pad(z, 1, 'wrap' if wrap else 'constant')
+def propagate(z, v, damping, clamp=CLAMP, wrap=WRAP):
+    pad = np.pad(z, 1, 'wrap' if wrap else 'constant' if clamp else 'edge')
     a = (
         pad[:-2, 1:-1] + pad[2:, 1:-1] + pad[1:-1, :-2] + pad[1:-1, 2:]
         + (pad[:-2, :-2] + pad[2:, :-2] + pad[2:, 2:] + pad[:-2, 2:]) * DIAG
@@ -83,7 +84,8 @@ def clear(z, v, balls):
     z[:] = noise(*z.shape)
     balls.clear()
 
-def main(width=WIDTH, height=HEIGHT, wrap=WRAP, damp_edge=DAMP_EDGE):
+def main(width=WIDTH, height=HEIGHT, clamp=CLAMP, wrap=WRAP,
+         damp_edge=DAMP_EDGE):
     wrap = '-w' in sys.argv[1:] or WRAP
     z = np.zeros((width, height))
     v = np.zeros((width, height))
@@ -121,7 +123,7 @@ def main(width=WIDTH, height=HEIGHT, wrap=WRAP, damp_edge=DAMP_EDGE):
             splash(z, v, mouse[0], *pg.mouse.get_pos())
 
         clock.tick(FPS)
-        propagate(z, v, damping, wrap)
+        propagate(z, v, damping, clamp, wrap)
         draw(screen, z)
         if balls:
             update_balls(z, balls, wrap)
@@ -132,10 +134,13 @@ if __name__ == '__main__':
     p = argparse.ArgumentParser()
     p.add_argument('width', nargs='?', type=int, default=WIDTH)
     p.add_argument('height', nargs='?', type=int, default=HEIGHT)
+    p.add_argument('-C', '--no-clamp', dest='clamp',
+                   action='store_false', default=CLAMP)
     p.add_argument('-w', '--wrap', action='store_true', default=WRAP)
     p.add_argument('-d', '--damp-edge', type=int, default=DAMP_EDGE)
     args = p.parse_args()
     try:
-        main(args.width, args.height, wrap=args.wrap, damp_edge=args.damp_edge)
+        main(args.width, args.height, clamp=args.clamp, wrap=args.wrap,
+             damp_edge=args.damp_edge)
     finally:
         pg.quit()
