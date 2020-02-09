@@ -4,11 +4,20 @@ del print_function, division
 import sys
 _PY3 = sys.version_info[0] >= 3
 
+import importlib
+
+def _try_import(*mods):
+    for m in mods:
+        try:
+            globals()[m] = importlib.import_module(m)
+        except ImportError:
+            pass
+
 # Builtin imports
 import os, collections, functools, itertools, operator, types, math, cmath, re
 import io, random, inspect, textwrap, dis, timeit, time, datetime, string
 import fractions, decimal, unicodedata, codecs, locale, shutil, numbers
-import subprocess, json, base64
+import subprocess, json, base64, copy
 import os.path as osp
 from math import pi, e, sqrt, exp, log, log10, floor, ceil, factorial, \
      sin, cos, tan, asin, acos, atan, atan2
@@ -16,11 +25,12 @@ inf = float('inf')
 nan = float('nan')
 deg = pi/180
 from functools import partial, reduce
-from itertools import islice, chain, starmap
+from itertools import islice, chain, starmap, count
 from collections import OrderedDict, Counter
 from fractions import Fraction
 from decimal import Decimal
 from pprint import pprint
+
 if _PY3:
     from itertools import zip_longest
     try: from math import tau
@@ -33,30 +43,22 @@ if _PY3:
     except ImportError: from imp import reload
     import urllib.request
     from urllib.request import urlopen
-    try: import typing
-    except: pass
+    _try_import('enum', 'pathlib', 'typing')
 
 # My imports
 import utils, functools2
-from functools2 import autocurrying, chunk, comp, ncomp, ident, inv, supply, \
-     rpartial, trycall, trywrap, tryiter, iterfunc, unique, is_sorted, ilen, \
-     iindex, flatten, deepcopy, deepmap, first, last, unzip, take, pad, window
+from functools2 import autocurrying, chunk, comp, ncomp, ident, inv, supply,\
+     rpartial, trycall, trywrap, tryiter, iterfunc, unique, is_sorted, ilen,\
+     iindex, flatten, deepcopy, deepmap, first, last, unzip, take, pad, window,\
+     map2
 from functools2 import update_wrapper_signature as _update_wrapper
 if _PY3:
     import classes
     from classes import DictNS, Symbol, ReprStr, BinInt, HexInt, PrettyODict
-for m in 'misc primes num2words'.split():
-    try:
-        exec('import %s' % m)
-    except ImportError:
-        pass
-del m
+_try_import('misc', 'primes', 'num2words')
 
 # 3rd Party imports
-try:
-    import more_itertools
-except ImportError:
-    pass
+_try_import('more_itertools')
 
 
 T, F, N = True, False, None
@@ -742,7 +744,7 @@ def zmap(func, *seqs):
 
 @lwrap_alias
 def zmaps(seq, *funcs):
-    return (tuple([func(x) if func else x for func in funcs]) for x in seqs)
+    return (tuple([func(x) if func else x for func in funcs]) for x in seq)
 #    return zip(*(map(func, seq) if func else seq for func in funcs))
 
 def dzip(keys, values):
@@ -819,7 +821,7 @@ def cround(z, n=0):
     return complex(round(z.real, n), round(z.imag, n))
 
 @pipe
-def thresh(n, p=14):
+def thresh(n, p=12):
     if isinstance(n, (list, tuple)):
         return type(n)(thresh(m, p) for m in n)
     if isinstance(n, complex):
@@ -921,8 +923,9 @@ src = pipe(lambda f: print(inspect.getsource(f)))
 d = pipe(dir)
 vrs = pipe(vars)
 tp = pipe(type)
-enum = pipe(lenumerate)
+enm = pipe(lenumerate)
 mp = lambda f: pipe(lmap, f)
+mp2 = lambda f: pipe(map2, f)
 stmp = lambda f: pipe(itertools.starmap, f)
 flt = lambda f=None: pipe(lfilter, f)
 dflt = lambda f=None: pipe(dfilter, cond=f)
@@ -1069,6 +1072,7 @@ def np():
     import numpy
     exec(pr('import numpy, numpy as np\n'
             'import numpy.linalg as LA\n'
+            'from numpy import array as A\n'
             'np.set_printoptions(suppress=True)'), fglobals(1))
     return numpy
 
@@ -1192,9 +1196,9 @@ def Crypto():
             'from Crypto.Hash import SHA256\n'
             'from Crypto.Util import Padding\n'
             'from Crypto.Protocol import KDF\n'
-            'import Crypto.PublicKey.RSA\n'
-            'import Crypto.Cipher.PKCS1_OAEP\n'
-            'import Crypto.Signature.pkcs1_15'),
+            'from Crypto.PublicKey import RSA\n'
+            'from Crypto.Cipher import PKCS1_OAEP\n'
+            'from Crypto.Signature import pkcs1_15'),
          fglobals(1))
     return Crypto
 
@@ -1208,12 +1212,22 @@ def OpenGL():
          fglobals(1))
     return OpenGL
 
-
 def pyassimp():
     import pyassimp
     exec(pr('import pyassimp'), fglobals(1))
     return pyassimp
 
+def bs4():
+    import bs4
+    exec(pr('import bs4'), fglobals(1))
+    return bs4
+
+def nltk():
+    import nltk
+    exec(pr('import nltk\n'
+            'from nltk.corpus import wordnet\n'
+            'wordnet.synset'), fglobals(1))
+    return nltk
 
 ################
 
@@ -1327,14 +1341,19 @@ def multidict(items):
 
 @pipe
 def stepiter(it):
-    for x in it:
-        if input(x) == 'q':
-            break
+    try:
+        for x in it:
+            if isinstance(x, tuple):
+                x = ' '.join(map(str, x))
+            if input(x) == 'q':
+                break
+    except (EOFError, KeyboardInterrupt):
+        pass
 
 
 def execfile(file):
     if isinstance(file, str):
-        file = open('file', encoding='utf-8')
+        file = open(file, encoding='utf-8')
     exec(compile(file.read(), file.name(), 'exec'))
 
 
