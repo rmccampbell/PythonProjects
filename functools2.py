@@ -802,3 +802,6 @@ def unzip(it, n=None):
     tees = itertools.tee(it, n)
     return tuple([map(operator.itemgetter(i), tee)
                   for i, tee in enumerate(tees)])
+
+def map2(func, seq):
+    return (tuple(func(x) for x in y) for y in seq)
