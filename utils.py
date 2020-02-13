@@ -17,7 +17,7 @@ def _try_import(*mods):
 import os, collections, functools, itertools, operator, types, math, cmath, re
 import io, random, inspect, textwrap, dis, timeit, time, datetime, string
 import fractions, decimal, unicodedata, codecs, locale, shutil, numbers
-import subprocess, json, base64, copy
+import subprocess, json, base64, copy, hashlib
 import os.path as osp
 from math import pi, e, sqrt, exp, log, log10, floor, ceil, factorial, \
      sin, cos, tan, asin, acos, atan, atan2
@@ -483,9 +483,10 @@ def float_binf(num, p=23, pad0=False, prefix=False):
     if not math.isfinite(num):
         return str(num)
     if p is None or p < 0: p = 1074
-    num, whole = math.modf(num)
+    sign = '-' if num < 0 else 0
     num = abs(num)
-    ss = [format(int(whole), '#b' if prefix else 'b'), '.']
+    num, whole = math.modf(num)
+    ss = [sign, format(int(whole), '#b' if prefix else 'b'), '.']
     for i in range(p):
         if not (num or pad0):
             break
@@ -497,9 +498,10 @@ def float_hexf(num, p=13, pad0=False, prefix=False):
     if not math.isfinite(num):
         return str(num)
     if p is None or p < 0: p = 269
-    num, whole = math.modf(num)
+    sign = '-' if num < 0 else 0
     num = abs(num)
-    ss = [format(int(whole), '#x' if prefix else 'x'), '.']
+    num, whole = math.modf(num)
+    ss = [sign, format(int(whole), '#x' if prefix else 'x'), '.']
     for i in range(p):
         if not (num or pad0):
             break
@@ -761,6 +763,14 @@ def rzip(*seqs):
 @lwrap_alias
 def renumerate(seq):
     return rzip(range(len(seq)), seq)
+
+@lwrap_alias
+def tfilter(typ, seq):
+    return (x for x in seq if isinstance(x, typ))
+
+@lwrap_alias
+def tfilternot(typ, seq):
+    return (x for x in seq if not isinstance(x, typ))
 
 
 def lists(its):
@@ -1050,10 +1060,13 @@ def cls():
     print('\n' * 24)
 
 
+@pipe
 def cd(path=None):
     if path:
         os.chdir(os.path.expanduser(os.path.expandvars(path)))
     return os.getcwd()
+
+ls = pipe(os.listdir)
 
 
 ### Module import shortcuts ###
