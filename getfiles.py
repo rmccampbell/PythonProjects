@@ -21,22 +21,26 @@ def printerr(msg='{prog}: {error}', file=None, *args, **kwargs):
 
 @contextlib.contextmanager
 def safeclose(file):
-    yield file
-    if file.closed:
-        return
     try:
-        if file.fileno() > 2:
-            file.close()
-        elif hasattr(file, '_changed_encoding') and file.buffer:
-            file.detach()
-    except io.UnsupportedOperation:
-        pass  # fileno doesn't work on idle std streams
+        yield file
+    finally:
+        if file.closed:
+            return
+        try:
+            if file.fileno() > 2:
+                file.close()
+            elif hasattr(file, '_changed_encoding') and file.buffer:
+                file.detach()
+        except io.UnsupportedOperation:
+            pass  # fileno doesn't work on idle std streams
 
 @contextlib.contextmanager
 def maybeclose(file, close=True):
-    yield file
-    if close:
-        file.close()
+    try:
+        yield file
+    finally:
+        if close:
+            file.close()
 
 @contextlib.contextmanager
 def maybeopen(file, *args, **kwargs):
@@ -182,8 +186,10 @@ def reset_stdout_encoding(stdout=None):
 @contextlib.contextmanager
 def stdout_encoding(encoding=None, errors=ERRORS):
     stdout = set_stdout_encoding(encoding, errors)
-    yield
-    reset_stdout_encoding(stdout)
+    try:
+        yield
+    finally:
+        reset_stdout_encoding(stdout)
 
 
 def stdcon(mode='w', **kwargs):
