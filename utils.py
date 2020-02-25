@@ -17,7 +17,7 @@ def _try_import(*mods):
 import os, collections, functools, itertools, operator, types, math, cmath, re
 import io, random, inspect, textwrap, dis, timeit, time, datetime, string
 import fractions, decimal, unicodedata, codecs, locale, shutil, numbers
-import subprocess, json, base64, copy, hashlib
+import subprocess, json, base64, copy, hashlib, contextlib
 import os.path as osp
 from math import pi, e, sqrt, exp, log, log10, floor, ceil, factorial, \
      sin, cos, tan, asin, acos, atan, atan2
@@ -1106,26 +1106,37 @@ def qt5():
     return Qt
 
 @alias('plt')
-def mpl(interactive=True):
+def mpl(backend=None, interactive=True):
+    if isinstance(backend, (bool, int)):
+        backend, interactive = None, backend
     import matplotlib
     exec(pr('import matplotlib as mpl\n'
+            + ('mpl.use({!r})\n'.format(backend) if backend else '') +
             'import matplotlib.pyplot as plt\n'
             'import numpy as np'
             + ('\nplt.ion()' if interactive else '')),
          fglobals(1))
     return matplotlib
 
-def pylab(interactive=True):
+def pylab(backend=None, interactive=True):
+    if isinstance(backend, (bool, int)):
+        backend, interactive = None, backend
     import pylab
-    exec(pr('from pylab import *'
+    exec(pr(('import matplotlib as mpl\n' +
+             'mpl.use({!r})\n'.format(backend) if backend else '') +
+            'from pylab import *'
             + ('\nion()' if interactive else '')),
          fglobals(1))
     return pylab
 
-def pylab3d():
+def pylab3d(backend=None, interactive=True):
+    if isinstance(backend, (bool, int)):
+        backend, interactive = None, backend
     import pylab
-    exec(pr('from pylab import *\n'
-            'ion()\n'
+    exec(pr(('import matplotlib as mpl\n' +
+             'mpl.use({!r})\n'.format(backend) if backend else '') +
+            'from pylab import *\n'
+            + ('ion()\n' if interactive else '') +
             'import mpl_toolkits.mplot3d\n'
             "ax = subplot(projection='3d')"), fglobals(1))
     return pylab
@@ -1329,10 +1340,10 @@ def default(obj, default):
 
 
 def one_or_empty(arg, cond=None):
-    if callable(cond):
-        cond = cond(arg)
-    elif cond is None:
+    if cond is None:
         cond = arg is not None
+    elif callable(cond):
+        cond = cond(arg)
     return (arg,) if cond else ()
 
 
