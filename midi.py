@@ -1,3 +1,4 @@
+#!/usr/bin/env python3
 import struct
 import enum
 import re
@@ -5,10 +6,12 @@ import atexit
 try:
     import pygame as pg
     import pygame.midi
-except:
+except ImportError:
     pass
 
 class HexInt(int):
+    def __new__(cls, *args, **kwargs):
+        return super().__new__(cls, *args, **kwargs)
     def __repr__(self):
         return hex(self)
     def __str__(self):
@@ -47,7 +50,10 @@ class MetaEvent(HexInt, enum.Enum):
     Lyric     = 0x05
     Marker    = 0x06
     CuePoint  = 0x07
+    ProgName  = 0x08
+    DevName   = 0x09
     ChannPref = 0x20
+    MIDIPort  = 0x21
     EndOfTrk  = 0x2f
     SetTempo  = 0x51
     SMTPEOff  = 0x54
@@ -63,52 +69,54 @@ N_DATA_BYTES = {
 
 def read_midi(file):
     if isinstance(file, str):
-        file = open(file, 'rb')
-    with file:
-        buff = file.read()
+        with open(file, 'rb') as file:
+            buffer = file.read()
+    else:
+        buffer = file.read()
     chunks = []
     chunkhead = struct.Struct('>4sI')
     headerdata = struct.Struct('>HHh')
     i = 0
-    while i < len(buff):
-        typ, length = chunkhead.unpack_from(buff, i)
+    while i < len(buffer):
+        typ, length = chunkhead.unpack_from(buffer, i)
         i += chunkhead.size
         if typ == b'MThd':
-            data = fmt, trks, div = headerdata.unpack_from(buff, i)
+            data = fmt, trks, div = headerdata.unpack_from(buffer, i)
             if div & 0x8000:
-                fps = -(div & -0x100)
+                fps = -(div >> 8)
                 tpf = div & 0xff
                 data = (fmt, trks, (fps, tpf))
         elif typ == b'MTrk':
-            data = parse_track_data(buff, i, length)
+            data = parse_track_data(buffer, i, length)
         else:
-            data = buff[i: i+length]
+            data = buffer[i: i+length]
         chunks.append((typ, data))
         i += length
     return chunks
 
-def parse_track_data(data, offset=0, length=None):
+def parse_track_data(buffer, offset=0, length=None):
     i = offset
-    end = offset + length if length is not None else len(data)
+    end = offset + length if length is not None else len(buffer)
     events = []
     running_status = 0
     while i < end:
-        dt, i = parse_vlq(data, i)
-        status = data[i]
+        dt, i = parse_vlq(buffer, i)
+        status = buffer[i]
         i += 1
         # Sysex Event
         if status in (0xf0, 0xf7):
-            length, i = parse_vlq(data, i)
-            edata = (HexInt(status), data[i: i+length])
+            length, i = parse_vlq(buffer, i)
+            event = (HexInt(status), buffer[i: i+length])
             i += length
         # Meta Event
         elif status == 0xff:
             try:
-                typ = MetaEvent(data[i])
+                typ = MetaEvent(buffer[i])
             except ValueError:
-                typ = HexInt(data[i])
-            length, i = parse_vlq(data, i+1)
-            edata = (HexInt(status), typ, data[i: i+length])
+                typ = HexInt(buffer[i])
+            length, i = parse_vlq(buffer, i+1)
+            data = metaevent_data(typ, buffer[i: i+length])
+            event = (HexInt(status), typ, data)
             i += length
         # MIDI Event
         else:
@@ -117,12 +125,10 @@ def parse_track_data(data, offset=0, length=None):
                 status = running_status
                 i -= 1
             running_status = status
-            statusb = status & 0xf0
-            channel = status & 0x0f
-            length = N_DATA_BYTES[statusb]
-            edata = (MidiStatusByte(status), *data[i: i+length])
+            length = N_DATA_BYTES[status & 0xf0]
+            event = (MidiStatusByte(status), *buffer[i: i+length])
             i += length
-        events.append((dt, edata))
+        events.append((dt, event))
     return events
 
 def parse_vlq(data, offset=0):
@@ -135,6 +141,20 @@ def parse_vlq(data, offset=0):
         msb = b >> 7
         i += 1
     return n, i
+
+def metaevent_data(typ, data):
+    if typ in {MetaEvent.SeqNumber, MetaEvent.ChannPref,
+                MetaEvent.MIDIPort, MetaEvent.SetTempo}:
+        data = int.from_bytes(data, 'big')
+    elif typ == MetaEvent.SMTPEOff:
+        data = tuple(data)
+    elif typ == MetaEvent.TimeSig:
+        data = data[0], 2**data[1], data[2], data[3]
+    elif typ == MetaEvent.KeySig:
+        data = struct.unpack('bB', data)
+    elif typ == MetaEvent.EndOfTrk:
+        data = None
+    return data
 
 
 def abs_events(track):
@@ -164,7 +184,7 @@ def schedule_events(events, division, sysex=False, meta=False):
         ts = last_ts + (tick - last_tick) * ms_per_tick
         last_tick, last_ts = tick, ts
         if evt[0] == 0xff and evt[1] == MetaEvent.SetTempo:
-            tempo = int.from_bytes(evt[2], 'big')
+            tempo = evt[2]
             if isinstance(division, int):
                 ms_per_tick = tempo / (division * 1000)
         if (evt[0] in (0xf0, 0xf7) and sysex or
@@ -202,7 +222,7 @@ def get_midi_events(file, sysex=False, meta=False):
 ##        ts = last_ts + (tick - last_tick) * ms_per_tick
 ##        last_tick, last_ts = tick, ts
 ##        if evt[0] == 0xff and evt[1] == MetaEvent.SetTempo:
-##            tempo = int.from_bytes(evt[2], 'big')
+##            tempo = evt[2]
 ##            if isinstance(division, int):
 ##                ms_per_tick = tempo / (division * 1000)
 ##        pg.time.delay(int(ts) - pg.midi.time())
@@ -214,11 +234,13 @@ def get_midi_events(file, sysex=False, meta=False):
 
 player = None
 
-def init():
+def init(output=None):
     global player
     if player is None:
         pg.midi.init()
-        player = pg.midi.Output(pg.midi.get_default_output_id(), 1)
+        if output is None:
+            output = pg.midi.get_default_output_id()
+        player = pg.midi.Output(output, 1)
         atexit.register(quit)
 
 def quit():
@@ -231,7 +253,7 @@ def quit():
 
 def play_midi(file=None, events=None):
     if events is None:
-        events = get_midi_events(file)
+        events = get_midi_events(file, sysex=True)
     init()
     t0 = pg.midi.time()
     for evt, ts in events:
@@ -263,10 +285,10 @@ def shift(events, dt):
 
 
 
-def get_notes(file=None, events=None, off=False):
+def get_notes(file=None, events=None, off=False, ticks=False):
     import numpy as np
     if events is None:
-        events = get_midi_events(file)
+        events = get_raw_events(file)[0] if ticks else get_midi_events(file)
     noteon = np.array([(t, e[1]) for e, t in events
                        if e[0] & 0xf0 == NoteOn and e[2] > 0])
     if noteon.size == 0:
@@ -284,10 +306,10 @@ def get_notes(file=None, events=None, off=False):
 
 
 NOTEMAP = {
-    'C'   : 60,   'C#'  : 61,   'Db'  : 61,   'D'   : 62,   'D#'  : 63,
-    'Eb'  : 63,   'E'   : 64,   'F'   : 65,   'F#'  : 66,   'Gb'  : 66,
-    'G'   : 67,   'G#'  : 68,   'Ab'  : 68,   'A'   : 69,   'A#'  : 70,
-    'Bb'  : 70,   'B'   : 71,
+    'Cb': 59,  'C' : 60,  'C#': 61,  'Db': 61,  'D' : 62,  'D#': 63,
+    'Eb': 63,  'E' : 64,  'E#': 65,  'Fb': 64,  'F' : 65,  'F#': 66,
+    'Gb': 66,  'G' : 67,  'G#': 68,  'Ab': 68,  'A' : 69,  'A#': 70,
+    'Bb': 70,  'B' : 71,  'B#': 72,
 }
 
 def parse_note(note):
@@ -296,7 +318,61 @@ def parse_note(note):
         raise ValueError(f'invalid note: {note}')
     note, num = match.groups()
     num = int(num) if num else 4
-    return NOTEMAP[note] + 12*num - 48
+    return NOTEMAP[note] + 12*(num - 4)
+
+
+INSTRUMENT_NAMES = [
+# Piano
+'Acoustic Grand Piano', 'Bright Acoustic Piano', 'Electric Grand Piano',
+'Honky-tonk Piano', 'Electric Piano 1', 'Electric Piano 2', 'Harpsichord',
+'Clavinet',
+# Chromatic Percussion
+'Celesta', 'Glockenspiel', 'Music Box', 'Vibraphone', 'Marimba', 'Xylophone',
+'Tubular Bells', 'Dulcimer',
+# Organ
+'Drawbar Organ', 'Percussive Organ', 'Rock Organ', 'Church Organ', 'Reed Organ',
+'Accordion', 'Harmonica', 'Tango Accordion',
+# Guitar
+'Acoustic Guitar (nylon)', 'Acoustic Guitar (steel)', 'Electric Guitar (jazz)',
+'Electric Guitar (clean)', 'Electric Guitar (muted)', 'Overdriven Guitar',
+'Distortion Guitar', 'Guitar harmonics',
+# Bass
+'Acoustic Bass', 'Electric Bass (finger)', 'Electric Bass (pick)',
+'Fretless Bass', 'Slap Bass 1', 'Slap Bass 2', 'Synth Bass 1', 'Synth Bass 2',
+# Strings
+'Violin', 'Viola', 'Cello', 'Contrabass', 'Tremolo Strings',
+'Pizzicato Strings', 'Orchestral Harp', 'Timpani',
+# Ensemble
+'String Ensemble 1', 'String Ensemble 2', 'Synth Strings 1', 'Synth Strings 2',
+'Choir Aahs', 'Voice Oohs', 'Synth Voice', 'Orchestra Hit',
+# Brass
+'Trumpet', 'Trombone', 'Tuba', 'Muted Trumpet', 'French Horn', 'Brass Section',
+'Synth Brass 1', 'Synth Brass 2',
+# Reed
+'Soprano Sax', 'Alto Sax', 'Tenor Sax', 'Baritone Sax', 'Oboe', 'English Horn',
+'Bassoon', 'Clarinet',
+# Pipe
+'Piccolo', 'Flute', 'Recorder', 'Pan Flute', 'Blown Bottle', 'Shakuhachi',
+'Whistle', 'Ocarina',
+# Synth Lead
+'Lead 1 (square)', 'Lead 2 (sawtooth)', 'Lead 3 (calliope)', 'Lead 4 (chiff)',
+'Lead 5 (charang)', 'Lead 6 (voice)', 'Lead 7 (fifths)', 'Lead 8 (bass + lead)',
+# Synth Pad
+'Pad 1 (new age)', 'Pad 2 (warm)', 'Pad 3 (polysynth)', 'Pad 4 (choir)',
+'Pad 5 (bowed)', 'Pad 6 (metallic)', 'Pad 7 (halo)', 'Pad 8 (sweep)',
+# Synth Effects
+'FX 1 (rain)', 'FX 2 (soundtrack)', 'FX 3 (crystal)', 'FX 4 (atmosphere)',
+'FX 5 (brightness)', 'FX 6 (goblins)', 'FX 7 (echoes)', 'FX 8 (sci-fi)',
+# Ethnic
+'Sitar', 'Banjo', 'Shamisen', 'Koto', 'Kalimba', 'Bag pipe', 'Fiddle', 'Shanai',
+# Percussive
+'Tinkle Bell', 'Agogo', 'Steel Drums', 'Woodblock', 'Taiko Drum', 'Melodic Tom',
+'Synth Drum', 'Reverse Cymbal',
+# Sound Effects
+'Guitar Fret Noise', 'Breath Noise', 'Seashore', 'Bird Tweet', 'Telephone Ring',
+'Helicopter', 'Applause', 'Gunshot']
+
+INSTRUMENTS = {k.lower(): i for i, k in enumerate(INSTRUMENT_NAMES)}
 
 
 class SimplePlayer:
@@ -316,6 +392,8 @@ class SimplePlayer:
         return self._player or player
 
     def set_instrument(self, instrument):
+        if isinstance(instrument, str):
+            instrument = INSTRUMENTS[instrument.lower()]
         self.player.set_instrument(instrument)
 
     def wait(self, duration=1.0):
@@ -358,7 +436,8 @@ class SimplePlayer:
 
 
 if __name__ == '__main__':
-    import sys
-    if len(sys.argv) < 2 or '-h' in sys.argv:
-        sys.exit('usage: midi.py file.mid')
-    play_midi(sys.argv[1])
+    import argparse
+    p = argparse.ArgumentParser()
+    p.add_argument('file')
+    args = p.parse_args()
+    play_midi(args.file)
