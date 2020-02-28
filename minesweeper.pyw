@@ -54,7 +54,7 @@ class Minesweeper:
         pg.display.set_icon(load_image('icon', False))
         self.screen = pg.display.set_mode((WINW, WINH))
         self.images = Images()
-        self.font1 = pg.font.SysFont('arial', 24)
+        self.font1 = pg.font.SysFont('Courier New', 24)
         self.running = False
         self.newgame()
         self.draw()
@@ -176,7 +176,8 @@ class Minesweeper:
     def draw(self):
         screen = self.screen
         screen.fill(BGCOLOR)
-        face = '(⌐■_■)' if self.won else '(x_x)' if self.lost else '(•_•)'
+        face = '(⌐■_■)' if self.won else '(x_x)' if self.lost else '(•͜•)'
+        # face = 'B-)' if self.won else 'X-P' if self.lost else ':-)'
         txtimg = self.font1.render(face, True, TXTCOLOR)
         txtrect = txtimg.get_rect(center=(WINW//2, TOPMARGIN//2))
         screen.blit(txtimg, txtrect)
