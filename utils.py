@@ -1213,6 +1213,12 @@ def torch():
             'import numpy as np'), fglobals(1))
     return torch
 
+def pyro():
+    import torch
+    exec(pr('import pyro\n'
+            'import pyro.distributions as dist'), fglobals(1))
+    return torch
+
 def Crypto():
     import Crypto
     exec(pr('import Crypto; from Crypto import *\n'
