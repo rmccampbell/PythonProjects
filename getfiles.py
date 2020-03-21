@@ -3,7 +3,7 @@ import sys, os, glob, io, codecs, contextlib
 
 _PY3 = sys.version_info[0] >= 3
 
-ERRORS = 'replace'
+ERRORS = 'surrogateescape'
 
 PROGNAME = os.path.basename(sys.argv[0] or sys.executable)
 
