@@ -483,7 +483,7 @@ def float_binf(num, p=23, pad0=False, prefix=False):
     if not math.isfinite(num):
         return str(num)
     if p is None or p < 0: p = 1074
-    sign = '-' if num < 0 else 0
+    sign = '-' if num < 0 else ''
     num = abs(num)
     num, whole = math.modf(num)
     ss = [sign, format(int(whole), '#b' if prefix else 'b'), '.']
@@ -498,7 +498,7 @@ def float_hexf(num, p=13, pad0=False, prefix=False):
     if not math.isfinite(num):
         return str(num)
     if p is None or p < 0: p = 269
-    sign = '-' if num < 0 else 0
+    sign = '-' if num < 0 else ''
     num = abs(num)
     num, whole = math.modf(num)
     ss = [sign, format(int(whole), '#x' if prefix else 'x'), '.']
@@ -606,6 +606,7 @@ def print2d(arr, sep='', pad=2, just='left'):
         print(sep.join(just(s, w) for s, w in zip(r, widths)).rstrip())
 
 
+@pipe
 def odict(obj=(), **kwargs):
     if isinstance(obj, str):
         import ast
@@ -622,19 +623,22 @@ def _is_ordereddict(d):
     return False
 
 @pipe_alias('pd')
-def printd(dct):
+@alias('printd')
+def printdict(dct):
     if not hasattr(dct, 'keys'):
         dct = dict(dct)
+    if not dct: return
     items = dct.items()
-    if _is_ordereddict(dct):
+    if not _is_ordereddict(dct):
         try: items = sorted(items)
         except TypeError: pass
-    if not dct: return
     ksize = max(len(str(k)) for k in dct.keys())
     for k, v in items:
         rep = repr(v)
-        sep = '\n' if '\n' in rep else ' '
-        print(str(k).ljust(ksize) + ' =' + sep + rep)
+        if '\n' in rep:
+            firstline, rest = rep.split('\n', 1)
+            rep = firstline + '\n' + textwrap.indent(rest, ' '*(ksize + 3))
+        print(str(k).ljust(ksize) + ' = ' + rep)
 
 
 @pipe
@@ -1155,7 +1159,8 @@ def scipy():
     exec(pr('import numpy, numpy as np\n'
             'import scipy, scipy as sp\n'
             'import scipy.misc, scipy.special, scipy.ndimage, scipy.sparse, '
-            'scipy.integrate, scipy.signal, scipy.constants'), fglobals(1))
+            'scipy.integrate, scipy.signal, scipy.constants, scipy.io.wavfile'),
+         fglobals(1))
     return scipy
 
 def pygame(init=True):
@@ -1369,6 +1374,16 @@ def multidict(items):
     return d
 
 
+def step(it):
+    try:
+        for x in it:
+            yield x
+            if input() == 'q':
+                break
+    except (EOFError, KeyboardInterrupt):
+        pass
+
+
 @pipe
 def stepiter(it):
     try:
@@ -1417,6 +1432,7 @@ def frexp2(x):
     m, e = math.frexp(x)
     return m*2, e-1
 
+### Numpy utils ###
 
 def column(a):
     import numpy as np
@@ -1427,6 +1443,17 @@ def atleast_col(a):
     a = np.asanyarray(a)
     if a.ndim < 2:
         return a.reshape(-1, 1)
+    return a
+
+def atleast_nd(a, nd, newaxes=0):
+    import numpy as np
+    a = np.asanyarray(a)
+    if isinstance(newaxes, int):
+        newaxes = [newaxes] * nd
+    elif len(newaxes) < nd:
+        newaxes = [newaxes[0]]*(nd - len(newaxes)) + list(newaxes)
+    while a.ndim < nd:
+        a = np.expand_dims(a, newaxes[a.ndim - nd])
     return a
 
 

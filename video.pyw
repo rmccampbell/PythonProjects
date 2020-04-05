@@ -14,9 +14,11 @@ APP_NAME = 'Video Player'
 WIDTH = 960 + 18
 HEIGHT = 540 + 69
 STEP = 5000
-BIGSTEP = 20000
+BIGSTEP = 30000
 VOLSTEP = 10
 FS_CONTROLS_MARGINS = (6, 6, 6, 6)
+
+windows = []
 
 class VideoPlayer(QtWidgets.QMainWindow):
     def __init__(self, file=None):
@@ -79,48 +81,56 @@ class VideoPlayer(QtWidgets.QMainWindow):
         layout.addWidget(self.posLabel)
         layout.addWidget(self.posSlider, 1)
         layout.addWidget(self.durLabel)
+
         self.vlayout = QtWidgets.QVBoxLayout(cwidget)
         self.vlayout.addWidget(self.video, 1)
         self.vlayout.addWidget(self.controls)
 
         self.margins = self.vlayout.contentsMargins()
         self.spacing = self.vlayout.spacing()
-        videodirs = QtCore.QStandardPaths.standardLocations(
-            QtCore.QStandardPaths.MoviesLocation)
-        self.dir = videodirs[0] if videodirs else ''
 
         self.positionChanging = False
 
+        videodirs = QtCore.QStandardPaths.standardLocations(
+            QtCore.QStandardPaths.MoviesLocation)
+        self.directory = videodirs[0] if videodirs else ''
+
+        # self.audioProbe = QtMultimedia.QAudioProbe(self)
+        # self.audioProbe.audioBufferProbed.connect(self.processAudioBuffer)
+        # self.audioProbe.setSource(self.media)
+
+        self.setAcceptDrops(True)
+
         if file:
-            url = QUrl.fromUserInput(file, '.')
-            if url.isValid():
-                self.setSource(url)
-            else:
-                QtWidgets.QMessageBox.warning(
-                    self, 'Error', 'Error: Invalid URL: "%s"' % file)
+            self.setSourceValidate(QUrl.fromUserInput(file, '.'), file)
+
+        windows.append(self)
 
     def setSource(self, url):
         self.setWindowFilePath(url.path())
         if url.isLocalFile():
-            self.dir = os.path.dirname(url.toLocalFile())
+            self.directory = os.path.dirname(url.toLocalFile())
         self.media.setMedia(QtMultimedia.QMediaContent(url))
         self.media.play()
 
+    def setSourceValidate(self, url, urlstr=None):
+        if url.isValid():
+            self.setSource(url)
+        else:
+            msg = 'Error: Invalid URL: "%s"' % (urlstr or url.toString())
+            QtWidgets.QMessageBox.warning(self, 'Error', msg)
+
     def openFile(self):
-        dir = QUrl.fromLocalFile(self.dir).toString()
+        dir = QUrl.fromLocalFile(self.directory)
         url, filt = QtWidgets.QFileDialog.getOpenFileUrl(self, directory=dir)
         if url.isValid():
             self.setSource(url)
 
     def openUrl(self):
-        urls, ok = QtWidgets.QInputDialog.getText(self, 'Open URL', 'Video URL:')
-        if urls:
-            url = QUrl.fromUserInput(urls)
-            if url.isValid():
-                self.setSource(url)
-            else:
-                QtWidgets.QMessageBox.warning(
-                    self, 'Error', 'Error: Invalid URL: "%s"' % urls)
+        urlstr, ok = QtWidgets.QInputDialog.getText(
+            self, 'Open URL', 'Video URL:')
+        if urlstr:
+            self.setSourceValidate(QUrl.fromUserInput(urlstr), urlstr)
 
     def togglePlay(self):
         if self.media.state() == QMediaPlayer.PlayingState:
@@ -175,8 +185,11 @@ class VideoPlayer(QtWidgets.QMainWindow):
             self.media.setPosition(value)
 
     def handleError(self, error):
-        QtWidgets.QMessageBox.warning(
-            self, 'Error', 'Error: %s' % self.media.errorString())
+        estr = self.media.errorString()
+        if not estr:
+            m = QMediaPlayer.staticMetaObject
+            estr = m.enumerator(m.indexOfEnumerator('Error')).valueToKey(error)
+        QtWidgets.QMessageBox.warning(self, 'Error', 'Error: %s' % estr)
 
     def keyPressEvent(self, event):
         key = event.key()
@@ -219,11 +232,28 @@ class VideoPlayer(QtWidgets.QMainWindow):
                 return True
         return super().eventFilter(watched, event)
 
+    # def processAudioBuffer(self, buffer):
+    #     pass
+
+    def dragEnterEvent(self, event):
+        if event.mimeData().hasUrls():
+            event.acceptProposedAction()
+
+    def dropEvent(self, event):
+        if event.mimeData().hasUrls() and event.mimeData().urls():
+            self.setSource(event.mimeData().urls()[0])
+
+    def closeEvent(self, event):
+        self.media.stop()
+        windows.remove(self)
+
+
 if __name__ == '__main__':
-    file = sys.argv[1] if len(sys.argv) >= 2 else None
     app = QtWidgets.QApplication(sys.argv)
     app.setApplicationName(APP_NAME)
     app.setApplicationDisplayName(APP_NAME)
-    window = VideoPlayer(file)
-    window.show()
+    files = sys.argv[1:] or [None]
+    for file in files:
+        window = VideoPlayer(file)
+        window.show()
     sys.exit(app.exec())

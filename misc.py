@@ -423,13 +423,14 @@ def randcolor_pg(h=(0, 360), s=(75, 100), v=(75, 100), a=100):
 
 
 def lerp(x0, x1, t):
+    # return x0 + (x1 - x0)*t
     return x0*(1-t) + x1*t
 
 def unlerp(x0, x1, x):
     return (x - x0) / (x1 - x0)
 
 def log_interp(x0, x1, t):
-##    return x0**(1-t) * x1**t
+    # return x0**(1-t) * x1**t
     return x0 * (x1 / x0)**t
 
 def lerp_angle(a0, a1, t, period=2*math.pi):
@@ -468,6 +469,7 @@ def lerp_color_pg(c0, c1, t):
 
 
 def geom_cdf(p, k):
+    # return 1 - (1 - p)**k
     return -math.expm1(k*math.log1p(-p))
 
 
@@ -493,3 +495,13 @@ def getimbytes(arr, format=None):
     f = io.BytesIO()
     plt.imsave(f, arr, format=format)
     return f.getvalue()
+
+def smoothstep(x):
+    import numpy as np
+    x = np.clip(x, 0, 1)
+    return x**2 * (3 - 2*x)
+
+def smootherstep(x):
+    import numpy as np
+    x = np.clip(x, 0, 1)
+    return x**3 * (x * (x * 6 - 15) + 10);
