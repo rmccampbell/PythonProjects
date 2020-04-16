@@ -149,15 +149,12 @@ class Life:
     def display(self):
         self.screen.clear()
         grid = self.board[self.scrollx: self.scrollx + self.swidth,
-                          self.scrolly: self.scrolly + self.sheight].T
+                          self.scrolly: self.scrolly + self.sheight].T.tolist()
         chars = ' ▄▀█'
         for i in range(0, len(grid), 2):
             row1 = grid[i]
-            if i+1 < len(grid):
-                row2 = grid[i+1]
-                line = [chars[2*x+y] for x, y in zip(row1, row2)]
-            else:
-                line = [chars[2*x] for x in row1]
+            row2 = grid[i+1] if i+1 < len(grid) else [False]*len(row1)
+            line = [chars[2*x+y] for x, y in zip(row1, row2)]
             self.screen.insstr(i//2, 0, ''.join(line))
         self.screen.refresh()
 
