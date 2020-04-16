@@ -1,17 +1,17 @@
 #!/usr/bin/env python3
-import sys, bs4, argparse, urllib.request
+import sys, re, bs4, argparse, urllib.request
 
 def parse_table(html='-', id=None, number=None, columns=None, startrow=None,
                 endrow=None, tbody=False):
     if html == '-':
         html = sys.stdin
-    elif '<' in html:
+    elif re.match(r'\s*<', html):
         pass
-    elif '://' in html:
+    elif re.match(r'\w{2,}://', html):
         html = urllib.request.urlopen(html)
     else:
         html = open(html)
-    doc = bs4.BeautifulSoup(html, 'html.parser')
+    doc = bs4.BeautifulSoup(html, 'html5lib')
 
     if id:
         table = doc.find(id=id)
@@ -29,13 +29,13 @@ def parse_table(html='-', id=None, number=None, columns=None, startrow=None,
         for tname in 'thead', 'tbody', 'tfoot':
             tag = table.find(tname)
             tag and tag.unwrap()
-        
+
     results = []
     for tr in table.find_all('tr', recursive=False)[startrow : endrow]:
         tds = tr.find_all(('td', 'th'), recursive=False)
         if columns:
             tds = [tds[col] for col in columns if col < len(tds)]
-        results.append([td.get_text(' ', True) for td in tds])
+        results.append([re.sub(r'\s', ' ', td.text) for td in tds])
     return results
 
 def print_delimited(arr, delimiter='\t'):
