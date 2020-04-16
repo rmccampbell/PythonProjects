@@ -6,6 +6,7 @@ import argparse
 
 FPS = 60
 SPEEDS = [2, 10, 30, 60]
+SPEED = SPEEDS[1]
 
 BGCOLOR = (239, 239, 239)
 COLOR0 = (255, 255, 255)
@@ -24,7 +25,7 @@ BIGSCRL = 100
 
 class Life:
     def __init__(self, seed=None, w=None, h=None, xoff=None, yoff=None, *,
-                 ssize=None, pixel=PIXEL, wrap=False, speed=SPEEDS[1],
+                 ssize=None, pixel=PIXEL, wrap=False, speed=SPEED,
                  pause=False):
         if seed is None:
             seed = SEED_FACTOR
@@ -211,7 +212,7 @@ def parseimg(file):
 
 
 def run(seed=None, w=None, h=None, xoff=0, yoff=0, ssize=None, pixel=4,
-        wrap=False, speed=SPEEDS[1], pause=False):
+        wrap=False, speed=SPEED, pause=False):
     Life(seed, w, h, xoff, yoff, ssize=ssize, pixel=pixel, wrap=wrap,
          speed=speed, pause=pause).run()
 
@@ -223,7 +224,7 @@ if __name__ == '__main__':
     p.add_argument('-s', '--ssize', metavar=('W', 'H'), type=int, nargs=2)
     p.add_argument('-x', '--pixel', type=int, default=PIXEL)
     p.add_argument('-w', '--wrap', action='store_true')
-    p.add_argument('-S', '--speed', type=int, default=SPEEDS[1])
+    p.add_argument('-S', '--speed', type=int, default=SPEED)
     p.add_argument('-p', '--pause', action='store_true')
     p.add_argument('args', nargs='*', metavar='file, w, h, xoff, yoff')
     ns = p.parse_args()
