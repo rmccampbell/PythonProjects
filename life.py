@@ -23,8 +23,9 @@ SCRLSPD = 10
 BIGSCRL = 100
 
 class Life:
-    def __init__(self, seed=None, w=None, h=None, xoff=None, yoff=None,
-                 ssize=None, pixel=PIXEL, wrap=False, pause=False):
+    def __init__(self, seed=None, w=None, h=None, xoff=None, yoff=None, *,
+                 ssize=None, pixel=PIXEL, wrap=False, speed=SPEEDS[1],
+                 pause=False):
         if seed is None:
             seed = SEED_FACTOR
         elif isinstance(seed, str):
@@ -61,7 +62,7 @@ class Life:
         self.width, self.height = self.board.shape
         self.scrollx = 0
         self.scrolly = 0
-        self.speed = SPEEDS[1]
+        self.speed = speed
         self.px = pixel
         self.wrap = wrap
         self.paused = pause
@@ -87,7 +88,7 @@ class Life:
 
     def run(self):
         clock = pg.time.Clock()
-        i = 0
+        frame = 0
         self.running = True
         while self.running:
             clock.tick(FPS)
@@ -105,8 +106,8 @@ class Life:
                        event.key == pg.K_F4 and event.mod & pg.KMOD_ALT:
                         self.running = False
                     elif event.key == pg.K_SPACE:
-                        self.speed = SPEEDS[(SPEEDS.index(self.speed) + 1)
-                                           % len(SPEEDS)]
+                        self.speed = next(
+                            (s for s in SPEEDS if s > self.speed), SPEEDS[0])
                     elif event.key == pg.K_RETURN:
                         step = True
                     elif event.key == pg.K_p:
@@ -156,9 +157,9 @@ class Life:
                     pg.display.set_mode((px*sw, px*sh), pg.RESIZABLE)
                     redraw = True
 
-            i += 1
-            if i >= FPS//self.speed or step:
-                i = 0
+            frame += 1
+            if frame >= FPS//self.speed or step:
+                frame = 0
                 if not self.paused or step:
                     self.tick()
                     redraw = True
@@ -210,8 +211,9 @@ def parseimg(file):
 
 
 def run(seed=None, w=None, h=None, xoff=0, yoff=0, ssize=None, pixel=4,
-        nowrap=False, pause=False):
-    Life(seed, w, h, xoff, yoff, ssize, pixel, nowrap, pause).run()
+        wrap=False, speed=SPEEDS[1], pause=False):
+    Life(seed, w, h, xoff, yoff, ssize=ssize, pixel=pixel, wrap=wrap,
+         speed=speed, pause=pause).run()
 
 
 if __name__ == '__main__':
@@ -221,6 +223,7 @@ if __name__ == '__main__':
     p.add_argument('-s', '--ssize', metavar=('W', 'H'), type=int, nargs=2)
     p.add_argument('-x', '--pixel', type=int, default=PIXEL)
     p.add_argument('-w', '--wrap', action='store_true')
+    p.add_argument('-S', '--speed', type=int, default=SPEEDS[1])
     p.add_argument('-p', '--pause', action='store_true')
     p.add_argument('args', nargs='*', metavar='file, w, h, xoff, yoff')
     ns = p.parse_args()
@@ -237,6 +240,7 @@ if __name__ == '__main__':
     if len(args) in (2, 3):
         w, h = map(int, args[-2:])
     try:
-        run(file, w, h, xoff, yoff, ns.ssize, ns.pixel, ns.wrap, ns.pause)
+        run(file, w, h, xoff, yoff, ssize=ns.ssize, pixel=ns.pixel,
+            wrap=ns.wrap, speed=ns.speed, pause=ns.pause)
     finally:
         pg.display.quit()
