@@ -1,4 +1,4 @@
-#!/usr/bin/env python3
+#!/usr/bin/env python3.7
 import struct
 import enum
 import re
@@ -90,6 +90,8 @@ def read_midi(file):
             data = parse_track_data(buffer, i, length)
         else:
             data = buffer[i: i+length]
+        if not chunks and typ != b'MThd':
+            raise ValueError('Invalid midi file')
         chunks.append((typ, data))
         i += length
     return chunks
@@ -251,20 +253,34 @@ def quit():
     pg.midi.quit()
 
 
-def play_midi(file=None, events=None):
+def play_midi(file=None, events=None, volume=1, start=0, print_progress=True):
     if events is None:
-        events = get_midi_events(file, sysex=True)
+        events = get_midi_events(file, sysex=True, meta=True)
     init()
-    t0 = pg.midi.time()
-    for evt, ts in events:
-        pg.time.delay(ts + t0 - pg.midi.time())
-        if evt[0] == 0xf0:
-            player.write_sys_ex(0, b'\xf0' + evt[1])
-        elif evt[0] == 0xf7:
-            player.write_sys_ex(0, evt[1])
-        elif evt[0] < 0xf0:
-            player.write_short(*evt)
-    pg.time.delay(500)
+    tottime = events[-1][1]
+    last_ts = 0
+    try:
+        t0 = pg.midi.time() - start
+        for evt, ts in events:
+            if ts < start:
+                continue
+            if print_progress and last_ts != ts:
+                print(f'\r{fmt_time(last_ts)}/{fmt_time(tottime)}', end='')
+            pg.time.delay(ts + t0 - pg.midi.time())
+            if evt[0] == 0xf0:
+                player.write_sys_ex(0, b'\xf0' + evt[1])
+            elif evt[0] == 0xf7:
+                player.write_sys_ex(0, evt[1])
+            elif evt[0] < 0xf0:
+                if volume != 1 and evt[0] & 0xf0 == NoteOn:
+                    evt = (evt[0], evt[1], min(int(evt[2]*volume), 127))
+                player.write_short(*evt)
+            last_ts = ts
+        pg.time.wait(500)
+    except KeyboardInterrupt:
+        pass
+    if print_progress:
+        print(f'\r{fmt_time(last_ts)}/{fmt_time(tottime)}')
 
 
 def play_midi2(file=None, events=None):
@@ -284,6 +300,12 @@ def shift(events, dt):
     return [(evt, ts+dt) for evt, ts in events]
 
 
+def slice(events, start, end=None):
+    if end is None:
+        end = events[-1][1]
+    return [(evt, ts-start) for evt, ts in events if start <= ts <= end]
+
+
 
 def get_notes(file=None, events=None, off=False, ticks=False):
     import numpy as np
@@ -298,6 +320,26 @@ def get_notes(file=None, events=None, off=False, ticks=False):
     noteoff = np.array([(t, e[1]) for e, t in events
                         if e[0] & 0xf0 == NoteOff or
                            e[0] & 0xf0 == NoteOn and e[2] == 0])
+    indon = np.argsort(noteon[:, 1], kind='mergesort')
+    indoff = np.argsort(noteoff[:, 1], kind='mergesort')
+    noteoff[indon] = noteoff[indoff]
+    return noteon[:, 0], noteoff[:, 0], noteon[:, 1]
+
+
+def get_notes_mido(midofile=None, off=False, ticks=False):
+    import numpy as np
+    import mido
+    msgs = mido.merge_tracks(midofile.tracks) if ticks else list(midofile)
+    msgs = list(mido.midifiles.tracks._to_abstime(msgs))
+    noteon = np.array([(m.time, m.note) for m in msgs
+                       if m.type == 'note_on' and m.velocity > 0])
+    if noteon.size == 0:
+        return tuple(np.array([], int) for i in range(3 if off else 2))
+    if not off:
+        return noteon[:, 0], noteon[:, 1]
+    noteoff = np.array([(m.time, m.note) for m in msgs
+                        if m.type == 'note_off' or
+                           m.type == 'note_on' and m.velocity == 0])
     indon = np.argsort(noteon[:, 1], kind='mergesort')
     indoff = np.argsort(noteoff[:, 1], kind='mergesort')
     noteoff[indon] = noteoff[indoff]
@@ -435,9 +477,31 @@ class SimplePlayer:
         self.close()
 
 
+def fmt_time(time):
+    m, s = divmod(time // 1000, 60)
+    return f'{m}:{s:02}'
+
+
+def parse_time(string):
+    if ':' in string:
+        m, s = string.split(':')
+        return int((int(m)*60 + float(s))*1000)
+    return int(float(string)*1000)
+
+
 if __name__ == '__main__':
     import argparse
     p = argparse.ArgumentParser()
     p.add_argument('file')
+    p.add_argument('-v', '--volume', type=float, default=1.0)
+    p.add_argument('-l', '--length', action='store_true')
+    p.add_argument('-s', '--start', type=parse_time, default=0)
+    p.add_argument('-p', '--progress', action='store_true', default=True)
+    p.add_argument('-P', '--no-progress', dest='progress', action='store_false')
     args = p.parse_args()
-    play_midi(args.file)
+    if args.length:
+        events = get_midi_events(args.file)
+        print(fmt_time(events[-1][1]))
+    else:
+        play_midi(args.file, volume=args.volume, start=args.start,
+                  print_progress=args.progress)
