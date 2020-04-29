@@ -29,7 +29,7 @@ from itertools import islice, chain, starmap, count
 from collections import OrderedDict, Counter
 from fractions import Fraction
 from decimal import Decimal
-from pprint import pprint
+import pprint
 
 if _PY3:
     from itertools import zip_longest
@@ -43,7 +43,11 @@ if _PY3:
     except ImportError: from imp import reload
     import urllib.request
     from urllib.request import urlopen
+    import urllib.parse as urlparse
     _try_import('enum', 'pathlib', 'typing')
+else:
+    from urllib2 import urlopen
+    import urlparse
 
 # My imports
 import utils, functools2
@@ -55,7 +59,7 @@ from functools2 import update_wrapper_signature as _update_wrapper
 if _PY3:
     import classes
     from classes import DictNS, Symbol, ReprStr, BinInt, HexInt, PrettyODict
-_try_import('misc', 'primes', 'num2words')
+_try_import('misc', 'primes', 'num2words', 'getfiles')
 
 # 3rd Party imports
 _try_import('more_itertools')
@@ -137,6 +141,8 @@ class pipe(object):
         else:
             res = self.callable(other)
         return res
+
+    __lshift__ = __ror__
 
     def __call__(self, *args, **kwargs):
         res = self.callable(*args, **kwargs)
@@ -226,7 +232,7 @@ def rename(obj, name=None, qualname=None):
 
 def method(cls):
     def method(func):
-        func.__qualname__ = cls.__name__ + '.' + func.__name__
+        func.__qualname__ = cls.__qualname__ + '.' + func.__name__
         setattr(cls, func.__name__, func)
         return func
     return method
@@ -877,6 +883,13 @@ def cumsum(it, init=0):
         l.append(s)
     return l
 
+@lwrap_alias
+def accum(func, it, init):
+    x = init
+    for y in it:
+        x = func(x, y)
+        yield x
+
 @pipe_alias('fr')
 def frac(n, d=None, maxd=1000000):
     if d is not None and isinstance(n, (float, Decimal)):
@@ -921,7 +934,7 @@ lns = pipe(str.splitlines)
 j = pipe(lambda x: ''.join(map(str, x)))
 srt = pipe(sorted)
 p = cat = pipe(print)
-pp = pipe(pprint)
+pp = pipe(pprint.pp if sys.version_info >= (3, 8) else pprint.pprint)
 w = pipe(print, end='')
 bf = lambda bits=8, sign=False, prefix=False: \
      pipe(lambda n: print(binfmt(n, bits, sign, prefix)))
@@ -951,6 +964,7 @@ dvmp = lambda f: pipe(dvmap, func=f)
 sch = lambda s: pipe(search, s=s)
 dsch = lambda s: pipe(dsearch, s=s)
 dvsch = lambda s: pipe(dvsearch, s=s)
+dct = pipe(dict)
 ditems = pipe(lambda d: list(d.items()))
 dkeys = pipe(lambda d: list(d.keys()))
 dvalues = pipe(lambda d: list(d.values()))
@@ -1539,11 +1553,19 @@ def print_updating(it, delay=1.0, end=None, stream=None):
         print(s, end='', flush=True, file=stream)
     print(end=end, file=stream)
 
-def delay_iter(it, delay=1.0, first=False):
-    skipfirst = not first
+def delay_iter(it, delay=1.0, delay_first=False):
+    skipfirst = not delay_first
     for x in it:
         if skipfirst:
             skipfirst = False
         else:
             time.sleep(delay)
         yield x
+
+
+def hang_indent(s, indent=4, width=80):
+    if isinstance(indent, int):
+        indent = ' '*indent
+    n = len(indent)
+    lines = textwrap.wrap(s[n:], width=width-n)
+    return s[:n] + ('\n' + indent).join(lines)
