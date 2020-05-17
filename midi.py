@@ -1,13 +1,7 @@
-#!/usr/bin/env python3.7
-import struct
-import enum
-import re
-import atexit
-try:
-    import pygame as pg
-    import pygame.midi
-except ImportError:
-    pass
+#!/usr/bin/env python3
+import sys, os, struct, enum, time, re, atexit, warnings
+
+BACKEND = os.environ.get('MIDI_BACKEND', 'rtmidi')
 
 class HexInt(int):
     def __new__(cls, *args, **kwargs):
@@ -81,11 +75,12 @@ def read_midi(file):
         typ, length = chunkhead.unpack_from(buffer, i)
         i += chunkhead.size
         if typ == b'MThd':
-            data = fmt, trks, div = headerdata.unpack_from(buffer, i)
+            fmt, trks, div = headerdata.unpack_from(buffer, i)
             if div & 0x8000:
                 fps = -(div >> 8)
                 tpf = div & 0xff
-                data = (fmt, trks, (fps, tpf))
+                div = (fps, tpf)
+            data = fmt, trks, div
         elif typ == b'MTrk':
             data = parse_track_data(buffer, i, length)
         else:
@@ -177,22 +172,22 @@ def merge_events(tracks):
 def schedule_events(events, division, sysex=False, meta=False):
     tempo = 500_000
     if isinstance(division, int):
-        ms_per_tick = tempo / (division * 1000)
+        sec_per_tick = tempo / (division * 1000_000)
     else:
-        ms_per_tick = 1000 / (division[0] * division[1])
+        sec_per_tick = 1 / (division[0] * division[1])
     midievents = []
     last_tick = last_ts = 0
     for evt, tick in events:
-        ts = last_ts + (tick - last_tick) * ms_per_tick
+        ts = last_ts + (tick - last_tick) * sec_per_tick
         last_tick, last_ts = tick, ts
         if evt[0] == 0xff and evt[1] == MetaEvent.SetTempo:
             tempo = evt[2]
             if isinstance(division, int):
-                ms_per_tick = tempo / (division * 1000)
+                sec_per_tick = tempo / (division * 1000_000)
         if (evt[0] in (0xf0, 0xf7) and sysex or
              evt[0] == 0xff and meta or
              evt[0] < 0xf0):
-            midievents.append((evt, int(ts)))
+            midievents.append((evt, ts))
     return midievents
 
 def get_tracks(file):
@@ -210,90 +205,26 @@ def get_raw_events(file):
 def get_midi_events(file, sysex=False, meta=False):
     return schedule_events(*get_raw_events(file), sysex=sysex, meta=meta)
 
-##def play_midi(file):
-##    events, division = get_raw_events(file)
-##    tempo = 500_000
-##    if isinstance(division, int):
-##        ms_per_tick = tempo / (division * 1000)
-##    else:
-##        ms_per_tick = 1000 / (division[0] * division[1])
-##    init()
-##    last_tick = 0
-##    last_ts = pg.midi.time()
-##    for evt, tick in events:
-##        ts = last_ts + (tick - last_tick) * ms_per_tick
-##        last_tick, last_ts = tick, ts
-##        if evt[0] == 0xff and evt[1] == MetaEvent.SetTempo:
-##            tempo = evt[2]
-##            if isinstance(division, int):
-##                ms_per_tick = tempo / (division * 1000)
-##        pg.time.delay(int(ts) - pg.midi.time())
-##        if evt[0] in (0xf0, 0xf7):
-##            player.write_sys_ex(0, evt[1])
-##        elif evt[0] < 0xf0:
-##            player.write_short(*evt)
-
 
 player = None
 
-def init(output=None):
+def init(output=0):
     global player
     if player is None:
-        pg.midi.init()
-        if output is None:
-            output = pg.midi.get_default_output_id()
-        player = pg.midi.Output(output, 1)
+        player = MidiPlayer(output)
         atexit.register(quit)
+    return player
 
 def quit():
     global player
     if player:
         player.close()
         player = None
-    pg.midi.quit()
 
 
 def play_midi(file=None, events=None, volume=1, start=0, print_progress=True):
-    if events is None:
-        events = get_midi_events(file, sysex=True, meta=True)
     init()
-    tottime = events[-1][1]
-    last_ts = 0
-    try:
-        t0 = pg.midi.time() - start
-        for evt, ts in events:
-            if ts < start:
-                continue
-            if print_progress and last_ts != ts:
-                print(f'\r{fmt_time(last_ts)}/{fmt_time(tottime)}', end='')
-            pg.time.delay(ts + t0 - pg.midi.time())
-            if evt[0] == 0xf0:
-                player.write_sys_ex(0, b'\xf0' + evt[1])
-            elif evt[0] == 0xf7:
-                player.write_sys_ex(0, evt[1])
-            elif evt[0] < 0xf0:
-                if volume != 1 and evt[0] & 0xf0 == NoteOn:
-                    evt = (evt[0], evt[1], min(int(evt[2]*volume), 127))
-                player.write_short(*evt)
-            last_ts = ts
-        pg.time.wait(500)
-    except KeyboardInterrupt:
-        pass
-    if print_progress:
-        print(f'\r{fmt_time(last_ts)}/{fmt_time(tottime)}')
-
-
-def play_midi2(file=None, events=None):
-    if events is None:
-        events = get_midi_events(file)
-    init()
-    t0 = pg.midi.time()
-    while events:
-        data = events[:1024]
-        player.write([(evt, ts+t0) for evt, ts in data if evt[0] < 0xf0])
-        pg.time.delay(data[-1][1] + t0 - pg.midi.time())
-        events = events[1024:]
-    pg.time.delay(500)
+    player.play_midi(file, events, volume, start, print_progress)
 
 
 def shift(events, dt):
@@ -417,55 +348,101 @@ INSTRUMENT_NAMES = [
 INSTRUMENTS = {k.lower(): i for i, k in enumerate(INSTRUMENT_NAMES)}
 
 
-class SimplePlayer:
-    def __init__(self, instrument=0, output=None):
-        if output is None:
-            init()
-            self._player = None
-        elif isinstance(output, pg.midi.Output):
-            self._player = output
-        else:
-            pg.midi.init()
-            self._player = pg.midi.Output(output)
-        self.set_instrument(instrument)
+class MidiPlayer:
+    def __new__(cls, output=None, instrument=None):
+        if cls is not MidiPlayer:
+            return super().__new__(cls)
+        global BACKEND
+        if BACKEND == 'rtmidi':
+            try:
+                import rtmidi
+            except ImportError:
+                warnings.warn("Couldn't load rtmidi backend. Falling back to pygame.")
+                BACKEND = 'pygame'
+            else:
+                return super().__new__(RtMidiPlayer)
+        if BACKEND == 'pygame':
+            return super().__new__(PygameMidiPlayer)
+        raise ValueError(f'Unknown backend: {BACKEND}')
 
-    @property
-    def player(self):
-        return self._player or player
+    def __init__(self, output=None, instrument=None):
+        if instrument is not None:
+            self.set_instrument(instrument)
 
-    def set_instrument(self, instrument):
+    def send_message(self, message):
+        raise NotImplementedError
+
+    def note_on(self, note, velocity=127, channel=0):
+        self.send_message([NoteOn + channel, note, velocity])
+
+    def note_off(self, note, velocity=0, channel=0):
+        self.send_message([NoteOff + channel, note, velocity])
+
+    def set_instrument(self, instrument, channel=0):
         if isinstance(instrument, str):
             instrument = INSTRUMENTS[instrument.lower()]
-        self.player.set_instrument(instrument)
+        self.send_message([ProgChange + channel, instrument])
 
     def wait(self, duration=1.0):
-        pg.time.delay(int(duration * 1000))
+        if duration > 0:
+            time.sleep(duration)
 
-    def play_note(self, note, duration=1.0, velocity=127):
+    def time(self):
+        return time.monotonic()
+
+    def play_midi(self, file=None, events=None, volume=1, start=0, print_progress=True):
+        if events is None:
+            events = get_midi_events(file, sysex=True, meta=True)
+        tottime = events[-1][1]
+        last_ts = 0
+        try:
+            t0 = self.time() - start
+            for evt, ts in events:
+                if ts < start:
+                    continue
+                if print_progress and last_ts != ts:
+                    print(f'\r{fmt_time(last_ts)}/{fmt_time(tottime)}', end='')
+                self.wait(ts + t0 - self.time())
+                if evt[0] == 0xf0:
+                    self.send_message(b'\xf0' + evt[1])
+                elif evt[0] == 0xf7:
+                    self.send_message(evt[1])
+                if evt[0] < 0xf0:
+                    if volume != 1 and evt[0] & 0xf0 == NoteOn:
+                        evt = (evt[0], evt[1], min(int(evt[2]*volume), 127))
+                    self.send_message(bytes(evt))
+                last_ts = ts
+            self.wait(.5)
+        except KeyboardInterrupt:
+            pass
+        if print_progress:
+            print(f'\r{fmt_time(last_ts)}/{fmt_time(tottime)}')
+
+    def play_note(self, note, duration=1.0, velocity=127, channel=0):
         if isinstance(note, str):
             note = parse_note(note) if note.strip() else -1
         if note is None or note < 0:
             self.wait(duration)
             return
         try:
-            self.player.note_on(note, velocity)
+            self.note_on(note, velocity, channel)
             self.wait(duration)
         finally:
-            self.player.note_off(note)
+            self.note_off(note, channel=channel)
 
-    def play_fixed_notes(self, notes, duration=0.5, delay=0.0):
+    def play_fixed_notes(self, notes, duration=0.5, delay=0.0, velocity=127,
+                         channel=0):
         for note in notes:
             self.wait(delay)
-            self.play_note(note, duration)
+            self.play_note(note, duration, velocity, channel)
 
-    def play_notes(self, notes):
+    def play_notes(self, notes, velocity=127, channel=0):
         for delay, note, dur in notes:
             self.wait(delay)
-            self.play_note(note, dur)
+            self.play_note(note, dur, velocity, channel)
 
     def close(self):
-        if self._player:
-            self._player.close()
+        pass
 
     def __del__(self):
         self.close()
@@ -477,16 +454,57 @@ class SimplePlayer:
         self.close()
 
 
+class RtMidiPlayer(MidiPlayer):
+    def __init__(self, output=None, instrument=None):
+        import rtmidi
+        self.output = rtmidi.MidiOut()
+        self.output.open_port(output or 0)
+        super().__init__(output, instrument)
+
+    def send_message(self, message):
+        self.output.send_message(message)
+
+    def close(self):
+        if hasattr(self, 'output'):
+            self.output.close_port()
+            del self.output
+
+
+class PygameMidiPlayer(MidiPlayer):
+    def __init__(self, output=0, instrument=None):
+        global pygame
+        import pygame.midi
+        pygame.midi.init()
+        if output is None:
+            output = pygame.midi.get_default_output_id()
+        self.output = pygame.midi.Output(output)
+        super().__init__(output, instrument)
+
+    def send_message(self, message):
+        self.output.write_short(*message)
+
+    def wait(self, duration=1.0):
+        pygame.time.delay(int(duration * 1000))
+
+    def time(self):
+        return pygame.midi.time() / 1000
+
+    def close(self):
+        if hasattr(self, 'output'):
+            self.output.close()
+            del self.output
+
+
 def fmt_time(time):
-    m, s = divmod(time // 1000, 60)
+    m, s = divmod(int(time), 60)
     return f'{m}:{s:02}'
 
 
 def parse_time(string):
     if ':' in string:
         m, s = string.split(':')
-        return int((int(m)*60 + float(s))*1000)
-    return int(float(string)*1000)
+        return int(m)*60 + float(s)
+    return float(string)
 
 
 if __name__ == '__main__':
