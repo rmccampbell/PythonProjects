@@ -4,11 +4,13 @@ import sys, types, collections, itertools, re, math, operator, inspect
 import functools, io, textwrap, enum, reprlib
 import functools2
 from functools2 import typechecking, autocurrying, Sentinel
+from collections import OrderedDict, defaultdict
+import collections.abc as cabc
 
 _none = Sentinel('<empty>')
 
 
-class HashlessMap(collections.MutableMapping):
+class HashlessMap(cabc.MutableMapping):
     """Input key/value pairs as tuples.
 
     HashlessMap([('a', 1), ('b', 2)])
@@ -24,7 +26,7 @@ class HashlessMap(collections.MutableMapping):
         if len(args) == 1:
             obj = args[0]
 
-            if isinstance(obj, collections.Mapping):
+            if isinstance(obj, cabc.Mapping):
                 items = obj.items()
             elif hasattr(obj, 'keys'):
                 items = ((key, obj[key]) for key in obj.keys())
@@ -86,7 +88,7 @@ class HashlessMap(collections.MutableMapping):
     def values(self):
         return HashlessMapValues(self)
 
-class HashlessMapKeys(collections.KeysView):
+class HashlessMapKeys(cabc.KeysView):
     def __iter__(self):
         yield from self._mapping._keys
     def __contains__(self, key):
@@ -94,13 +96,13 @@ class HashlessMapKeys(collections.KeysView):
     def __repr__(self):
         return '<{}({})>'.format(type(self).__name__, list(self))
 
-class HashlessMapItems(collections.ItemsView):
+class HashlessMapItems(cabc.ItemsView):
     def __iter__(self):
         yield from zip(self._mapping._keys, self._mapping._values)
     def __repr__(self):
         return '<{}({})>'.format(type(self).__name__, list(self))
 
-class HashlessMapValues(collections.ValuesView):
+class HashlessMapValues(cabc.ValuesView):
     def __iter__(self):
         yield from self._mapping._values
     def __contains__(self, value):
@@ -137,7 +139,7 @@ class DictNS2(dict):
     def __dict__(self):
         return self
 
-class MappingNS(collections.MutableMapping):
+class MappingNS(cabc.MutableMapping):
     """A normal object namespace with a mapping interface."""
     def __init__(self, *args, **kwargs):
         vars(self).update(*args, **kwargs)
@@ -169,7 +171,7 @@ class AutoDict(dict):
         return value
 
 def AutoDefDict(*args, **kwargs):
-    return collections.defaultdict(AutoDefDict, *args, **kwargs)
+    return defaultdict(AutoDefDict, *args, **kwargs)
 
 class AutoDictNS(DictNS, AutoDict, AutoAttr):
     pass
@@ -302,7 +304,7 @@ def bits_to_int(bits):
         num = (num << 1) | bool(bit)
     return num
 
-class Bits(collections.Sequence):
+class Bits(cabc.Sequence):
     def __init__(self, value, length=None, endian='big'):
         if isinstance(value, str):
             self.value = int(value, 2)
@@ -311,7 +313,7 @@ class Bits(collections.Sequence):
                 raise ValueError("unsigned integers only")
             self.value = value
             l = value.bit_length()
-        elif isinstance(value, collections.ByteString):
+        elif isinstance(value, cabc.ByteString):
             self.value = int.from_bytes(value, endian)
             l = 8 * len(value)
         else:
@@ -362,7 +364,7 @@ class Bits(collections.Sequence):
 
 
 
-class IterProxy(collections.Iterable):
+class IterProxy(cabc.Iterable):
     def each(self, attr):
         return type(self)(getattr(obj, attr) for obj in self)
 
@@ -472,7 +474,7 @@ class FakeFunc:
 
 
 
-class SeqDict(collections.OrderedDict):
+class SeqDict(OrderedDict):
     def __getitem__(self, key):
         try:
             key = list(self)[key]
@@ -715,7 +717,7 @@ class AbstractSet:
             self.predicate = predicate.predicate
         elif callable(predicate):
             self.predicate = predicate
-        elif isinstance(predicate, collections.Container):
+        elif isinstance(predicate, cabc.Container):
             self.predicate = predicate.__contains__
         else:
             raise TypeError('argument must be callable or container')
@@ -742,7 +744,7 @@ class AbstractSet:
         return AbstractSet(lambda obj: pred1(obj) and not pred2(obj))
 
 # The set of all sets not members of themselves
-russels_set = AbstractSet(lambda obj: isinstance(obj, collections.Container)
+russels_set = AbstractSet(lambda obj: isinstance(obj, cabc.Container)
                           and obj not in obj)
 
 
@@ -756,7 +758,7 @@ def frange(start, stop=None, step=1):
         count += step
 
 
-class FRange(collections.Sequence):
+class FRange(cabc.Sequence):
     def __init__(self, start, stop=None, step=1):
         if stop is None:
             start, stop = 0, start
@@ -812,7 +814,7 @@ class FollowDescriptors:
 
 
 
-class SearchableDict(collections.OrderedDict):
+class SearchableDict(OrderedDict):
     def __getitem__(self, key):
         try:
             return super().__getitem__(key)
@@ -904,7 +906,7 @@ class MultiSet:
             map(repr, self.containers)))
 
 
-class MultiSeq(MultiSet, collections.Sequence):
+class MultiSeq(MultiSet, cabc.Sequence):
     def __getitem__(self, index):
         if index < 0:
             index += len(self)
@@ -915,7 +917,7 @@ class MultiSeq(MultiSet, collections.Sequence):
         raise IndexError
 
 
-class MultiList(MultiSeq, collections.MutableSequence):
+class MultiList(MultiSeq, cabc.MutableSequence):
     def __setitem__(self, index, value):
         if index < 0:
             index += len(self)
@@ -1362,7 +1364,7 @@ class IdWrapper:
         return repr(self._obj)
 
 
-class IdDict(collections.MutableMapping, dict):
+class IdDict(cabc.MutableMapping, dict):
     def __init__(self, *args, **kwargs):
         self.update(*args, **kwargs)
     def __setitem__(self, key, value):
@@ -1379,7 +1381,7 @@ class IdDict(collections.MutableMapping, dict):
         return IdDict(self)
 
 
-class IdSet(collections.MutableSet, set):
+class IdSet(cabc.MutableSet, set):
     def __init__(self, it=()):
         self |= it
     def add(self, obj):
@@ -1394,16 +1396,16 @@ class IdSet(collections.MutableSet, set):
         return (o._obj for o in set.__iter__(self))
     def copy(self):
         return IdSet(self)
-    union = collections.Set.__or__
-    update = collections.MutableSet.__ior__
-    intersection = collections.Set.__and__
-    intersection_update = collections.MutableSet.__iand__
-    difference = collections.Set.__sub__
-    difference_update = collections.MutableSet.__isub__
-    symmetric_difference = collections.Set.__xor__
-    symmetric_difference_update = collections.MutableSet.__ixor__
-    issubset = collections.Set.__le__
-    issuperset = collections.Set.__ge__
+    union = cabc.Set.__or__
+    update = cabc.MutableSet.__ior__
+    intersection = cabc.Set.__and__
+    intersection_update = cabc.MutableSet.__iand__
+    difference = cabc.Set.__sub__
+    difference_update = cabc.MutableSet.__isub__
+    symmetric_difference = cabc.Set.__xor__
+    symmetric_difference_update = cabc.MutableSet.__ixor__
+    issubset = cabc.Set.__le__
+    issuperset = cabc.Set.__ge__
 
 
 
@@ -1659,7 +1661,7 @@ class Color(BitFlag):
 
 
 
-class MultiArray(collections.Sequence):
+class MultiArray(cabc.Sequence):
     def __init__(self, it=None):
         self.lastsize = 0
         self.lists = [[None]]
@@ -1694,7 +1696,7 @@ class MultiArray(collections.Sequence):
 
 
 
-class CircleArray(collections.Sequence):
+class CircleArray(cabc.Sequence):
     def __init__(self, it=None):
         self.arr = [None]
         self.begin = self.end = 0
@@ -1757,7 +1759,7 @@ class CircleArray(collections.Sequence):
         return 'CircleArray({})'.format(list(self))
 
 
-class PrettyODict(collections.OrderedDict):
+class PrettyODict(OrderedDict):
     @reprlib.recursive_repr()
     def __repr__(self):
         return '{' + ', '.join('%r: %r' % (k, v) for k, v in self.items()) + '}'
@@ -1794,9 +1796,9 @@ class BinInt(int):
 
 
 
-class OrderedSet(collections.MutableSet):
+class OrderedSet(cabc.MutableSet):
     def __init__(self, iterable=()):
-        self._odict = collections.OrderedDict.fromkeys(iterable)
+        self._odict = OrderedDict.fromkeys(iterable)
     def __len__(self):
         return len(self._odict)
     def __iter__(self):
@@ -1863,7 +1865,7 @@ class NamedProp(property):
         self.__name__ = self.__qualname__ = None
     def __set_name__(self, owner, name):
         self.__name__ = name
-        self.__qualname__ = owner.__name__ + '.' + name
+        self.__qualname__ = owner.__qualname__ + '.' + name
         self.__objclass__ = owner
     def __repr__(self):
         bits = 32 if sys.maxsize <= 2**31 - 1 else 64
@@ -1891,8 +1893,8 @@ class view:
         istart, istop, istep = slc.indices(self.len)
         start = self.start + self.step*istart
         stop = self.start + self.step*istop
-        return slice(start if start >= 0 else -sys.maxsize-1,
-                     stop if stop >= 0 else -sys.maxsize-1, self.step*istep)
+        return slice(start if start >= 0 else ~sys.maxsize,
+                     stop if stop >= 0 else ~sys.maxsize, self.step*istep)
     def _get_ind(self, i):
         if i < 0:
             i += self.len

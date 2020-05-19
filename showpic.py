@@ -107,20 +107,24 @@ def gallery(imgs, scale=1, maxh=0, interp=Image.BICUBIC, base=None):
 
 def web_gallery(url, begin=None, end=None, scale=1, maxh=0,
                 interp=Image.BICUBIC):
-    if not url.startswith('http://'):
+    import bs4
+    if '://' not in url:
         url = 'http://' + url
     req = urllib.request.Request(url, headers={'User-Agent': 'Chrome'})
     doc = bs4.BeautifulSoup(urllib.request.urlopen(req), 'lxml')
-    imgs = doc.find_all('img')[begin:end]
+    imgs = [img for img in doc.find_all('img')[begin:end]
+            if os.path.splitext(img['src'])[1] in IMG_EXTS]
     gallery(imgs, scale, maxh, url)
 
 def linked_gallery(url, begin=None, end=None, scale=1, maxh=0,
                    interp=Image.BICUBIC, _close=True):
-    if not url.startswith('http://'):
+    import bs4
+    if '://' not in url:
         url = 'http://' + url
     req = urllib.request.Request(url, headers={'User-Agent': 'Chrome'})
     doc = bs4.BeautifulSoup(urllib.request.urlopen(req), 'lxml')
-    imgs = doc.find_all('img')[begin:end]
+    imgs = [img for img in doc.find_all('img')[begin:end]
+            if os.path.splitext(img['src'])[1] in IMG_EXTS]
     links = [img.parent if img.parent.name == 'a' else None for img in imgs]
 
     can_load = threading.Event()
@@ -162,7 +166,7 @@ def linked_gallery(url, begin=None, end=None, scale=1, maxh=0,
                             else:
                                 try:
                                     linked_gallery(href, None, None, scale,
-                                                   maxh, False)
+                                                   maxh, interp, False)
                                 except urllib.error.HTTPError as e:
                                     print(e)
                             can_load.set()
