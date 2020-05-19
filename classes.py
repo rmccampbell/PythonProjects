@@ -1917,3 +1917,18 @@ class DynamicPrompt:
         self.func = func
     def __str__(self):
         return self.func()
+
+
+
+class MapSeq(collections.Sequence):
+    def __init__(self, seq, func):
+        self.seq = seq
+        self.func = func
+
+    def __getitem__(self, ind):
+        if isinstance(ind, slice):
+            return list(map(self.func, self.seq[ind]))
+        return self.func(self.seq[ind])
+
+    def __len__(self):
+        return len(self.seq)
