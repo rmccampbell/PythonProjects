@@ -206,26 +206,6 @@ def get_midi_events(file, sysex=False, meta=False):
     return schedule_events(*get_raw_events(file), sysex=sysex, meta=meta)
 
 
-player = None
-
-def init(output=0):
-    global player
-    if player is None:
-        player = MidiPlayer(output)
-        atexit.register(quit)
-    return player
-
-def quit():
-    global player
-    if player:
-        player.close()
-        player = None
-
-
-def play_midi(file=None, events=None, volume=1, start=0, print_progress=True):
-    init()
-    player.play_midi(file, events, volume, start, print_progress)
-
 
 def shift(events, dt):
     return [(evt, ts+dt) for evt, ts in events]
@@ -398,9 +378,10 @@ class MidiPlayer:
         try:
             t0 = self.time() - start
             for evt, ts in events:
-                if ts < start:
+                if ts < start and evt[0] & 0xf0 in (NoteOn, NoteOff):
                     continue
-                if print_progress and last_ts != ts:
+                # Print before waiting to hide delay
+                if print_progress and last_ts != ts and last_ts >= start:
                     print(f'\r{fmt_time(last_ts)}/{fmt_time(tottime)}', end='')
                 self.wait(ts + t0 - self.time())
                 if evt[0] == 0xf0:
@@ -448,7 +429,7 @@ class MidiPlayer:
         self.close()
 
     def __enter__(self):
-        pass
+        return self
 
     def __exit__(self, exc_type, exc_val, exc_tb):
         self.close()
@@ -505,6 +486,12 @@ def parse_time(string):
         m, s = string.split(':')
         return int(m)*60 + float(s)
     return float(string)
+
+
+def play_midi(file=None, events=None, volume=1, start=0, print_progress=True,
+              output=None):
+    with MidiPlayer(output) as player:
+        player.play_midi(file, events, volume, start, print_progress)
 
 
 if __name__ == '__main__':
