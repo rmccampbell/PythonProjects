@@ -180,7 +180,7 @@ def func(code, name=None, globs=None):
         raise ValueError('nothing to return')
 
 
-@pipe_alias('im', _depth=1)
+@pipe_alias('i', 'im', _depth=1)
 def autoimport(string, _depth=0):
     if not isinstance(string, str): return string
     globs = fglobals(_depth+1)
@@ -231,6 +231,8 @@ def rename(obj, name=None, qualname=None):
     return obj
 
 def method(cls):
+    if not isinstance(cls, type):
+        cls = type(cls)
     def method(func):
         func.__qualname__ = cls.__qualname__ + '.' + func.__name__
         setattr(cls, func.__name__, func)
@@ -330,8 +332,9 @@ def shuffled(it):
     return lst
 
 
-def randstream(it):
-    vals = list(it)
+def randstream(vals):
+    if not isinstance(vals, collections.abc.Sequence):
+        vals = list(vals)
     while True:
         yield random.choice(vals)
 
@@ -1089,158 +1092,194 @@ ls = pipe(os.listdir)
 
 ### Module import shortcuts ###
 
+def _is_autocomplete():
+    for f in inspect.stack():
+        files = ('autocomplete.py', 'calltip.py', 'rlcompleter.py')
+        if f[1].lower().endswith(files):
+            return True
+    return False
+
+def _pr(s):
+    if not _is_autocomplete():
+        print(s)
+    return s
+
 class lazy_loader(object):
     def __init__(self, func):
         self.func = func
     def __call__(self, *args, **kwargs):
+        kwargs['_depth'] = kwargs.get('_depth', 0) + 1
         return self.func(*args, **kwargs)
     def __getattr__(self, name):
-        return getattr(self.func(), name)
+        return getattr(self.func(_depth=1), name)
+    def __dir__(self):
+        return dir(self.func(_depth=1))
 
 
-#@lazy_loader
-def np():
+@lazy_loader
+def np(_depth=0):
     import numpy
-    exec(pr('import numpy, numpy as np\n'
+    exec(_pr('import numpy, numpy as np\n'
             'import numpy.linalg as LA\n'
             'from numpy import array as A\n'
-            'np.set_printoptions(suppress=True)'), fglobals(1))
+            'np.set_printoptions(suppress=True)'), fglobals(_depth+1))
     return numpy
 
-def qt4():
+def qt4(_depth=0):
     from PyQt4 import Qt
-    exec(pr('import PyQt4\n'
+    exec(_pr('import PyQt4\n'
             'from PyQt4 import QtCore, QtGui, Qt as Q\n'
             'from PyQt4.Qt import *\n'
-            'app = QApplication([])'), fglobals(1))
+            'app = QApplication([])'), fglobals(_depth+1))
     return Qt
 
-def qt5():
+def qt5(_depth=0):
     from PyQt5 import Qt
-    exec(pr('import PyQt5\n'
+    exec(_pr('import PyQt5\n'
             'from PyQt5 import QtCore, QtGui, QtWidgets, Qt as Q\n'
             'from PyQt5.Qt import *\n'
-            'app = QApplication([])'), fglobals(1))
+            'app = QApplication([])'), fglobals(_depth+1))
     return Qt
 
-@alias('plt')
-def mpl(backend=None, interactive=True):
+@lazy_loader
+def mpl(backend=None, interactive=True, _depth=0):
     if isinstance(backend, (bool, int)):
         backend, interactive = None, backend
     import matplotlib
-    exec(pr('import matplotlib as mpl\n'
+    exec(_pr('import matplotlib as mpl\n'
             + ('mpl.use({!r})\n'.format(backend) if backend else '') +
             'import matplotlib.pyplot as plt\n'
             'import numpy as np'
             + ('\nplt.ion()' if interactive else '')),
-         fglobals(1))
+         fglobals(_depth+1))
     return matplotlib
 
-def pylab(backend=None, interactive=True):
+@lazy_loader
+def plt(backend=None, interactive=True, _depth=0):
+    return mpl(backend, interactive, _depth=_depth+1).pyplot
+
+@lazy_loader
+def pylab(backend=None, interactive=True, _depth=0):
     if isinstance(backend, (bool, int)):
         backend, interactive = None, backend
     import pylab
-    exec(pr(('import matplotlib as mpl\n' +
+    exec(_pr(('import matplotlib as mpl\n' +
              'mpl.use({!r})\n'.format(backend) if backend else '') +
             'from pylab import *'
             + ('\nion()' if interactive else '')),
-         fglobals(1))
+         fglobals(_depth+1))
     return pylab
 
-def pylab3d(backend=None, interactive=True):
+def pylab3d(backend=None, interactive=True, _depth=0):
     if isinstance(backend, (bool, int)):
         backend, interactive = None, backend
     import pylab
-    exec(pr(('import matplotlib as mpl\n' +
+    exec(_pr(('import matplotlib as mpl\n' +
              'mpl.use({!r})\n'.format(backend) if backend else '') +
             'from pylab import *\n'
             + ('ion()\n' if interactive else '') +
-            'import mpl_toolkits.mplot3d\n'
-            "ax = subplot(projection='3d')"), fglobals(1))
+            'from mpl_toolkits import mplot3d\n'
+            "ax = subplot(projection='3d')"), fglobals(_depth+1))
     return pylab
 
-def sympy(all=True):
+@lazy_loader
+def sympy(all=True, _depth=0):
     import sympy
-    exec(pr('import sympy, sympy as sp\n'
+    exec(_pr('import sympy, sympy as sp\n'
             + ('from sympy import *\n' if all else '') +
             'R = sympy.Rational\n'
             'sympy.var("x, y, z, a, b, c, t", real=True)'),
-         fglobals(1))
+         fglobals(_depth+1))
     return sympy
 
-def scipy():
+@lazy_loader
+def scipy(_depth=0):
     import scipy
-    exec(pr('import numpy, numpy as np\n'
+    exec(_pr('import numpy, numpy as np\n'
             'import scipy, scipy as sp\n'
             'import scipy.misc, scipy.special, scipy.ndimage, scipy.sparse, '
             'scipy.integrate, scipy.signal, scipy.constants, scipy.io.wavfile'),
-         fglobals(1))
+         fglobals(_depth+1))
     return scipy
 
-def pygame(init=True):
+@lazy_loader
+def pygame(init=True, _depth=0):
     import pygame
-    exec(pr('import pygame, pygame as pg\n'
+    exec(_pr('import pygame, pygame as pg\n'
             'from pygame.locals import *'
             + ('\npygame.init()' if init else '')),
-         fglobals(1))
+         fglobals(_depth+1))
     return pygame
 
-def PIL():
+@lazy_loader
+def PIL(_depth=0):
     import PIL.Image
-    exec(pr('import PIL; from PIL import Image'), fglobals(1))
+    exec(_pr('import PIL; from PIL import Image'), fglobals(_depth+1))
     return PIL
 
-def ctypes():
+@lazy_loader
+def Image(_depth=0):
+    return PIL(_depth=_depth+1).Image
+
+@lazy_loader
+def ctypes(_depth=0):
     import ctypes
-    exec(pr('import ctypes; from ctypes import *\n'
+    exec(_pr('import ctypes; from ctypes import *\n'
             'from ctypes.util import *\n'
             + ('from ctypes.wintypes import *\n'
                'libc = cdll.msvcrt'
                if os.name == 'nt' else
-               "libc = CDLL(find_library('c'))")), fglobals(1))
+               "libc = CDLL(find_library('c'))")), fglobals(_depth+1))
     return ctypes
 
-def requests():
+@lazy_loader
+def requests(_depth=0):
     import requests
-    exec(pr('import requests'), fglobals(1))
+    exec(_pr('import requests'), fglobals(_depth+1))
     return requests
 
-def pandas():
+@lazy_loader
+def pandas(_depth=0):
     import pandas
-    exec(pr('import pandas as pd\n'
-            'import numpy as np'), fglobals(1))
+    exec(_pr('import pandas, pandas as pd\n'
+            'import numpy as np'), fglobals(_depth+1))
     return pandas
 
-def argparse():
+@lazy_loader
+def argparse(_depth=0):
     import argparse
-    exec(pr('import argparse\n'
-            'p = argparse.ArgumentParser()'), fglobals(1))
+    exec(_pr('import argparse\n'
+            'p = argparse.ArgumentParser()'), fglobals(_depth+1))
     return argparse
 
-def tf():
+@lazy_loader
+def tf(_depth=0):
     import tensorflow
-    exec(pr('import tensorflow as tf'), fglobals(1))
+    exec(_pr('import tensorflow as tf'), fglobals(_depth+1))
     return tensorflow
 
-def torch():
+@lazy_loader
+def torch(_depth=0):
     import torch
-    exec(pr('import torch, torchvision\n'
+    exec(_pr('import torch, torchvision\n'
             'import torch.utils.data\n'
             'import torch.nn as nn, torch.nn.functional as F\n'
             'from torch import tensor\n'
             'from torchvision import transforms\n'
-            'import numpy as np'), fglobals(1))
+            'import numpy as np'), fglobals(_depth+1))
     return torch
 
-def pyro():
-    import torch
-    exec(pr('import pyro\n'
-            'import pyro.distributions as dist'), fglobals(1))
-    return torch
+@lazy_loader
+def pyro(_depth=0):
+    import pyro
+    exec(_pr('import pyro\n'
+            'import pyro.distributions as dist'), fglobals(_depth+1))
+    return pyro
 
-def Crypto():
+@lazy_loader
+def Crypto(_depth=0):
     import Crypto
-    exec(pr('import Crypto; from Crypto import *\n'
+    exec(_pr('import Crypto; from Crypto import *\n'
             'from Crypto.Cipher import AES\n'
             'from Crypto.Hash import SHA256\n'
             'from Crypto.Util import Padding\n'
@@ -1248,34 +1287,38 @@ def Crypto():
             'from Crypto.PublicKey import RSA\n'
             'from Crypto.Cipher import PKCS1_OAEP\n'
             'from Crypto.Signature import pkcs1_15'),
-         fglobals(1))
+         fglobals(_depth+1))
     return Crypto
 
-def OpenGL():
+@lazy_loader
+def OpenGL(_depth=0):
     import OpenGL
-    exec(pr('import OpenGL\n'
+    exec(_pr('import OpenGL\n'
             'from OpenGL import GL, GLU, GLUT\n'
             'from OpenGL.GL import shaders\n'
             'from OpenGL.arrays.vbo import VBO\n'
             'import glm'),
-         fglobals(1))
+         fglobals(_depth+1))
     return OpenGL
 
-def pyassimp():
+@lazy_loader
+def pyassimp(_depth=0):
     import pyassimp
-    exec(pr('import pyassimp'), fglobals(1))
+    exec(_pr('import pyassimp'), fglobals(_depth+1))
     return pyassimp
 
-def bs4():
+@lazy_loader
+def bs4(_depth=0):
     import bs4
-    exec(pr('import bs4'), fglobals(1))
+    exec(_pr('import bs4'), fglobals(_depth+1))
     return bs4
 
-def nltk():
+@lazy_loader
+def nltk(_depth=0):
     import nltk
-    exec(pr('import nltk\n'
+    exec(_pr('import nltk\n'
             'from nltk.corpus import wordnet\n'
-            'wordnet.synset'), fglobals(1))
+            'wordnet.synset'), fglobals(_depth+1))
     return nltk
 
 ################
