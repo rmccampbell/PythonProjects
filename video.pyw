@@ -1,29 +1,25 @@
 #!/usr/bin/env python3
 import sys, os
 from PyQt5 import QtWidgets, QtCore, QtMultimedia
+from PyQt5.QtWidgets import QStyle, QSizePolicy
 from PyQt5.QtMultimedia import QMediaPlayer
 from PyQt5.QtMultimediaWidgets import QVideoWidget
 from PyQt5.QtCore import Qt, QUrl
-try:
-    from swiftslider import SwiftSlider
-except ImportError:
-    from PyQt5.QtWidgets import QSlider as SwiftSlider
 
 APP_NAME = 'Video Player'
-# Window size including borders
-WIDTH = 960 + 18
-HEIGHT = 540 + 69
+WIDTH = 1280
+HEIGHT = 720
 STEP = 5000
 BIGSTEP = 30000
 VOLSTEP = 10
-FS_CONTROLS_MARGINS = (6, 6, 6, 6)
+FULLSCREEN_CONTROLS_MARGINS = (6, 6, 6, 6)
 
 windows = []
+
 
 class VideoPlayer(QtWidgets.QMainWindow):
     def __init__(self, file=None):
         super().__init__()
-        self.resize(WIDTH, HEIGHT)
 
         menubar = self.menuBar()
         fileMenu = menubar.addMenu('&File')
@@ -48,13 +44,13 @@ class VideoPlayer(QtWidgets.QMainWindow):
         self.video.setFocusPolicy(Qt.StrongFocus)
         self.video.installEventFilter(self)
 
-        self.playIcon = self.style().standardIcon(QtWidgets.QStyle.SP_MediaPlay)
-        self.pauseIcon = self.style().standardIcon(QtWidgets.QStyle.SP_MediaPause)
+        self.playIcon = self.style().standardIcon(QStyle.SP_MediaPlay)
+        self.pauseIcon = self.style().standardIcon(QStyle.SP_MediaPause)
         self.playButton = QtWidgets.QPushButton(self.playIcon, '')
         self.playButton.clicked.connect(self.togglePlay)
 
-        self.volIcon = self.style().standardIcon(QtWidgets.QStyle.SP_MediaVolume)
-        self.muteIcon = self.style().standardIcon(QtWidgets.QStyle.SP_MediaVolumeMuted)
+        self.volIcon = self.style().standardIcon(QStyle.SP_MediaVolume)
+        self.muteIcon = self.style().standardIcon(QStyle.SP_MediaVolumeMuted)
         self.volButton = QtWidgets.QPushButton(self.volIcon, '')
         self.volButton.clicked.connect(self.toggleMuted)
 
@@ -89,6 +85,12 @@ class VideoPlayer(QtWidgets.QMainWindow):
         self.margins = self.vlayout.contentsMargins()
         self.spacing = self.vlayout.spacing()
 
+        self.video.setSizePolicy(QSizePolicy.Ignored, QSizePolicy.Ignored)
+        self.video.resize(WIDTH, HEIGHT)
+        self.video.setMinimumSize(WIDTH, HEIGHT)
+        self.adjustSize()
+        self.video.setMinimumSize(0, 0)
+
         self.positionChanging = False
 
         videodirs = QtCore.QStandardPaths.standardLocations(
@@ -117,7 +119,8 @@ class VideoPlayer(QtWidgets.QMainWindow):
         if url.isValid():
             self.setSource(url)
         else:
-            msg = 'Error: Invalid URL: "%s"' % (urlstr or url.toString())
+            urlstr = urlstr or url.toString()
+            msg = f'Error: Invalid URL: "{urlstr}"'
             QtWidgets.QMessageBox.warning(self, 'Error', msg)
 
     def openFile(self):
@@ -150,7 +153,7 @@ class VideoPlayer(QtWidgets.QMainWindow):
         else:
             self.vlayout.setContentsMargins(0, 0, 0, 0)
             self.vlayout.setSpacing(0)
-            self.controls.setContentsMargins(*FS_CONTROLS_MARGINS)
+            self.controls.setContentsMargins(*FULLSCREEN_CONTROLS_MARGINS)
         self.setWindowState(self.windowState() ^ Qt.WindowFullScreen)
 
     def handleStateChanged(self, state):
@@ -163,13 +166,13 @@ class VideoPlayer(QtWidgets.QMainWindow):
         self.positionChanging = False
         secs = position // 1000
         mins, secs = divmod(secs, 60)
-        self.posLabel.setText('%d:%02d' % (mins, secs))
+        self.posLabel.setText(f'{mins}:{secs}')
 
     def handleDurationChanged(self, duration):
         self.posSlider.setMaximum(duration)
         secs = duration // 1000
         mins, secs = divmod(secs, 60)
-        self.durLabel.setText('%d:%02d' % (mins, secs))
+        self.durLabel.setText(f'{mins}:{secs}')
 
     def handleMutedChanged(self, muted):
         self.volButton.setIcon(self.muteIcon if muted else self.volIcon)
@@ -189,7 +192,7 @@ class VideoPlayer(QtWidgets.QMainWindow):
         if not estr:
             m = QMediaPlayer.staticMetaObject
             estr = m.enumerator(m.indexOfEnumerator('Error')).valueToKey(error)
-        QtWidgets.QMessageBox.warning(self, 'Error', 'Error: %s' % estr)
+        QtWidgets.QMessageBox.warning(self, 'Error', f'Error: {estr}')
 
     def keyPressEvent(self, event):
         key = event.key()
@@ -246,6 +249,36 @@ class VideoPlayer(QtWidgets.QMainWindow):
     def closeEvent(self, event):
         self.media.stop()
         windows.remove(self)
+
+
+# Modified from http://code.qt.io/cgit/%7bgraveyard%7d/qtphonon.git/tree/src/3rdparty/phonon/phonon/swiftslider.cpp
+class SwiftSlider(QtWidgets.QSlider):
+    def mousePressEvent(self, event):
+        if event.button() == Qt.LeftButton:
+            opt = QtWidgets.QStyleOptionSlider()
+            self.initStyleOption(opt)
+            sr = self.style().subControlRect(
+                QStyle.CC_Slider, opt, QStyle.SC_SliderHandle, self)
+            gr = self.style().subControlRect(
+                QStyle.CC_Slider, opt, QStyle.SC_SliderGroove, self)
+
+            if not sr.contains(event.pos()):
+                event.accept()
+
+                if self.orientation() == Qt.Horizontal:
+                    sliderPos = event.pos().x() - gr.x() - sr.width()//2
+                    sliderSpan = gr.width() - sr.width()
+                else:
+                    sliderPos = event.pos().y() - gr.y() - sr.height()//2
+                    sliderSpan = gr.height() - sr.height()
+
+                self.setSliderPosition(QStyle.sliderValueFromPosition(
+                    self.minimum(), self.maximum(), sliderPos,
+                    sliderSpan, opt.upsideDown))
+            else:
+                super().mousePressEvent(event)
+        else:
+            super().mousePressEvent(event)
 
 
 if __name__ == '__main__':
