@@ -51,7 +51,7 @@ else:
 
 # My imports
 # Allow this module to be symlinked to different names
-globals()[__name__] = __import__(__name__)
+globals()[__name__] = sys.modules[__name__]
 import functools2
 from functools2 import autocurrying, chunk, comp, ncomp, ident, inv, supply,\
      rpartial, trycall, trywrap, tryiter, iterfunc, unique, is_sorted, ilen,\

@@ -578,8 +578,6 @@ def ilen(it):
 def iindex(it, idx):
     if isinstance(idx, slice):
         return list(islice(it, idx.start, idx.stop, idx.step))
-    if idx < 0:
-        raise IndexError
     try:
         return next(islice(it, idx, None))
     except StopIteration:

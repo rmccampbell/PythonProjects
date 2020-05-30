@@ -75,8 +75,12 @@ def iterchunks(file, blocksize=8192):
 def iterchars(file):
     return iterchunks(file, 1)
 
+def iterlines(file, newlines=False):
+    return iter(file) if newlines else (l.rstrip('\r\n') for l in file)
+
 chunk = iterchunks
 chars = iterchars
+lines = iterlines
 
 def getfiles(paths=None, mode='r', encoding=None, errors=ERRORS,
              default='-', stdio=True, recursive=True, close=True):

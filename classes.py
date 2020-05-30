@@ -7,7 +7,7 @@ from functools2 import typechecking, autocurrying, Sentinel
 from collections import OrderedDict, defaultdict
 import collections.abc as cabc
 
-_none = Sentinel('<empty>')
+_empty = Sentinel('<empty>')
 
 
 class HashlessMap(cabc.MutableMapping):
@@ -176,28 +176,64 @@ def AutoDefDict(*args, **kwargs):
 class AutoDictNS(DictNS, AutoDict, AutoAttr):
     pass
 
+
+
+def _safe_super(typ, obj):
+    return super(typ, obj) if isinstance(obj, typ) else obj
+
 class DotDict(AutoDict):
+    def __init__(__self, *args, **kwargs):
+        super().__init__()
+        __self.update(*args, **kwargs)
+
+    update = cabc.MutableMapping.update
+
     def __getitem__(self, key):
-        keys = key.split('.')
-        if len(keys) == 1:
-            return super().__getitem__(key)
-        return self.get_by_keys(keys)
+        return self.get_by_keys(key.split('.'))
+
     def __setitem__(self, key, value):
         keys = key.split('.')
-        if len(keys) == 1:
-            return super().__setitem__(key, value)
         dct = self.get_by_keys(keys[:-1])
-        dct[keys[-1]] = value
+        _safe_super(__class__, dct).__setitem__(keys[-1], value)
+
     def __delitem__(self, key):
         keys = key.split('.')
-        if len(keys) == 1:
-            return super().__delitem__(key)
+        dct = self.get_by_keys(keys[:-1], False)
+        _safe_super(__class__, dct).__delitem__(keys[-1])
+
+    def __contains__(self, key):
+        missing = object()
+        return self.get_by_keys(key.split('.'), default=missing) is not missing
+
+    def get(self, key, default=None):
+        return self.get_by_keys(key.split('.'), default=default)
+
+    def setdefault(self, key, default=None):
+        keys = key.split('.')
         dct = self.get_by_keys(keys[:-1])
-        del dct[keys[-1]]
-    def get_by_keys(self, keys):
+        return _safe_super(__class__, dct).setdefault(keys[-1], default)
+
+    def pop(self, key, default=_empty):
+        if default is not _empty:
+            try:
+                return self.pop(key)
+            except KeyError:
+                return default
+        keys = key.split('.')
+        dct = self.get_by_keys(keys[:-1], False)
+        return _safe_super(__class__, dct).pop(keys[-1])
+
+    def get_by_keys(self, keys, create=True, default=_empty):
+        if default is not _empty:
+            create = False
         value = self
         for key in keys:
-            value = value[key]
+            if create or _safe_super(__class__, value).__contains__(key):
+                value = _safe_super(__class__, value).__getitem__(key)
+            elif default is not _empty:
+                return default
+            else:
+                raise KeyError(key)
         return value
 
 class DotDictNS(DotDict, DictNS, AutoAttr):
@@ -1482,30 +1518,30 @@ class BiDirIter:
         self._i = min(max(ind, -1), len(self._seq))
     def reverse(self):
         self.forward = not self.forward
-    def next(self, default=_none):
+    def next(self, default=_empty):
         self._i += 1
         if self._i >= len(self._seq):
             self._i = len(self._seq)
-            if default != _none:
+            if default != _empty:
                 return default
             raise StopIteration
         return self._seq[self._i]
-    def prev(self, default=_none):
+    def prev(self, default=_empty):
         self._i -= 1
         if self._i < 0:
             self._i = -1
-            if default != _none:
+            if default != _empty:
                 return default
             raise StopIteration
         return self._seq[self._i]
-    def jump(self, ind, default=_none):
+    def jump(self, ind, default=_empty):
         self._i = min(max(ind, -1), len(self._seq))
         return self.curr(default)
-    def advance(self, amount, default=_none):
+    def advance(self, amount, default=_empty):
         return self.jump(self._i + amount, default)
-    def curr(self, default=_none):
+    def curr(self, default=_empty):
         if self._i < 0 or self._i >= len(self._seq):
-            if default != _none:
+            if default != _empty:
                 return default
             raise IndexError
         return self._seq[self._i]
@@ -1934,3 +1970,68 @@ class MapSeq(collections.Sequence):
 
     def __len__(self):
         return len(self.seq)
+
+
+
+class Indexer:
+    def __init__(self, fget=None, fset=None, fdel=None, doc=None):
+        self.fget = fget
+        self.fset = fset
+        self.fdel = fdel
+        f = fget or fset or fdel
+        self.__doc__ = doc or getattr(f, '__doc__', None)
+        self.__name__ = getattr(f, '__name__', None)
+        self.__qualname__ = getattr(f, '__qualname__', self.__name__)
+
+    def __repr__(self):
+        return '<Indexer {} at 0x{:016X}>'.format(self.__qualname__, id(self))
+
+    def __getitem__(self, key):
+        if self.fget is None:
+            raise TypeError('cannot get item')
+        return self.fget(key)
+
+    def __setitem__(self, key, value):
+        if self.fset is None:
+            raise TypeError('cannot set item')
+        self.fset(key, value)
+
+    def __delitem__(self, key):
+        if self.fdel is None:
+            raise TypeError('cannot delete item')
+        self.fdel(key, value)
+
+
+class IndexerDescriptor:
+    def __init__(self, fget=None, fset=None, fdel=None, doc=None):
+        self.fget = fget
+        self.fset = fset
+        self.fdel = fdel
+        f = fget or fset or fdel
+        self.__doc__ = doc or (f and f.__doc__)
+        self.__name__ = f and f.__name__
+        self.__qualname__ = f and f.__qualname__
+
+    def __get__(self, instance, owner=None):
+        if instance is None:
+            return self
+        indexer = Indexer(
+            self.fget.__get__(instance, owner),
+            self.fset.__get__(instance, owner),
+            self.fdel.__get__(instance, owner),
+            self.__doc__)
+        indexer.__name__ = self.__name__
+        indexer.__qualname__ = self.__qualname__
+        return indexer
+
+    def getter(self, fget):
+        self.fget = fget
+        return self
+
+    def setter(self, fset):
+        self.fset = fset
+        return self
+
+    def deleter(self, fdel):
+        self.fdel = fdel
+        return self

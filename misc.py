@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-import math, cmath, re, struct, functools, operator, string, itertools
+import math, cmath, re, struct, functools, operator, string, itertools, io
 
 def isprime_re(n):
     return not re.match(r'^1?$|^(11+?)\1+$', '1'*n)
@@ -252,18 +252,10 @@ def divmod_round(x, y):
 
 
 def divmod_trunc(x, y):
-    xneg = x < 0
-    yneg = y < 0
-    if xneg:
-        x = -x
-    if yneg:
-        y = -y
-    q, r = divmod(x, y)
-    if xneg:
-        r = -r
-    if xneg ^ yneg:
-        q = -q
-    return q, r
+    xsign = -1 if x < 0 else 1
+    ysign = -1 if y < 0 else 1
+    q, r = divmod(abs(x), abs(y))
+    return xsign*ysign*q, xsign*r
 
 
 def bin2gray(n):
@@ -313,10 +305,6 @@ def least_upper_bound(t1, t2):
     for t in t2.mro():
         if issubclass(t1, t):
             return t
-
-
-def rescale(x, a1, b1, a2, b2):
-    return (x - a1) * (b2 - a2) / (b1 - a1) + a2
 
 
 MORSE_TABLE = {
@@ -429,6 +417,9 @@ def lerp(x0, x1, t):
 def unlerp(x0, x1, x):
     return (x - x0) / (x1 - x0)
 
+def rescale(x, x0, x1, y0, y1):
+    return (x - x0) * (y1 - y0) / (x1 - x0) + y0
+
 def log_interp(x0, x1, t):
     # return x0**(1-t) * x1**t
     return x0 * (x1 / x0)**t
@@ -486,15 +477,17 @@ def gauss_kernel_2d(k, sigma=None):
     k1 = gauss_kernel_1d(k, sigma)
     return np.outer(k1, k1)
 
+
 def getimbytes(arr, format=None):
     import numpy as np
-    import matplotlib.pyplot as plt
+    from matplotlib.image import imsave
     arr = np.asarray(arr)
     if arr.dtype == int:
         arr = arr.astype(np.uint8)
     f = io.BytesIO()
-    plt.imsave(f, arr, format=format)
+    imsave(f, arr, format=format)
     return f.getvalue()
+
 
 def smoothstep(x):
     import numpy as np
