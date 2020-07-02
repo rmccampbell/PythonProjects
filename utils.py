@@ -17,7 +17,7 @@ def _try_import(*mods):
 import os, collections, functools, itertools, operator, types, math, cmath, re
 import io, random, inspect, textwrap, dis, timeit, time, datetime, string
 import fractions, decimal, unicodedata, codecs, locale, shutil, numbers
-import subprocess, json, base64, copy, hashlib, contextlib
+import subprocess, json, base64, copy, hashlib, contextlib, glob
 import os.path as osp
 from math import pi, e, sqrt, exp, log, log10, floor, ceil, factorial, \
      sin, cos, tan, asin, acos, atan, atan2
@@ -49,9 +49,10 @@ else:
     from urllib2 import urlopen
     import urlparse
 
-# My imports
 # Allow this module to be symlinked to different names
 globals()[__name__] = sys.modules[__name__]
+
+# My imports
 import functools2
 from functools2 import autocurrying, chunk, comp, ncomp, ident, inv, supply,\
      rpartial, trycall, trywrap, tryiter, iterfunc, unique, is_sorted, ilen,\
@@ -840,7 +841,7 @@ def lcm(x, y):
     return abs(x * y) // gcd(x, y)
 
 def sign(x):
-    return x // abs(x or 1)
+    return x and (x // abs(x) if isinstance(x, int) else x / abs(x))
 
 def cround(z, n=0):
     return complex(round(z.real, n), round(z.imag, n))
@@ -911,27 +912,10 @@ def timef(f, *args, **kwargs):
     return time.perf_counter()-t
 
 
-class SlicePipe(object):
-    def __getitem__(self, item):
-        return pipe(operator.itemgetter(item))
-
-sl = SlicePipe()
-
-class IIndexPipe(object):
-    def __getitem__(self, item):
-        return pipe(iindex, idx=item)
-
-ii = IIndexPipe()
-
-class VarSetter(object):
-    def __getattr__(self, name):
-        return pipe(setl, name, _depth=1)
-    def __call__(self, n, v=None):
-        return setl(n, v, 1) if v else pipe(setl, n, _depth=1)
-
-sv = VarSetter()
-
-
+try:
+    h = pipe(help)
+except NameError:
+    pass
 l = pipe(list)
 ln = pipe(len)
 s = pipe(str)
@@ -973,10 +957,8 @@ dct = pipe(dict)
 ditems = pipe(lambda d: list(d.items()))
 dkeys = pipe(lambda d: list(d.keys()))
 dvalues = pipe(lambda d: list(d.values()))
-try:
-    h = pipe(help)
-except NameError:
-    pass
+sa = lambda _name=None, _value=None, **kws: pipe(
+    seta, _name=_name, _value=_value, **kws)
 
 def rn(obj=None, name=None, qualname=None):
     if obj is None:
@@ -984,6 +966,28 @@ def rn(obj=None, name=None, qualname=None):
     if name is None and qualname is None:
         return pipe(rename, name=obj, qualname=qualname)
     return rename(obj, name, qualname)
+
+
+class SlicePipe(object):
+    def __getitem__(self, item):
+        return pipe(operator.itemgetter(item))
+
+sl = SlicePipe()
+
+class IIndexPipe(object):
+    def __getitem__(self, item):
+        return pipe(iindex, idx=item)
+
+ii = IIndexPipe()
+
+class VarSetter(object):
+    def __getattr__(self, name):
+        return pipe(setl, name, _depth=1)
+    def __call__(self, n, v=None):
+        return setl(n, v, 1) if v else pipe(setl, n, _depth=1)
+
+sv = VarSetter()
+
 
 @pipe_alias('r')
 def reloads(*mods):
@@ -1095,15 +1099,19 @@ ls = pipe(os.listdir)
 ### Module import shortcuts ###
 
 def _is_autocomplete():
+    files = ('autocomplete.py', 'calltip.py', 'rlcompleter.py', 'completer.py',
+             'completion.py', 'oinspect.py', 'dir2.py')
     for f in inspect.stack():
-        files = ('autocomplete.py', 'calltip.py', 'rlcompleter.py')
-        if f[1].lower().endswith(files):
+        if f[1].lower().endswith(files) or 'inspect' in f[3]:
             return True
+##        else:
+##            print(f[0])
     return False
 
-def _pr(s):
+def _print_exec(s, depth):
     if not _is_autocomplete():
         print(s)
+        exec(s, fglobals(depth+1))
     return s
 
 class lazy_loader(object):
@@ -1121,26 +1129,26 @@ class lazy_loader(object):
 @lazy_loader
 def np(_depth=0):
     import numpy
-    exec(_pr('import numpy, numpy as np\n'
-            'import numpy.linalg as LA\n'
-            'from numpy import array as A\n'
-            'np.set_printoptions(suppress=True)'), fglobals(_depth+1))
+    _print_exec('import numpy, numpy as np\n'
+                'import numpy.linalg as LA\n'
+                'from numpy import array as A\n'
+                'np.set_printoptions(suppress=True)', _depth+1)
     return numpy
 
 def qt4(_depth=0):
     from PyQt4 import Qt
-    exec(_pr('import PyQt4\n'
-            'from PyQt4 import QtCore, QtGui, Qt as Q\n'
-            'from PyQt4.Qt import *\n'
-            'app = QApplication([])'), fglobals(_depth+1))
+    _print_exec('import PyQt4\n'
+                'from PyQt4 import QtCore, QtGui, Qt as Q\n'
+                'from PyQt4.Qt import *\n'
+                'app = QApplication([])', _depth+1)
     return Qt
 
 def qt5(_depth=0):
     from PyQt5 import Qt
-    exec(_pr('import PyQt5\n'
-            'from PyQt5 import QtCore, QtGui, QtWidgets, Qt as Q\n'
-            'from PyQt5.Qt import *\n'
-            'app = QApplication([])'), fglobals(_depth+1))
+    _print_exec('import PyQt5\n'
+                'from PyQt5 import QtCore, QtGui, QtWidgets, Qt as Q\n'
+                'from PyQt5.Qt import *\n'
+                'app = QApplication([])', _depth+1)
     return Qt
 
 @lazy_loader
@@ -1148,12 +1156,12 @@ def mpl(backend=None, interactive=True, _depth=0):
     if isinstance(backend, (bool, int)):
         backend, interactive = None, backend
     import matplotlib
-    exec(_pr('import matplotlib as mpl\n'
-            + ('mpl.use({!r})\n'.format(backend) if backend else '') +
-            'import matplotlib.pyplot as plt\n'
-            'import numpy as np'
-            + ('\nplt.ion()' if interactive else '')),
-         fglobals(_depth+1))
+    _print_exec('import matplotlib as mpl\n'
+                + ('mpl.use({!r})\n'.format(backend) if backend else '') +
+                'import matplotlib.pyplot as plt\n'
+                'import numpy as np'
+                + ('\nplt.ion()' if interactive else ''),
+                _depth+1)
     return matplotlib
 
 @lazy_loader
@@ -1165,58 +1173,59 @@ def pylab(backend=None, interactive=True, _depth=0):
     if isinstance(backend, (bool, int)):
         backend, interactive = None, backend
     import pylab
-    exec(_pr(('import matplotlib as mpl\n' +
-             'mpl.use({!r})\n'.format(backend) if backend else '') +
-            'from pylab import *'
-            + ('\nion()' if interactive else '')),
-         fglobals(_depth+1))
+    _print_exec(('import matplotlib as mpl\n' +
+                 'mpl.use({!r})\n'.format(backend) if backend else '') +
+                'from pylab import *'
+                + ('\nion()' if interactive else ''),
+                _depth+1)
     return pylab
 
 def pylab3d(backend=None, interactive=True, _depth=0):
     if isinstance(backend, (bool, int)):
         backend, interactive = None, backend
     import pylab
-    exec(_pr(('import matplotlib as mpl\n' +
-             'mpl.use({!r})\n'.format(backend) if backend else '') +
-            'from pylab import *\n'
-            + ('ion()\n' if interactive else '') +
-            'from mpl_toolkits import mplot3d\n'
-            "ax = subplot(projection='3d')"), fglobals(_depth+1))
+    _print_exec(('import matplotlib as mpl\n' +
+                 'mpl.use({!r})\n'.format(backend) if backend else '') +
+                'from pylab import *\n'
+                + ('ion()\n' if interactive else '') +
+                'from mpl_toolkits import mplot3d\n'
+                "ax = subplot(projection='3d')", _depth+1)
     return pylab
 
 @lazy_loader
 def sympy(all=True, _depth=0):
     import sympy
-    exec(_pr('import sympy, sympy as sp\n'
-            + ('from sympy import *\n' if all else '') +
-            'R = sympy.Rational\n'
-            'sympy.var("x, y, z, a, b, c, t", real=True)'),
-         fglobals(_depth+1))
+    _print_exec('import sympy, sympy as sp\n'
+                + ('from sympy import *\n' if all else '') +
+                'R = sympy.Rational\n'
+                'sympy.var("x, y, z, a, b, c, t", real=True)',
+                _depth+1)
     return sympy
 
 @lazy_loader
 def scipy(_depth=0):
     import scipy
-    exec(_pr('import numpy, numpy as np\n'
-            'import scipy, scipy as sp\n'
-            'import scipy.misc, scipy.special, scipy.ndimage, scipy.sparse, '
-            'scipy.integrate, scipy.signal, scipy.constants, scipy.io.wavfile'),
-         fglobals(_depth+1))
+    _print_exec(
+        'import numpy, numpy as np\n'
+        'import scipy, scipy as sp\n'
+        'import scipy.misc, scipy.special, scipy.ndimage, scipy.sparse, '
+        'scipy.integrate, scipy.signal, scipy.constants, scipy.io.wavfile',
+        _depth+1)
     return scipy
 
 @lazy_loader
 def pygame(init=True, _depth=0):
     import pygame
-    exec(_pr('import pygame, pygame as pg\n'
-            'from pygame.locals import *'
-            + ('\npygame.init()' if init else '')),
-         fglobals(_depth+1))
+    _print_exec('import pygame, pygame as pg\n'
+                'from pygame.locals import *'
+                + ('\npygame.init()' if init else ''),
+                _depth+1)
     return pygame
 
 @lazy_loader
 def PIL(_depth=0):
     import PIL.Image
-    exec(_pr('import PIL; from PIL import Image'), fglobals(_depth+1))
+    _print_exec('import PIL; from PIL import Image', _depth+1)
     return PIL
 
 @lazy_loader
@@ -1226,102 +1235,109 @@ def Image(_depth=0):
 @lazy_loader
 def ctypes(_depth=0):
     import ctypes
-    exec(_pr('import ctypes; from ctypes import *\n'
-            'from ctypes.util import *\n'
-            + ('from ctypes.wintypes import *\n'
-               'libc = cdll.msvcrt'
-               if os.name == 'nt' else
-               "libc = CDLL(find_library('c'))")), fglobals(_depth+1))
+    _print_exec('import ctypes; from ctypes import *\n'
+                'from ctypes.util import *\n'
+                + ('from ctypes.wintypes import *\n'
+                   'libc = cdll.msvcrt'
+                   if os.name == 'nt' else
+                   "libc = CDLL(find_library('c'))"),
+                _depth+1)
     return ctypes
 
 @lazy_loader
 def requests(_depth=0):
     import requests
-    exec(_pr('import requests'), fglobals(_depth+1))
+    _print_exec('import requests', _depth+1)
     return requests
 
 @lazy_loader
 def pandas(_depth=0):
     import pandas
-    exec(_pr('import pandas, pandas as pd\n'
-            'import numpy as np'), fglobals(_depth+1))
+    _print_exec('import pandas, pandas as pd\n'
+                'import numpy as np', _depth+1)
     return pandas
 
 @lazy_loader
 def argparse(_depth=0):
     import argparse
-    exec(_pr('import argparse\n'
-            'p = argparse.ArgumentParser()'), fglobals(_depth+1))
+    _print_exec('import argparse\n'
+                'p = argparse.ArgumentParser()', _depth+1)
     return argparse
 
 @lazy_loader
 def tf(_depth=0):
     import tensorflow
-    exec(_pr('import tensorflow as tf'), fglobals(_depth+1))
+    _print_exec('import tensorflow as tf', _depth+1)
     return tensorflow
 
 @lazy_loader
 def torch(_depth=0):
     import torch
-    exec(_pr('import torch, torchvision\n'
-            'import torch.utils.data\n'
-            'import torch.nn as nn, torch.nn.functional as F\n'
-            'from torch import tensor\n'
-            'from torchvision import transforms\n'
-            'import numpy as np'), fglobals(_depth+1))
+    _print_exec('import torch, torchvision\n'
+                'import torch.utils.data\n'
+                'import torch.nn as nn, torch.nn.functional as F\n'
+                'from torch import tensor\n'
+                'from torchvision import transforms\n'
+                'import numpy as np', _depth+1)
     return torch
 
 @lazy_loader
 def pyro(_depth=0):
     import pyro
-    exec(_pr('import pyro\n'
-            'import pyro.distributions as dist'), fglobals(_depth+1))
+    _print_exec('import pyro\n'
+                'import pyro.distributions as dist', _depth+1)
     return pyro
 
 @lazy_loader
 def Crypto(_depth=0):
     import Crypto
-    exec(_pr('import Crypto; from Crypto import *\n'
-            'from Crypto.Cipher import AES\n'
-            'from Crypto.Hash import SHA256\n'
-            'from Crypto.Util import Padding\n'
-            'from Crypto.Protocol import KDF\n'
-            'from Crypto.PublicKey import RSA\n'
-            'from Crypto.Cipher import PKCS1_OAEP\n'
-            'from Crypto.Signature import pkcs1_15'),
-         fglobals(_depth+1))
+    _print_exec('import Crypto; from Crypto import *\n'
+                'from Crypto.Cipher import AES\n'
+                'from Crypto.Hash import SHA256\n'
+                'from Crypto.Util import Padding\n'
+                'from Crypto.Protocol import KDF\n'
+                'from Crypto.PublicKey import RSA\n'
+                'from Crypto.Cipher import PKCS1_OAEP\n'
+                'from Crypto.Signature import pkcs1_15', _depth+1)
     return Crypto
 
 @lazy_loader
 def OpenGL(_depth=0):
     import OpenGL
-    exec(_pr('import OpenGL\n'
-            'from OpenGL import GL, GLU, GLUT\n'
-            'from OpenGL.GL import shaders\n'
-            'from OpenGL.arrays.vbo import VBO\n'
-            'import glm'),
-         fglobals(_depth+1))
+    _print_exec('import OpenGL\n'
+                'from OpenGL import GL, GLU, GLUT\n'
+                'from OpenGL.GL import shaders\n'
+                'from OpenGL.arrays.vbo import VBO\n'
+                'import glm', _depth+1)
     return OpenGL
 
 @lazy_loader
 def pyassimp(_depth=0):
     import pyassimp
-    exec(_pr('import pyassimp'), fglobals(_depth+1))
+    _print_exec('import pyassimp', _depth+1)
     return pyassimp
 
 @lazy_loader
 def bs4(_depth=0):
     import bs4
-    exec(_pr('import bs4'), fglobals(_depth+1))
+    _print_exec('import bs4', _depth+1)
     return bs4
 
 @lazy_loader
 def nltk(_depth=0):
     import nltk
-    exec(_pr('import nltk\n'
-            'from nltk.corpus import wordnet\n'
-            'wordnet.synset'), fglobals(_depth+1))
+    _print_exec('import nltk\n'
+                'from nltk.corpus import wordnet\n'
+                'wordnet.synset', _depth+1)
     return nltk
+
+@lazy_loader
+def pint(_depth=0):
+    import pint
+    _print_exec('import pint\n'
+                 'ureg = pint.UnitRegistry()\n'
+                 'Q_ = ureg.Quantity', _depth+1)
+    return pint
 
 ################
 
@@ -1467,7 +1483,11 @@ def thousands(n, sep='_'):
 
 
 def prunicode(s):
-    printall(map(trywrap(unicodedata.name), s))
+    for c in s:
+        try:
+            print(unicodedata.name(c))
+        except ValueError:
+            print(c.encode('unicode_escape').decode())
 
 
 def irange(start, stop):
