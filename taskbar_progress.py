@@ -10,8 +10,7 @@ TBPF_NORMAL = 0x2
 TBPF_ERROR = 0x4
 TBPF_PAUSED = 0x8
 
-cc.GetModule('data\\TaskbarLib.tlb')
-import comtypes.gen.TaskbarLib as tbl
+tbl = cc.GetModule('data\\TaskbarLib.tlb')
 taskbar = cc.CreateObject('{56FDF344-FD6D-11d0-958A-006097C9A090}', interface=tbl.ITaskbarList3)
 taskbar.HrInit()
 
