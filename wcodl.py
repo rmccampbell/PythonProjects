@@ -1,15 +1,16 @@
 #!/usr/bin/env python3
 """
-Downloads videos from watchcartoononline.io
+Downloads videos from https://www.wcostream.com/
 """
 import sys, os, subprocess, re, urllib.parse, json, base64, argparse
 import requests
+import pprint
 
 def decode(codes, key):
     return ''.join(chr(int(re.sub(rb'\D', b'', base64.b64decode(s))) - key)
                    for s in codes)
 
-def get_video_url(url):
+def get_video_url(url, hd=False):
     resp = requests.get(url)
     resp.raise_for_status()
     match = re.search(r'var [a-zA-Z]{3} = (\[[^\]]+\])', resp.text)
@@ -19,26 +20,30 @@ def get_video_url(url):
     iframe = decode(codes, key)
     src = re.search(r'src="([^"]+)"', iframe).group(1)
     url2 = urllib.parse.urljoin(url, src)
+##    print(url2)
 
     resp = requests.get(url2)
     resp.raise_for_status()
     urlre = r'get\("([^"]+)"\)\.then'
     url3 = re.search(urlre, resp.text).group(1)
     url3 = urllib.parse.urljoin(url2, url3)
+##    print(url3)
 
     resp = requests.get(url3, headers={'X-Requested-With': 'XMLHttpRequest'})
+    resp.raise_for_status()
     js = json.loads(resp.text)
-    vidurl = js['server'] + '/getvid?evid=' + js['enc']
+##    ppring.pprint(js)
+    vidurl = js['server'] + '/getvid?evid=' + (js['hd'] if hd else js['enc'])
 ##    print(vidurl)
 ##    resp2 = requests.head(vidurl, allow_redirects=True)
 ##    print(resp2)
-##    import pprint; pprint.pprint(resp2.headers)
+##    pprint.pprint(resp2.headers)
     return vidurl
 
 def url2file(url, restrict=False, default=''):
     path = urllib.parse.urlsplit(url).path
     path = urllib.parse.unquote(path)
-    file = os.path.basename(path)
+    file = os.path.basename(path) or os.path.basename(os.path.dirname(path))
     if not file:
         return default
     if restrict:
@@ -58,10 +63,16 @@ def get_filename(filename, url, orig_url=None, restrict=False):
             filename += '.mp4'
         if dir:
             filename = os.path.join(dir, filename)
+    if os.path.exists(filename):
+        overwrite = input('{} exists. Overwrite? (y/[n]) '.format(filename))
+        if not overwrite.startswith('y'):
+            return None
     return filename
 
 def download(url, filename=None, orig_url=None, restrict=False, wget_params=()):
     filename = get_filename(filename, url, orig_url, restrict=False)
+    if filename is None:
+        return
     useragent = requests.utils.default_user_agent()
     subprocess.call(['wget', '-O', filename, '-U', useragent, url, *wget_params])
 
@@ -85,11 +96,12 @@ if __name__ == '__main__':
     p.add_argument('-u', '--url-only', action='store_true')
     p.add_argument('-s', '--size', action='store_true')
     p.add_argument('-a', '--user-agent', action='store_true')
+    p.add_argument('-H', '--high-def', action='store_true')
     p.add_argument('-w', '--wget-params', nargs=argparse.REMAINDER, default=[])
     p.add_argument('url')
     p.add_argument('filename', nargs='?')
     args = p.parse_args()
-    vurl = get_video_url(args.url)
+    vurl = get_video_url(args.url, args.high_def)
     if args.url_only:
         print(vurl)
     if args.size:
