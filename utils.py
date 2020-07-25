@@ -424,7 +424,10 @@ def str_hex(s, enc=None):
     return binascii.hexlify(s).decode('ascii')
 
 def bytes_frombin(s):
-    return bytes(int(bits, 2) for bits in schunk(''.join(s.split()), 8))
+    s = ''.join(s.split())
+    n = (len(s) + 7) // 8
+    return int(s.ljust(8*n, '0'), 2).to_bytes(n, 'big')
+##    return bytes(int(bits, 2) for bits in schunk(''.join(s.split()), 8))
 
 def str_frombin(s, enc='utf-8'):
     return bytes_frombin(s).decode(enc)
@@ -433,11 +436,11 @@ def str_fromhex(s, enc='utf-8'):
     return bytes.fromhex(s).decode(enc)
 
 def unsigned(x, n=8):
-    return x & (1<<n)-1
+    return int(x) & (1<<n)-1
 
 def signed(x, n=8):
     sb = 1<<(n-1)
-    return (x & (1<<n)-1 ^ sb) - sb
+    return (int(x) & (1<<n)-1 ^ sb) - sb
 
 _signed = signed
 def tobytes(n, length=None, byteorder=sys.byteorder, signed=False):
@@ -1108,79 +1111,89 @@ def _is_autocomplete():
 ##            print(f[0])
     return False
 
-def _print_exec(s, depth):
-    if not _is_autocomplete():
-        print(s)
-        exec(s, fglobals(depth+1))
+def _main_globals():
+    return sys.modules['__main__'].__dict__
+
+def _print_exec(s):
+    print(s)
+    exec(s, _main_globals())
     return s
 
 class lazy_loader(object):
     def __init__(self, func):
         self.func = func
     def __call__(self, *args, **kwargs):
-        kwargs['_depth'] = kwargs.get('_depth', 0) + 1
         return self.func(*args, **kwargs)
     def __getattr__(self, name):
-        return getattr(self.func(_depth=1), name)
+        return getattr(self.func(), name)
     def __dir__(self):
-        return dir(self.func(_depth=1))
+        return dir(self.func())
 
 
 @lazy_loader
-def np(_depth=0):
+def np():
     import numpy
     _print_exec('import numpy, numpy as np\n'
                 'import numpy.linalg as LA\n'
                 'from numpy import array as A\n'
-                'np.set_printoptions(suppress=True)', _depth+1)
+                'np.set_printoptions(suppress=True)')
     return numpy
 
-def qt4(_depth=0):
+def qt4():
     from PyQt4 import Qt
     _print_exec('import PyQt4\n'
                 'from PyQt4 import QtCore, QtGui, Qt as Q\n'
                 'from PyQt4.Qt import *\n'
-                'app = QApplication([])', _depth+1)
+                'app = QApplication([])')
     return Qt
 
-def qt5(_depth=0):
+def qt5():
     from PyQt5 import Qt
     _print_exec('import PyQt5\n'
                 'from PyQt5 import QtCore, QtGui, QtWidgets, Qt as Q\n'
                 'from PyQt5.Qt import *\n'
-                'app = QApplication([])', _depth+1)
+                'app = QApplication([])')
     return Qt
 
 @lazy_loader
-def mpl(backend=None, interactive=True, _depth=0):
+def mpl(backend=None, interactive=True):
     if isinstance(backend, (bool, int)):
         backend, interactive = None, backend
     import matplotlib
     _print_exec('import matplotlib as mpl\n'
                 + ('mpl.use({!r})\n'.format(backend) if backend else '') +
-                'import matplotlib.pyplot as plt\n'
-                'import numpy as np'
-                + ('\nplt.ion()' if interactive else ''),
-                _depth+1)
+                'import matplotlib.pyplot as plt'
+                + ('\nplt.ion()' if interactive else ''))
     return matplotlib
 
 @lazy_loader
-def plt(backend=None, interactive=True, _depth=0):
-    return mpl(backend, interactive, _depth=_depth+1).pyplot
+def plt(backend=None, interactive=True):
+    return mpl(backend, interactive).pyplot
 
 @lazy_loader
-def pylab(backend=None, interactive=True, _depth=0):
+def pylab(backend=None, interactive=True):
     if isinstance(backend, (bool, int)):
         backend, interactive = None, backend
     import pylab
     _print_exec(('import matplotlib as mpl\n' +
                  'mpl.use({!r})\n'.format(backend) if backend else '') +
                 'from pylab import *'
-                + ('\nion()' if interactive else ''),
-                _depth+1)
+                + ('\nion()' if interactive else ''))
     return pylab
 
-def pylab3d(backend=None, interactive=True, _depth=0):
+def mpl3d(backend=None, interactive=True):
+    if isinstance(backend, (bool, int)):
+        backend, interactive = None, backend
+    import matplotlib
+    _print_exec('import matplotlib as mpl\n'
+                + ('mpl.use({!r})\n'.format(backend) if backend else '') +
+                'import matplotlib.pyplot as plt'
+                + ('\nplt.ion()' if interactive else '') +
+                'from mpl_toolkits import mplot3d\n'
+                "ax = subplot(projection='3d')")
+    return matplotlib
+
+def pylab3d(backend=None, interactive=True):
     if isinstance(backend, (bool, int)):
         backend, interactive = None, backend
     import pylab
@@ -1189,107 +1202,107 @@ def pylab3d(backend=None, interactive=True, _depth=0):
                 'from pylab import *\n'
                 + ('ion()\n' if interactive else '') +
                 'from mpl_toolkits import mplot3d\n'
-                "ax = subplot(projection='3d')", _depth+1)
+                "ax = subplot(projection='3d')")
     return pylab
 
 @lazy_loader
-def sympy(all=True, _depth=0):
+def seaborn():
+    import seaborn
+    _print_exec('import seaborn, seaborn as sns')
+    return seaborn
+
+@lazy_loader
+def sympy(all=True):
     import sympy
     _print_exec('import sympy, sympy as sp\n'
                 + ('from sympy import *\n' if all else '') +
                 'R = sympy.Rational\n'
-                'sympy.var("x, y, z, a, b, c, t", real=True)',
-                _depth+1)
+                'sympy.var("x, y, z, a, b, c, t", real=True)')
     return sympy
 
 @lazy_loader
-def scipy(_depth=0):
+def scipy():
     import scipy
     _print_exec(
-        'import numpy, numpy as np\n'
         'import scipy, scipy as sp\n'
         'import scipy.misc, scipy.special, scipy.ndimage, scipy.sparse, '
-        'scipy.integrate, scipy.signal, scipy.constants, scipy.io.wavfile',
-        _depth+1)
+        'scipy.integrate, scipy.signal, scipy.constants, scipy.io.wavfile\n'
+        'from scipy import stats')
     return scipy
 
 @lazy_loader
-def pygame(init=True, _depth=0):
+def pygame(init=True):
     import pygame
     _print_exec('import pygame, pygame as pg\n'
                 'from pygame.locals import *'
-                + ('\npygame.init()' if init else ''),
-                _depth+1)
+                + ('\npygame.init()' if init else ''))
     return pygame
 
 @lazy_loader
-def PIL(_depth=0):
+def PIL():
     import PIL.Image
-    _print_exec('import PIL; from PIL import Image', _depth+1)
+    _print_exec('import PIL; from PIL import Image')
     return PIL
 
 @lazy_loader
-def Image(_depth=0):
-    return PIL(_depth=_depth+1).Image
+def Image():
+    return PIL().Image
 
 @lazy_loader
-def ctypes(_depth=0):
+def ctypes():
     import ctypes
     _print_exec('import ctypes; from ctypes import *\n'
                 'from ctypes.util import *\n'
                 + ('from ctypes.wintypes import *\n'
                    'libc = cdll.msvcrt'
                    if os.name == 'nt' else
-                   "libc = CDLL(find_library('c'))"),
-                _depth+1)
+                   "libc = CDLL(find_library('c'))"))
     return ctypes
 
 @lazy_loader
-def requests(_depth=0):
+def requests():
     import requests
-    _print_exec('import requests', _depth+1)
+    _print_exec('import requests')
     return requests
 
 @lazy_loader
-def pandas(_depth=0):
+def pandas():
     import pandas
-    _print_exec('import pandas, pandas as pd\n'
-                'import numpy as np', _depth+1)
+    _print_exec('import pandas, pandas as pd')
     return pandas
 
 @lazy_loader
-def argparse(_depth=0):
+def argparse():
     import argparse
     _print_exec('import argparse\n'
-                'p = argparse.ArgumentParser()', _depth+1)
+                'p = argparse.ArgumentParser()')
     return argparse
 
 @lazy_loader
-def tf(_depth=0):
+def tf():
     import tensorflow
-    _print_exec('import tensorflow as tf', _depth+1)
+    _print_exec('import tensorflow as tf')
     return tensorflow
 
 @lazy_loader
-def torch(_depth=0):
+def torch():
     import torch
     _print_exec('import torch, torchvision\n'
                 'import torch.utils.data\n'
                 'import torch.nn as nn, torch.nn.functional as F\n'
                 'from torch import tensor\n'
-                'from torchvision import transforms\n'
-                'import numpy as np', _depth+1)
+                'from torchvision import transforms')
     return torch
 
 @lazy_loader
-def pyro(_depth=0):
+def pyro():
     import pyro
     _print_exec('import pyro\n'
-                'import pyro.distributions as dist', _depth+1)
+                'import pyro.distributions as dist')
     return pyro
 
 @lazy_loader
-def Crypto(_depth=0):
+def Crypto():
     import Crypto
     _print_exec('import Crypto; from Crypto import *\n'
                 'from Crypto.Cipher import AES\n'
@@ -1298,45 +1311,45 @@ def Crypto(_depth=0):
                 'from Crypto.Protocol import KDF\n'
                 'from Crypto.PublicKey import RSA\n'
                 'from Crypto.Cipher import PKCS1_OAEP\n'
-                'from Crypto.Signature import pkcs1_15', _depth+1)
+                'from Crypto.Signature import pkcs1_15')
     return Crypto
 
 @lazy_loader
-def OpenGL(_depth=0):
+def OpenGL():
     import OpenGL
     _print_exec('import OpenGL\n'
                 'from OpenGL import GL, GLU, GLUT\n'
                 'from OpenGL.GL import shaders\n'
                 'from OpenGL.arrays.vbo import VBO\n'
-                'import glm', _depth+1)
+                'import glm')
     return OpenGL
 
 @lazy_loader
-def pyassimp(_depth=0):
+def pyassimp():
     import pyassimp
-    _print_exec('import pyassimp', _depth+1)
+    _print_exec('import pyassimp')
     return pyassimp
 
 @lazy_loader
-def bs4(_depth=0):
+def bs4():
     import bs4
-    _print_exec('import bs4', _depth+1)
+    _print_exec('import bs4')
     return bs4
 
 @lazy_loader
-def nltk(_depth=0):
+def nltk():
     import nltk
     _print_exec('import nltk\n'
                 'from nltk.corpus import wordnet\n'
-                'wordnet.synset', _depth+1)
+                'wordnet.synset')
     return nltk
 
 @lazy_loader
-def pint(_depth=0):
+def pint():
     import pint
     _print_exec('import pint\n'
                  'ureg = pint.UnitRegistry()\n'
-                 'Q_ = ureg.Quantity', _depth+1)
+                 'Q_ = ureg.Quantity')
     return pint
 
 ################
@@ -1498,13 +1511,13 @@ def nospace(s):
     return ''.join(s.split())
 
 
-def compiles(s, mode=None):
+def compiles(s, mode=None, *args, **kwargs):
     if mode is None:
         try:
-            return compile(s, '<string>', 'eval')
+            return compile(s, '<string>', 'eval', *args, **kwargs)
         except SyntaxError:
-            return compile(s, '<string>', 'exec')
-    return compile(s, '<string>', mode)
+            return compile(s, '<string>', 'exec', *args, **kwargs)
+    return compile(s, '<string>', mode, *args, **kwargs)
 
 
 def frexp2(x):
