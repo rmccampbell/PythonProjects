@@ -1,25 +1,29 @@
 #!/usr/bin/env python3
 import sys, os, struct, enum, time, re, atexit, warnings
 
-BACKEND = os.environ.get('MIDI_BACKEND', 'rtmidi')
+DEFAULT_BACKEND = 'rtmidi'
+_backend = None
+
+STATUS_MASK = 0xf0
+CHANNEL_MASK = 0x0f
+
+class MidiStatusByte(int):
+    @property
+    def status(self):
+        return MidiStatus(self & STATUS_MASK)
+    @property
+    def channel(self):
+        return self & CHANNEL_MASK
+    def __repr__(self):
+        return f'<{self.status.name}|{self.channel}: {self:#x}>'
+    def __str__(self):
+        return repr(self)
 
 class HexInt(int):
     def __new__(cls, *args, **kwargs):
         return super().__new__(cls, *args, **kwargs)
     def __repr__(self):
         return hex(self)
-    def __str__(self):
-        return repr(self)
-
-class MidiStatusByte(int):
-    @property
-    def status(self):
-        return MidiStatus(self & 0xf0)
-    @property
-    def channel(self):
-        return self & 0x0f
-    def __repr__(self):
-        return f'<{self.status.name}|{self.channel}: {self:#x}>'
     def __str__(self):
         return repr(self)
 
@@ -31,6 +35,11 @@ class MidiStatus(HexInt, enum.Enum):
     ProgChange = 0xC0
     ChannPress = 0xD0
     PitchBend  = 0xE0
+
+    SysEx      = 0xF0
+    SysExEsc   = 0xF7
+    Meta       = 0xFF
+
     NonMidi    = 0xF0
 
 globals().update(MidiStatus.__members__)
@@ -101,19 +110,19 @@ def parse_track_data(buffer, offset=0, length=None):
         status = buffer[i]
         i += 1
         # Sysex Event
-        if status in (0xf0, 0xf7):
+        if status in (SysEx, SysExEsc):
             length, i = parse_vlq(buffer, i)
-            event = (HexInt(status), buffer[i: i+length])
+            event = (MidiStatus(status), buffer[i: i+length])
             i += length
         # Meta Event
-        elif status == 0xff:
+        elif status == Meta:
             try:
                 typ = MetaEvent(buffer[i])
             except ValueError:
                 typ = HexInt(buffer[i])
             length, i = parse_vlq(buffer, i+1)
             data = metaevent_data(typ, buffer[i: i+length])
-            event = (HexInt(status), typ, data)
+            event = (MidiStatus(status), typ, data)
             i += length
         # MIDI Event
         else:
@@ -122,7 +131,7 @@ def parse_track_data(buffer, offset=0, length=None):
                 status = running_status
                 i -= 1
             running_status = status
-            length = N_DATA_BYTES[status & 0xf0]
+            length = N_DATA_BYTES[status & STATUS_MASK]
             event = (MidiStatusByte(status), *buffer[i: i+length])
             i += length
         events.append((dt, event))
@@ -141,7 +150,7 @@ def parse_vlq(data, offset=0):
 
 def metaevent_data(typ, data):
     if typ in {MetaEvent.SeqNumber, MetaEvent.ChannPref,
-                MetaEvent.MIDIPort, MetaEvent.SetTempo}:
+               MetaEvent.MIDIPort, MetaEvent.SetTempo}:
         data = int.from_bytes(data, 'big')
     elif typ == MetaEvent.SMTPEOff:
         data = tuple(data)
@@ -180,13 +189,13 @@ def schedule_events(events, division, sysex=False, meta=False):
     for evt, tick in events:
         ts = last_ts + (tick - last_tick) * sec_per_tick
         last_tick, last_ts = tick, ts
-        if evt[0] == 0xff and evt[1] == MetaEvent.SetTempo:
+        if evt[0] == Meta and evt[1] == MetaEvent.SetTempo:
             tempo = evt[2]
             if isinstance(division, int):
                 sec_per_tick = tempo / (division * 1000_000)
-        if (evt[0] in (0xf0, 0xf7) and sysex or
-             evt[0] == 0xff and meta or
-             evt[0] < 0xf0):
+        if (evt[0] in (SysEx, SysExEsc) and sysex or
+             evt[0] == Meta and meta or
+             evt[0] < NonMidi):
             midievents.append((evt, ts))
     return midievents
 
@@ -223,14 +232,14 @@ def get_notes(file=None, events=None, off=False, ticks=False):
     if events is None:
         events = get_raw_events(file)[0] if ticks else get_midi_events(file)
     noteon = np.array([(t, e[1]) for e, t in events
-                       if e[0] & 0xf0 == NoteOn and e[2] > 0])
+                       if e[0] & STATUS_MASK == NoteOn and e[2] > 0])
     if noteon.size == 0:
         return tuple(np.array([], int) for i in range(3 if off else 2))
     if not off:
         return noteon[:, 0], noteon[:, 1]
     noteoff = np.array([(t, e[1]) for e, t in events
-                        if e[0] & 0xf0 == NoteOff or
-                           e[0] & 0xf0 == NoteOn and e[2] == 0])
+                        if e[0] & STATUS_MASK == NoteOff or
+                           e[0] & STATUS_MASK == NoteOn and e[2] == 0])
     indon = np.argsort(noteon[:, 1], kind='mergesort')
     indoff = np.argsort(noteoff[:, 1], kind='mergesort')
     noteoff[indon] = noteoff[indoff]
@@ -266,12 +275,27 @@ NOTEMAP = {
 }
 
 def parse_note(note):
+    if isinstance(note, int):
+        return note
     match = re.fullmatch(r'([A-G][#b]?)([0-9])?', note)
     if not match:
         raise ValueError(f'invalid note: {note}')
     note, num = match.groups()
     num = int(num) if num else 4
     return NOTEMAP[note] + 12*(num - 4)
+
+
+def major_scale(start, end):
+    start = parse_note(start)
+    end = parse_note(end)
+    steps = [2, 2, 1, 2, 2, 2, 1]
+    i = 0
+    l = []
+    while start <= end:
+        l.append(start)
+        start += steps[i]
+        i = (i + 1) % 7
+    return l
 
 
 INSTRUMENT_NAMES = [
@@ -328,26 +352,34 @@ INSTRUMENT_NAMES = [
 INSTRUMENTS = {k.lower(): i for i, k in enumerate(INSTRUMENT_NAMES)}
 
 
-class MidiPlayer:
-    def __new__(cls, output=None, instrument=None):
-        if cls is not MidiPlayer:
-            return super().__new__(cls)
-        global BACKEND
-        if BACKEND == 'rtmidi':
+def _get_backend():
+    global _backend
+    if not _backend:
+        _backend = os.environ.get('MIDI_BACKEND', DEFAULT_BACKEND)
+        if _backend == 'rtmidi':
             try:
                 import rtmidi
             except ImportError:
                 warnings.warn("Couldn't load rtmidi backend. Falling back to pygame.")
-                BACKEND = 'pygame'
-            else:
-                return super().__new__(RtMidiPlayer)
-        if BACKEND == 'pygame':
-            return super().__new__(PygameMidiPlayer)
-        raise ValueError(f'Unknown backend: {BACKEND}')
+                _backend = 'pygame'
+        elif _backend != 'pygame':
+            raise ValueError(f'Unknown backend: {_backend}')
+    return _backend
+
+
+class MidiPlayer:
+    def __new__(cls, output=None, instrument=None):
+        if cls is MidiPlayer:
+            cls = _PLAYER_CLASSES[_get_backend()]
+        return super().__new__(cls)
 
     def __init__(self, output=None, instrument=None):
         if instrument is not None:
-            self.set_instrument(instrument)
+            try:
+                self.set_instrument(instrument)
+            except:
+                self.close()
+                raise
 
     def send_message(self, message):
         raise NotImplementedError
@@ -370,7 +402,8 @@ class MidiPlayer:
     def time(self):
         return time.monotonic()
 
-    def play_midi(self, file=None, events=None, volume=1, start=0, print_progress=True):
+    def play_midi(self, file=None, events=None, volume=1, start=0,
+                  print_progress=True):
         if events is None:
             events = get_midi_events(file, sysex=True, meta=True)
         tottime = events[-1][1]
@@ -378,18 +411,18 @@ class MidiPlayer:
         try:
             t0 = self.time() - start
             for evt, ts in events:
-                if ts < start and evt[0] & 0xf0 in (NoteOn, NoteOff):
+                if ts < start and evt[0] & STATUS_MASK in (NoteOn, NoteOff):
                     continue
                 # Print before waiting to hide delay
                 if print_progress and last_ts != ts and last_ts >= start:
                     print(f'\r{fmt_time(last_ts)}/{fmt_time(tottime)}', end='')
                 self.wait(ts + t0 - self.time())
-                if evt[0] == 0xf0:
+                if evt[0] == SysEx:
                     self.send_message(b'\xf0' + evt[1])
-                elif evt[0] == 0xf7:
+                elif evt[0] == SysExEsc:
                     self.send_message(evt[1])
-                if evt[0] < 0xf0:
-                    if volume != 1 and evt[0] & 0xf0 == NoteOn:
+                if evt[0] < NonMidi:
+                    if volume != 1 and evt[0] & STATUS_MASK == NoteOn:
                         evt = (evt[0], evt[1], min(int(evt[2]*volume), 127))
                     self.send_message(bytes(evt))
                 last_ts = ts
@@ -411,15 +444,18 @@ class MidiPlayer:
         finally:
             self.note_off(note, channel=channel)
 
-    def play_fixed_notes(self, notes, duration=0.5, delay=0.0, velocity=127,
-                         channel=0):
+    def play_notes(self, notes, duration=0.5, delay=0.0, velocity=127,
+                   channel=0):
         for note in notes:
-            self.wait(delay)
-            self.play_note(note, duration, velocity, channel)
-
-    def play_notes(self, notes, velocity=127, channel=0):
-        for delay, note, dur in notes:
-            self.wait(delay)
+            dur, dely = duration, delay
+            if isinstance(note, tuple):
+                if len(note) == 1:
+                    note, = note
+                elif len(note) == 2:
+                    note, dur = note
+                else:
+                    dely, note, dur = note
+            self.wait(dely)
             self.play_note(note, dur, velocity, channel)
 
     def close(self):
@@ -452,7 +488,7 @@ class RtMidiPlayer(MidiPlayer):
 
 
 class PygameMidiPlayer(MidiPlayer):
-    def __init__(self, output=0, instrument=None):
+    def __init__(self, output=None, instrument=None):
         global pygame
         import pygame.midi
         pygame.midi.init()
@@ -476,6 +512,10 @@ class PygameMidiPlayer(MidiPlayer):
             del self.output
 
 
+_PLAYER_CLASSES = {'rtmidi': RtMidiPlayer, 'pygame': PygameMidiPlayer}
+
+
+
 def fmt_time(time):
     m, s = divmod(int(time), 60)
     return f'{m}:{s:02}'
@@ -492,6 +532,13 @@ def play_midi(file=None, events=None, volume=1, start=0, print_progress=True,
               output=None):
     with MidiPlayer(output) as player:
         player.play_midi(file, events, volume, start, print_progress)
+
+
+def play_notes(notes, duration=0.5, delay=0.0, velocity=127, instrument=None,
+               output=None):
+    with MidiPlayer(output, instrument) as player:
+        player.play_notes(notes, duration, delay, velocity)
+
 
 
 if __name__ == '__main__':
