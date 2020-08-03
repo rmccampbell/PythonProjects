@@ -534,10 +534,10 @@ def play_midi(file=None, events=None, volume=1, start=0, print_progress=True,
         player.play_midi(file, events, volume, start, print_progress)
 
 
-def play_notes(notes, duration=0.5, delay=0.0, velocity=127, instrument=None,
-               output=None):
+def play_notes(notes, duration=0.5, delay=0.0, velocity=127, channel=0,
+               instrument=None, output=None):
     with MidiPlayer(output, instrument) as player:
-        player.play_notes(notes, duration, delay, velocity)
+        player.play_notes(notes, duration, delay, velocity, channel)
 
 
 
