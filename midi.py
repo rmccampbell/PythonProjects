@@ -550,10 +550,11 @@ if __name__ == '__main__':
     p.add_argument('-s', '--start', type=parse_time, default=0)
     p.add_argument('-p', '--progress', action='store_true', default=True)
     p.add_argument('-P', '--no-progress', dest='progress', action='store_false')
+    p.add_argument('-o', '--output', type=int)
     args = p.parse_args()
     if args.length:
         events = get_midi_events(args.file)
         print(fmt_time(events[-1][1]))
     else:
         play_midi(args.file, volume=args.volume, start=args.start,
-                  print_progress=args.progress)
+                  print_progress=args.progress, output=args.output)
