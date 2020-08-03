@@ -384,6 +384,9 @@ class MidiPlayer:
     def send_message(self, message):
         raise NotImplementedError
 
+    def send_sysex(self, message):
+        self.send_message(message)
+
     def note_on(self, note, velocity=127, channel=0):
         self.send_message([NoteOn + channel, note, velocity])
 
@@ -418,9 +421,9 @@ class MidiPlayer:
                     print(f'\r{fmt_time(last_ts)}/{fmt_time(tottime)}', end='')
                 self.wait(ts + t0 - self.time())
                 if evt[0] == SysEx:
-                    self.send_message(b'\xf0' + evt[1])
+                    self.send_sysex(b'\xf0' + evt[1])
                 elif evt[0] == SysExEsc:
-                    self.send_message(evt[1])
+                    self.send_sysex(evt[1])
                 if evt[0] < NonMidi:
                     if volume != 1 and evt[0] & STATUS_MASK == NoteOn:
                         evt = (evt[0], evt[1], min(int(evt[2]*volume), 127))
@@ -499,6 +502,9 @@ class PygameMidiPlayer(MidiPlayer):
 
     def send_message(self, message):
         self.output.write_short(*message)
+
+    def send_sysex(self, message):
+        self.output.write_sys_ex(0, message)
 
     def wait(self, duration=1.0):
         pygame.time.delay(int(duration * 1000))
