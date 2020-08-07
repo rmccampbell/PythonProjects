@@ -1,3 +1,4 @@
+import math
 import numpy as np
 from numpy.linalg import inv, norm, matrix_power as powm
 from numpy import pi
@@ -10,9 +11,11 @@ I4 = np.eye(4)
 
 
 def vec(a, n=4, homo=None):
-    if homo is None: homo = n == 4
-    a = np.asarray(a, float)
-    if a.ndim != 1: a = a.ravel()
+    if homo is None:
+        homo = n == 4
+    if np.isscalar(a):
+        a = (a,)*(n-1 if homo else n)
+    a = np.asarray(a, float).ravel()
     if a.size < n:
         b = np.zeros(n)
         if homo:
@@ -23,17 +26,22 @@ def vec(a, n=4, homo=None):
         return a[:n]
     return a
 
-def vec2(x, y=None):
+def vec2(x=0, y=None):
     if y is None:
         return vec(x, 2, False)
     return np.array([x, y], float)
 
-def vec3(x, y=None, z=0, homo=False):
+def vec3(x=0, y=None, z=0):
     if y is None:
-        return vec(x, 3, homo)
+        return vec(x, 3, False)
     return np.array([x, y, z], float)
 
-def vec4(x, y=None, z=0, w=1):
+def vec3h(x=0, y=None, z=1):
+    if y is None:
+        return vec(x, 3, True)
+    return np.array([x, y, z], float)
+
+def vec4(x=0, y=None, z=0, w=1):
     if y is None:
         return vec(x, 4, True)
     return np.array([x, y, z, w], float)
@@ -45,29 +53,30 @@ def unit2(x, y=None):
     v = vec2(x, y)
     return v / norm(v)
 
-def unit3(x, y=None, z=0, homo=False):
-    if homo:
-        return vec(unit2(x, y), 3, True)
+def unit3(x, y=None, z=0):
     v = vec3(x, y, z)
     return v / norm(v)
 
-def unit4(x, y=None, z=0):
-    return vec(unit3(x, y, z), 4, True)
+def unit4(x, y=None, z=0, w=1):
+    v = vec4(x, y, z, w)
+    return v / norm(v)
 
 def mat(arr, n):
+    if np.isscalar(arr):
+        return arr * np.eye(n)
     arr = np.atleast_2d(arr)
     arr2 = np.eye(n)
     h, w = arr.shape
     arr2[:h, :w] = arr[:n, :n]
     return arr2
 
-def mat2(arr):
+def mat2(arr=0):
     return mat(arr, 2)
 
-def mat3(arr):
+def mat3(arr=0):
     return mat(arr, 3)
 
-def mat4(arr):
+def mat4(arr=0):
     return mat(arr, 4)
 
 def ident2():
