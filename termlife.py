@@ -4,8 +4,9 @@ import curses
 import numpy as np
 import argparse
 
-FPS = 30
-SPEEDS = [2, 10, 30]
+FPS = 60
+SPEEDS = [2, 10, 30, 60]
+SPEED = SPEEDS[1]
 
 SEED_FACTOR = .09
 
@@ -17,7 +18,7 @@ BIGSCRL = 50
 
 class Life:
     def __init__(self, screen, seed=None, w=None, h=None, xoff=None, yoff=None,
-                 wrap=False, pause=False):
+                 wrap=False, speed=SPEED, pause=False):
         if seed is None:
             seed = SEED_FACTOR
         elif isinstance(seed, str):
@@ -54,7 +55,7 @@ class Life:
         self.width, self.height = self.board.shape
         self.scrollx = 0
         self.scrolly = 0
-        self.speed = SPEEDS[1]
+        self.speed = speed
         self.wrap = wrap
         self.paused = pause
 
@@ -85,8 +86,8 @@ class Life:
                 if key in ('\x1b', 'q', 'Q'):
                     self.running = False
                 elif key == ' ':
-                    self.speed = SPEEDS[(SPEEDS.index(self.speed) + 1)
-                                       % len(SPEEDS)]
+                    self.speed = next(
+                        (s for s in SPEEDS if s > self.speed), SPEEDS[0])
                 elif key == '\n':
                     step = True
                 elif key == 'p':
@@ -174,8 +175,9 @@ def parseimg(file):
 
 
 def run(stdscr, seed=None, w=None, h=None, xoff=0, yoff=0,
-        nowrap=False, pause=False):
-    Life(stdscr, seed, w, h, xoff, yoff, nowrap, pause).run()
+        wrap=False, speed=SPEED, pause=False):
+    Life(stdscr, seed, w, h, xoff, yoff, wrap=wrap, speed=speed, pause=pause
+         ).run()
 
 
 if __name__ == '__main__':
@@ -183,6 +185,7 @@ if __name__ == '__main__':
         usage='%(prog)s [-h] [-w] [-p] '
         '[file] [w h] [xoff yoff]')
     p.add_argument('-w', '--wrap', action='store_true')
+    p.add_argument('-s', '--speed', type=int, default=SPEED)
     p.add_argument('-p', '--pause', action='store_true')
     p.add_argument('args', nargs='*', metavar='file, w, h, xoff, yoff')
     ns = p.parse_args()
@@ -198,4 +201,5 @@ if __name__ == '__main__':
         file = args[0]
     if len(args) in (2, 3):
         w, h = map(int, args[-2:])
-    curses.wrapper(run, file, w, h, xoff, yoff, ns.wrap, ns.pause)
+    curses.wrapper(run, file, w, h, xoff, yoff,
+                   wrap=ns.wrap, speed=ns.speed, pause=ns.pause)
