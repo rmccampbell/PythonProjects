@@ -17,7 +17,7 @@ def tone_array(freq, duration=1.0, amp=0.5, shape='sine', mixer_opts=None):
     elif shape == 'sine':
         a = np.sin(2*np.pi*freq*t)
     elif shape == 'square':
-        a = 1 - 2*(np.floor(2*freq*t) % 2)
+        a = 1 - 2*np.floor(2*freq*t % 2)
     elif shape in ('tri', 'triangle'):
         a = abs((4*freq*t - 1) % 4 - 2) - 1
     elif shape in ('saw', 'sawtooth'):
@@ -44,13 +44,13 @@ def note2freq(note):
         return float(note)
     except ValueError:
         try:
-            name, i = re.match(r'^([A-Ga-g][#b]?)(\d+)?$', note).groups()
+            name, i = re.match(r'^([A-Ga-g][#b]?)(-?\d+)?$', note).groups()
         except AttributeError:
             raise ValueError('invalid note: %s' % note) from None
         i = int(i) if i else 4
         name = name[0].upper() + name[1:]
-        n = 12*i + notes[name] + 12
-        return 440.0 * 2**((n-69)/12)
+        midi = 12*(i + 1) + notes[name]
+        return 440.0 * 2**((midi-69)/12)
 
 def play(freq='C5', duration=1.0, amp=0.5, shape='sine', mixer_opts=None):
     # Note: on windows, playing without a window only seems to work if the

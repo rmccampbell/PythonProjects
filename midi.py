@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-import sys, os, struct, enum, time, re, atexit, warnings
+import sys, os, struct, enum, time, re, warnings
 
 DEFAULT_BACKEND = 'rtmidi'
 _backend = None
@@ -226,6 +226,22 @@ def slice(events, start, end=None):
     return [(evt, ts-start) for evt, ts in events if start <= ts <= end]
 
 
+def filter_events(events, type=None, channel=None):
+    if type is not None and not isinstance(type, (list, tuple, set)):
+        type = (type,)
+    if channel is not None and not isinstance(channel, (list, tuple, set)):
+        channel = (channel,)
+    ret = []
+    for evt, dt in events:
+        if (type is None
+             or evt[0] in type
+             or (evt[0] < NonMidi and evt[0] & STATUS_MASK in type)
+             or (evt[0] == Meta and evt[1] in type)):
+            if (channel is None
+                 or (evt[0] < NonMidi and evt[0] & CHANNEL_MASK in channel)):
+                ret.append((evt, dt))
+    return ret
+
 
 def get_notes(file=None, events=None, off=False, ticks=False):
     import numpy as np
@@ -267,22 +283,31 @@ def get_notes_mido(midofile=None, off=False, ticks=False):
 
 
 
-NOTEMAP = {
-    'Cb': 59,  'C' : 60,  'C#': 61,  'Db': 61,  'D' : 62,  'D#': 63,
-    'Eb': 63,  'E' : 64,  'E#': 65,  'Fb': 64,  'F' : 65,  'F#': 66,
-    'Gb': 66,  'G' : 67,  'G#': 68,  'Ab': 68,  'A' : 69,  'A#': 70,
-    'Bb': 70,  'B' : 71,  'B#': 72,
+NOTE_MAP = {
+    'Cb': -1,  'C':  0,  'C#':  1,  'Db':  1,  'D':  2,  'D#':  3,
+    'Eb':  3,  'E':  4,  'E#':  5,  'Fb':  4,  'F':  5,  'F#':  6,
+    'Gb':  6,  'G':  7,  'G#':  8,  'Ab':  8,  'A':  9,  'A#': 10,
+    'Bb': 10,  'B': 11,  'B#': 12,
 }
+
+NOTE_NAMES = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B']
 
 def parse_note(note):
     if isinstance(note, int):
         return note
-    match = re.fullmatch(r'([A-G][#b]?)([0-9])?', note)
+    match = re.fullmatch(r'([A-G][#b]?)(-?[0-9])?', note)
     if not match:
         raise ValueError(f'invalid note: {note}')
     note, num = match.groups()
     num = int(num) if num else 4
-    return NOTEMAP[note] + 12*(num - 4)
+    return NOTE_MAP[note] + 12*(num + 1)
+
+def note_name(note):
+    return NOTE_NAMES[note % 12] + str(note // 12 - 1)
+
+def note_frequency(note):
+    note = parse_note(note)
+    return 440.0 * 2**((note - 69) / 12)
 
 
 def major_scale(start, end):
@@ -351,6 +376,8 @@ INSTRUMENT_NAMES = [
 
 INSTRUMENTS = {k.lower(): i for i, k in enumerate(INSTRUMENT_NAMES)}
 
+PERCUSSION_CHANNEL = 9
+
 
 def _get_backend():
     global _backend
@@ -405,7 +432,7 @@ class MidiPlayer:
     def time(self):
         return time.monotonic()
 
-    def play_midi(self, file=None, events=None, volume=1, start=0,
+    def play_midi(self, file=None, events=None, volume=1, start=0, sysex=False,
                   print_progress=True):
         if events is None:
             events = get_midi_events(file, sysex=True, meta=True)
@@ -420,11 +447,11 @@ class MidiPlayer:
                 if print_progress and last_ts != ts and last_ts >= start:
                     print(f'\r{fmt_time(last_ts)}/{fmt_time(tottime)}', end='')
                 self.wait(ts + t0 - self.time())
-                if evt[0] == SysEx:
+                if sysex and evt[0] == SysEx:
                     self.send_sysex(b'\xf0' + evt[1])
-                elif evt[0] == SysExEsc:
+                elif sysex and evt[0] == SysExEsc:
                     self.send_sysex(evt[1])
-                if evt[0] < NonMidi:
+                elif evt[0] < NonMidi:
                     if volume != 1 and evt[0] & STATUS_MASK == NoteOn:
                         evt = (evt[0], evt[1], min(int(evt[2]*volume), 127))
                     self.send_message(bytes(evt))
@@ -435,7 +462,10 @@ class MidiPlayer:
         if print_progress:
             print(f'\r{fmt_time(last_ts)}/{fmt_time(tottime)}')
 
-    def play_note(self, note, duration=1.0, velocity=127, channel=0):
+    def play_note(self, note, duration=1.0, velocity=127, channel=0,
+                  instrument=None):
+        if instrument is not None:
+            self.set_instrument(instrument, channel)
         if isinstance(note, str):
             note = parse_note(note) if note.strip() else -1
         if note is None or note < 0:
@@ -448,7 +478,9 @@ class MidiPlayer:
             self.note_off(note, channel=channel)
 
     def play_notes(self, notes, duration=0.5, delay=0.0, velocity=127,
-                   channel=0):
+                   channel=0, instrument=None):
+        if instrument is not None:
+            self.set_instrument(instrument, channel)
         for note in notes:
             dur, dely = duration, delay
             if isinstance(note, tuple):
@@ -534,16 +566,16 @@ def parse_time(string):
     return float(string)
 
 
-def play_midi(file=None, events=None, volume=1, start=0, print_progress=True,
-              output=None):
+def play_midi(file=None, events=None, volume=1, start=0, sysex=False,
+              print_progress=True, output=None):
     with MidiPlayer(output) as player:
-        player.play_midi(file, events, volume, start, print_progress)
+        player.play_midi(file, events, volume, start, sysex, print_progress)
 
 
 def play_notes(notes, duration=0.5, delay=0.0, velocity=127, channel=0,
                instrument=None, output=None):
-    with MidiPlayer(output, instrument) as player:
-        player.play_notes(notes, duration, delay, velocity, channel)
+    with MidiPlayer(output) as player:
+        player.play_notes(notes, duration, delay, velocity, channel, instrument)
 
 
 
@@ -557,10 +589,12 @@ if __name__ == '__main__':
     p.add_argument('-p', '--progress', action='store_true', default=True)
     p.add_argument('-P', '--no-progress', dest='progress', action='store_false')
     p.add_argument('-o', '--output', type=int)
+    p.add_argument('-S', '--sysex', action='store_true')
     args = p.parse_args()
     if args.length:
         events = get_midi_events(args.file)
         print(fmt_time(events[-1][1]))
     else:
         play_midi(args.file, volume=args.volume, start=args.start,
-                  print_progress=args.progress, output=args.output)
+                  sysex=args.sysex, print_progress=args.progress,
+                  output=args.output)
