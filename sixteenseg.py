@@ -104,10 +104,14 @@ def sixteenseg(s, ansi=True):
 
 
 if __name__ == '__main__':
-    import sys
-    if len(sys.argv) > 1:
-        for arg in sys.argv[1:]:
-            print(sixteenseg(arg))
+    import sys, argparse
+    p = argparse.ArgumentParser()
+    p.add_argument('-A', '--no-ansi', dest='ansi', action='store_false')
+    p.add_argument('text', nargs='*')
+    args = p.parse_args()
+    if args.text:
+        for arg in args.text:
+            print(sixteenseg(arg, args.ansi))
     else:
         for line in sys.stdin:
-            print(sixteenseg(line.rstrip('\n')))
+            print(sixteenseg(line.rstrip('\n'), args.ansi))
