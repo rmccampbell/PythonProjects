@@ -38,7 +38,7 @@ ASCII_TABLE = [
 #   0        1        2        3        4        5        6        7
     0x044ff, 0x0040c, 0x08877, 0x0083f, 0x0888c, 0x090b3, 0x088fb, 0x0000f,
 #   8        9        :        ;        <        =        >        ?
-    0x088ff, 0x088bf, 0x30000, 0x04200, 0x09400, 0x08830, 0x04900, 0x12807,
+    0x088ff, 0x088bf, 0x30000, 0x0c000, 0x09400, 0x08830, 0x04900, 0x12807,
 #   @        A        B        C        D        E        F        G
     0x00af7, 0x088cf, 0x02a3f, 0x000f3, 0x0223f, 0x080f3, 0x080c3, 0x008fb,
 #   H        I        J        K        L        M        N        O
@@ -48,14 +48,17 @@ ASCII_TABLE = [
 #   X        Y        Z        [        \        ]        ^        _
     0x05500, 0x088bc, 0x04433, 0x02212, 0x01100, 0x02221, 0x05000, 0x00030,
 #   `        a        b        c        d        e        f        g
-    0x00100, 0x0a070, 0x0a0e0, 0x08060, 0x0281c, 0x0c060, 0x0aa02, 0x0a2a1,
+    0x00100, 0x0a070, 0x0a0e0, 0x08060, 0x0a260, 0x0c060, 0x0aa02, 0x0a2a1,
 #   h        i        j        k        l        m        n        o
-    0x0a0c0, 0x02400, 0x02260, 0x03600, 0x000c0, 0x0a848, 0x0a040, 0x0a060,
+    0x0a0c0, 0x02002, 0x02260, 0x03600, 0x02200, 0x0a848, 0x0a040, 0x0a060,
 #   p        q        r        s        t        u        v        w
     0x082c1, 0x0a281, 0x08040, 0x0a0a1, 0x080e0, 0x02060, 0x04040, 0x05048,
 #   x        y        z        {        |        }        ~
     0x05500, 0x00a1c, 0x0c020, 0x0a212, 0x02200, 0x02a21, 0x00A85, 0x00000,
 ]
+
+ASCII_TABLE_A = ASCII_TABLE[:]
+ASCII_TABLE_A[ord('!') - 0x20] = 0x10004
 
 def ansi_len(s):
     return len(re.sub(r'\x1b\[.*?m', '', s))
@@ -86,6 +89,7 @@ def decode(x, ansi=True):
     return s
 
 def sixteenseg(s, ansi=True):
+    table = ASCII_TABLE_A if ansi else ASCII_TABLE
     rows = []
     for line in s.splitlines():
         row = []
@@ -94,10 +98,10 @@ def sixteenseg(s, ansi=True):
             if not ' ' <= c[0] <= '\x7f':
                 row.append(c)
                 continue
-            code = ASCII_TABLE[ord(c[0]) - 0x20]
+            code = table[ord(c[0]) - 0x20]
             # Combine . and : with previous character
             if len(c) == 2:
-                code |= ASCII_TABLE[ord(c[1]) - 0x20]
+                code |= table[ord(c[1]) - 0x20]
             row.append(decode(code, ansi))
         rows.append(hconcat(*row))
     return '\n'.join(rows)
