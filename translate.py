@@ -3,23 +3,43 @@ import sys
 import io
 import argparse
 import urllib.parse
-import json
 import requests
 
-base = 'https://translate.googleapis.com/translate_a/single?client=gtx&sl={lang1}&tl={lang2}&dt=t&q={text}'
+langs = {'afrikaans': 'af', 'albanian': 'sq', 'arabic': 'ar',
+         'azerbaijani': 'az', 'basque': 'eu', 'belarusian': 'be',
+         'bengali': 'bn', 'bulgarian': 'bg', 'catalan': 'ca',
+         'chinese simplified': 'zh-cn', 'chinese traditional': 'zh-tw',
+         'croatian': 'hr', 'czech': 'cs', 'danish': 'da', 'dutch': 'nl',
+         'english': 'en', 'esperanto': 'eo', 'estonian': 'et',
+         'filipino': 'tl', 'finnish': 'fi', 'french': 'fr', 'galician': 'gl',
+         'georgian': 'ka', 'german': 'de', 'greek': 'el', 'gujarati': 'gu',
+         'haitian creole': 'ht', 'hebrew': 'iw', 'hindi': 'hi',
+         'hungarian': 'hu', 'icelandic': 'is', 'indonesian': 'id',
+         'irish': 'ga', 'italian': 'it', 'japanese': 'ja', 'kannada': 'kn',
+         'korean': 'ko', 'latin': 'la', 'latvian': 'lv', 'lithuanian': 'lt',
+         'macedonian': 'mk', 'malay': 'ms', 'maltese': 'mt', 'norwegian': 'no',
+         'persian': 'fa', 'polish': 'pl', 'portuguese': 'pt', 'romanian': 'ro',
+         'russian': 'ru', 'serbian': 'sr', 'slovak': 'sk', 'slovenian': 'sl',
+         'spanish': 'es', 'swahili': 'sw', 'swedish': 'sv', 'tamil': 'ta',
+         'telugu': 'te', 'thai': 'th', 'turkish': 'tr', 'ukrainian': 'uk',
+         'urdu': 'ur', 'vietnamese': 'vi', 'welsh': 'cy', 'yiddish': 'yi'}
 
-def translate(phrase, lang1, lang2=None):
+apiurl = 'https://translate.googleapis.com/translate_a/single?client=gtx&sl={lang1}&tl={lang2}&dt=t&q={text}'
+
+def translate(phrase, lang1='auto', lang2=None):
     if lang2 is None:
         lang1, lang2 = 'auto', lang1
-    if phrase == '-':
-        phrase = sys.stdin.read()
+    if lang2 == 'auto':
+        lang2 = 'english'
+    lang1 = langs.get(lang1.lower(), lang1)
+    lang2 = langs.get(lang2.lower(), lang2)
     phrase = urllib.parse.quote(phrase)
-    url = base.format(lang1=lang1, lang2=lang2, text=phrase)
+    url = apiurl.format(lang1=lang1, lang2=lang2, text=phrase)
     res = requests.get(url)
-    js = json.loads(res.text)
+    js = res.json()
     if not js[0]:
         raise Exception('language not recognized')
-    return js[0][0][0]
+    return ''.join(part[0] for part in js[0])
 
 def change_encoding(file, encoding='utf-8'):
     if file.encoding == encoding:
@@ -33,11 +53,16 @@ def change_encoding(file, encoding='utf-8'):
 if __name__ == '__main__':
     p = argparse.ArgumentParser()
     p.add_argument('phrase')
-    p.add_argument('lang1')
+    p.add_argument('lang1', nargs='?', default='auto')
     p.add_argument('lang2', nargs='?')
     p.add_argument('-u', '--utf8', action='store_true')
     args = p.parse_args()
     if args.utf8:
         sys.stdin = change_encoding(sys.stdin, 'utf-8')
         sys.stdout = change_encoding(sys.stdout, 'utf-8')
-    print(translate(args.phrase, args.lang1, args.lang2))
+    if args.phrase == '-':
+        args.phrase = sys.stdin.read()
+    try:
+        print(translate(args.phrase, args.lang1, args.lang2))
+    except Exception as e:
+        sys.exit('Error: {}: {}'.format(type(e).__name__, e))
