@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-import sys, os
+import sys, os, subprocess
 from PyQt5 import QtWidgets, QtCore, QtMultimedia
 from PyQt5.QtWidgets import QStyle, QSizePolicy
 from PyQt5.QtMultimedia import QMediaPlayer
@@ -12,19 +12,20 @@ HEIGHT = 720
 STEP = 5000
 BIGSTEP = 30000
 VOLSTEP = 10
-FULLSCREEN_CONTROLS_MARGINS = (6, 6, 6, 6)
+CONTROLS_MARGINS = (6, 6, 6, 6)
 
 windows = []
 
 
 class VideoPlayer(QtWidgets.QMainWindow):
-    def __init__(self, file=None):
+    def __init__(self, file=None, show=True):
         super().__init__()
 
         menubar = self.menuBar()
         fileMenu = menubar.addMenu('&File')
         fileMenu.addAction('&Open File...', self.openFile, 'Ctrl+O')
         fileMenu.addAction('Open &URL...', self.openUrl, 'Ctrl+U')
+        fileMenu.addAction('&New Window', self.newWindow, 'Ctrl+N')
         fileMenu.addAction('E&xit', self.close, 'Ctrl+Q')
         self.addActions(fileMenu.actions())
 
@@ -32,13 +33,6 @@ class VideoPlayer(QtWidgets.QMainWindow):
         self.setCentralWidget(cwidget)
 
         self.media = QMediaPlayer()
-        self.media.stateChanged.connect(self.handleStateChanged)
-        self.media.positionChanged.connect(self.handlePositionChanged)
-        self.media.durationChanged.connect(self.handleDurationChanged)
-        self.media.mutedChanged.connect(self.handleMutedChanged)
-        self.media.volumeChanged.connect(self.handleVolumeChanged)
-        self.media.error.connect(self.handleError)
-
         self.video = QVideoWidget()
         self.media.setVideoOutput(self.video)
         self.video.setFocusPolicy(Qt.StrongFocus)
@@ -67,29 +61,40 @@ class VideoPlayer(QtWidgets.QMainWindow):
 
         self.posLabel = QtWidgets.QLabel('0:00')
         self.durLabel = QtWidgets.QLabel('0:00')
+        self.speedLabel = QtWidgets.QLabel()
 
         self.controls = QtWidgets.QWidget()
         layout = QtWidgets.QHBoxLayout(self.controls)
-        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setContentsMargins(*CONTROLS_MARGINS)
         layout.addWidget(self.playButton)
         layout.addWidget(self.volButton)
         layout.addWidget(self.volSlider)
         layout.addWidget(self.posLabel)
         layout.addWidget(self.posSlider, 1)
         layout.addWidget(self.durLabel)
+        layout.addWidget(self.speedLabel)
 
         self.vlayout = QtWidgets.QVBoxLayout(cwidget)
+        self.vlayout.setContentsMargins(0, 0, 0, 0)
+        self.vlayout.setSpacing(0)
         self.vlayout.addWidget(self.video, 1)
         self.vlayout.addWidget(self.controls)
 
-        self.margins = self.vlayout.contentsMargins()
-        self.spacing = self.vlayout.spacing()
-
         self.video.setSizePolicy(QSizePolicy.Ignored, QSizePolicy.Ignored)
-        self.video.resize(WIDTH, HEIGHT)
         self.video.setMinimumSize(WIDTH, HEIGHT)
+        self.video.resize(WIDTH, HEIGHT)
         self.adjustSize()
         self.video.setMinimumSize(0, 0)
+
+        self.media.stateChanged.connect(self.handleStateChanged)
+        self.media.positionChanged.connect(self.handlePositionChanged)
+        self.media.durationChanged.connect(self.handleDurationChanged)
+        self.media.playbackRateChanged.connect(self.handlePlaybackRateChanged)
+        self.media.mutedChanged.connect(self.handleMutedChanged)
+        self.media.volumeChanged.connect(self.handleVolumeChanged)
+        self.media.error.connect(self.handleError)
+        # By default this is 0 for some reason
+        self.media.setPlaybackRate(1.0)
 
         self.positionChanging = False
 
@@ -103,15 +108,20 @@ class VideoPlayer(QtWidgets.QMainWindow):
 
         self.setAcceptDrops(True)
 
+        windows.append(self)
+
+        if show:
+            self.show()
+
         if file:
             self.setSourceValidate(QUrl.fromUserInput(file, '.'), file)
-
-        windows.append(self)
 
     def setSource(self, url):
         self.setWindowFilePath(url.path())
         if url.isLocalFile():
             self.directory = os.path.dirname(url.toLocalFile())
+        else:
+            url = QUrl(get_video_url(url.toString()))
         self.media.setMedia(QtMultimedia.QMediaContent(url))
         self.media.play()
 
@@ -135,6 +145,9 @@ class VideoPlayer(QtWidgets.QMainWindow):
         if urlstr:
             self.setSourceValidate(QUrl.fromUserInput(urlstr), urlstr)
 
+    def newWindow(self):
+        VideoPlayer()
+
     def togglePlay(self):
         if self.media.state() == QMediaPlayer.PlayingState:
             self.media.pause()
@@ -146,14 +159,6 @@ class VideoPlayer(QtWidgets.QMainWindow):
 
     def toggleFullscreen(self):
         self.menuBar().setVisible(self.isFullScreen())
-        if self.isFullScreen():
-            self.vlayout.setContentsMargins(self.margins)
-            self.vlayout.setSpacing(self.spacing)
-            self.controls.setContentsMargins(0, 0, 0, 0)
-        else:
-            self.vlayout.setContentsMargins(0, 0, 0, 0)
-            self.vlayout.setSpacing(0)
-            self.controls.setContentsMargins(*FULLSCREEN_CONTROLS_MARGINS)
         self.setWindowState(self.windowState() ^ Qt.WindowFullScreen)
 
     def handleStateChanged(self, state):
@@ -173,6 +178,9 @@ class VideoPlayer(QtWidgets.QMainWindow):
         secs = duration // 1000
         mins, secs = divmod(secs, 60)
         self.durLabel.setText(f'{mins}:{secs}')
+
+    def handlePlaybackRateChanged(self, rate):
+        self.speedLabel.setText('' if rate == 1 else f'{rate:.3g}x')
 
     def handleMutedChanged(self, muted):
         self.volButton.setIcon(self.muteIcon if muted else self.volIcon)
@@ -213,6 +221,10 @@ class VideoPlayer(QtWidgets.QMainWindow):
             self.media.setVolume(min(self.media.volume() + VOLSTEP, 100))
         elif key == Qt.Key_Down:
             self.media.setVolume(max(self.media.volume() - VOLSTEP, 0))
+        elif key == Qt.Key_BracketLeft:
+            self.media.setPlaybackRate(max(self.media.playbackRate() - .25, .25))
+        elif key == Qt.Key_BracketRight:
+            self.media.setPlaybackRate(min(self.media.playbackRate() + .25, 4.0))
         elif key == Qt.Key_M:
             self.toggleMuted()
         elif (key in (Qt.Key_F, Qt.Key_F11) or
@@ -251,32 +263,36 @@ class VideoPlayer(QtWidgets.QMainWindow):
         windows.remove(self)
 
 
+def get_video_url(url):
+    try:
+        return subprocess.run(
+            ['youtube-dl', '--get-url', url],
+            capture_output=True, check=True, text=True,
+            creationflags=subprocess.CREATE_NO_WINDOW).stdout.strip()
+    except:
+        return url
+
+
 # Modified from http://code.qt.io/cgit/%7bgraveyard%7d/qtphonon.git/tree/src/3rdparty/phonon/phonon/swiftslider.cpp
 class SwiftSlider(QtWidgets.QSlider):
     def mousePressEvent(self, event):
-        if event.button() == Qt.LeftButton:
-            opt = QtWidgets.QStyleOptionSlider()
-            self.initStyleOption(opt)
-            sr = self.style().subControlRect(
-                QStyle.CC_Slider, opt, QStyle.SC_SliderHandle, self)
-            gr = self.style().subControlRect(
-                QStyle.CC_Slider, opt, QStyle.SC_SliderGroove, self)
-
-            if not sr.contains(event.pos()):
-                event.accept()
-
-                if self.orientation() == Qt.Horizontal:
-                    sliderPos = event.pos().x() - gr.x() - sr.width()//2
-                    sliderSpan = gr.width() - sr.width()
-                else:
-                    sliderPos = event.pos().y() - gr.y() - sr.height()//2
-                    sliderSpan = gr.height() - sr.height()
-
-                self.setSliderPosition(QStyle.sliderValueFromPosition(
-                    self.minimum(), self.maximum(), sliderPos,
-                    sliderSpan, opt.upsideDown))
+        opt = QtWidgets.QStyleOptionSlider()
+        self.initStyleOption(opt)
+        hr = self.style().subControlRect(
+            QStyle.CC_Slider, opt, QStyle.SC_SliderHandle, self)
+        gr = self.style().subControlRect(
+            QStyle.CC_Slider, opt, QStyle.SC_SliderGroove, self)
+        if event.button() == Qt.LeftButton and not hr.contains(event.pos()):
+            event.accept()
+            if self.orientation() == Qt.Horizontal:
+                sliderPos = event.pos().x() - gr.x() - hr.width()//2
+                sliderSpan = gr.width() - hr.width()
             else:
-                super().mousePressEvent(event)
+                sliderPos = event.pos().y() - gr.y() - hr.height()//2
+                sliderSpan = gr.height() - hr.height()
+            self.setSliderPosition(QStyle.sliderValueFromPosition(
+                self.minimum(), self.maximum(), sliderPos,
+                sliderSpan, opt.upsideDown))
         else:
             super().mousePressEvent(event)
 
@@ -288,5 +304,4 @@ if __name__ == '__main__':
     files = sys.argv[1:] or [None]
     for file in files:
         window = VideoPlayer(file)
-        window.show()
-    sys.exit(app.exec())
+    sys.exit(app.exec_())
