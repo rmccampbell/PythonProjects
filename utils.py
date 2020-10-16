@@ -17,7 +17,7 @@ def _try_import(*mods):
 import os, collections, functools, itertools, operator, types, math, cmath, re
 import io, random, inspect, textwrap, dis, timeit, time, datetime, string
 import fractions, decimal, unicodedata, codecs, locale, shutil, numbers
-import subprocess, json, base64, copy, hashlib, contextlib, glob
+import subprocess, json, base64, copy, hashlib, contextlib, glob, heapq
 import os.path as osp
 from math import pi, e, sqrt, exp, log, log10, floor, ceil, factorial, \
      sin, cos, tan, asin, acos, atan, atan2
@@ -599,15 +599,15 @@ def printcols(seq, rows=False, swidth=None, sep='', pad=2, just='left'):
     just = _justs[just]
     seq = list(map(str, seq))
     if not seq: return
-    width = max(map(len, seq))
-    ncols = max((swidth + len(sep)) // (width + len(sep)), 1)
+    width = max(map(len, seq)) + len(sep)
+    ncols = max(swidth // width, 1)
     if rows:
         rows = chunk(seq, ncols)
     else:
         nrows = (len(seq)-1) // ncols + 1
         rows = zip(*chunk(seq, nrows, ''))
     for r in rows:
-        print(sep.join(just(s, width) for s in r).rstrip())
+        print(''.join(just(s + sep, width) for s in r).rstrip())
 
 @pipe_alias('p2d')
 def print2d(arr, sep='', pad=2, just='left'):
@@ -639,12 +639,12 @@ def _is_ordereddict(d):
 
 @pipe_alias('pd')
 @alias('printd')
-def printdict(dct):
+def printdict(dct, sort=True):
     if not hasattr(dct, 'keys'):
         dct = dict(dct)
     if not dct: return
     items = dct.items()
-    if not _is_ordereddict(dct):
+    if sort and not _is_ordereddict(dct):
         try: items = sorted(items)
         except TypeError: pass
     ksize = max(len(str(k)) for k in dct.keys())
@@ -1115,8 +1115,9 @@ def _main_globals():
     return sys.modules['__main__'].__dict__
 
 def _print_exec(s):
-    print(s)
-    exec(s, _main_globals())
+    if not _is_autocomplete():
+        print(s)
+        exec(s, _main_globals())
     return s
 
 class lazy_loader(object):
@@ -1127,7 +1128,7 @@ class lazy_loader(object):
     def __getattr__(self, name):
         return getattr(self.func(), name)
     def __dir__(self):
-        return dir(self.func())
+        return ['func'] + dir(self.func())
 
 
 @lazy_loader
@@ -1160,7 +1161,7 @@ def mpl(backend=None, interactive=True):
     if isinstance(backend, (bool, int)):
         backend, interactive = None, backend
     import matplotlib
-    _print_exec('import matplotlib as mpl\n'
+    _print_exec('import matplotlib, matplotlib as mpl\n'
                 + ('mpl.use({!r})\n'.format(backend) if backend else '') +
                 'import matplotlib.pyplot as plt'
                 + ('\nplt.ion()' if interactive else ''))
@@ -1170,7 +1171,6 @@ def mpl(backend=None, interactive=True):
 def plt(backend=None, interactive=True):
     return mpl(backend, interactive).pyplot
 
-@lazy_loader
 def pylab(backend=None, interactive=True):
     if isinstance(backend, (bool, int)):
         backend, interactive = None, backend
@@ -1187,10 +1187,10 @@ def mpl3d(backend=None, interactive=True):
     import matplotlib
     _print_exec('import matplotlib as mpl\n'
                 + ('mpl.use({!r})\n'.format(backend) if backend else '') +
-                'import matplotlib.pyplot as plt'
-                + ('\nplt.ion()' if interactive else '') +
+                'import matplotlib.pyplot as plt\n'
+                + ('plt.ion()\n' if interactive else '') +
                 'from mpl_toolkits import mplot3d\n'
-                "ax = subplot(projection='3d')")
+                "ax = plt.subplot(projection='3d')")
     return matplotlib
 
 def pylab3d(backend=None, interactive=True):
@@ -1205,13 +1205,11 @@ def pylab3d(backend=None, interactive=True):
                 "ax = subplot(projection='3d')")
     return pylab
 
-@lazy_loader
-def seaborn():
+def sns():
     import seaborn
     _print_exec('import seaborn, seaborn as sns')
     return seaborn
 
-@lazy_loader
 def sympy(all=True):
     import sympy
     _print_exec('import sympy, sympy as sp\n'
@@ -1220,7 +1218,6 @@ def sympy(all=True):
                 'sympy.var("x, y, z, a, b, c, t", real=True)')
     return sympy
 
-@lazy_loader
 def scipy():
     import scipy
     _print_exec(
@@ -1230,7 +1227,6 @@ def scipy():
         'from scipy import stats')
     return scipy
 
-@lazy_loader
 def pygame(init=True):
     import pygame
     _print_exec('import pygame, pygame as pg\n'
@@ -1265,26 +1261,22 @@ def requests():
     _print_exec('import requests')
     return requests
 
-@lazy_loader
 def pandas():
     import pandas
     _print_exec('import pandas, pandas as pd')
     return pandas
 
-@lazy_loader
 def argparse():
     import argparse
     _print_exec('import argparse\n'
                 'p = argparse.ArgumentParser()')
     return argparse
 
-@lazy_loader
 def tf():
     import tensorflow
     _print_exec('import tensorflow as tf')
     return tensorflow
 
-@lazy_loader
 def torch():
     import torch
     _print_exec('import torch, torchvision\n'
@@ -1294,14 +1286,6 @@ def torch():
                 'from torchvision import transforms')
     return torch
 
-@lazy_loader
-def pyro():
-    import pyro
-    _print_exec('import pyro\n'
-                'import pyro.distributions as dist')
-    return pyro
-
-@lazy_loader
 def Crypto():
     import Crypto
     _print_exec('import Crypto; from Crypto import *\n'
@@ -1311,10 +1295,9 @@ def Crypto():
                 'from Crypto.Protocol import KDF\n'
                 'from Crypto.PublicKey import RSA\n'
                 'from Crypto.Cipher import PKCS1_OAEP\n'
-                'from Crypto.Signature import pkcs1_15')
+                'from Crypto.Signature import pss')
     return Crypto
 
-@lazy_loader
 def OpenGL():
     import OpenGL
     _print_exec('import OpenGL\n'
@@ -1325,18 +1308,11 @@ def OpenGL():
     return OpenGL
 
 @lazy_loader
-def pyassimp():
-    import pyassimp
-    _print_exec('import pyassimp')
-    return pyassimp
-
-@lazy_loader
 def bs4():
     import bs4
     _print_exec('import bs4')
     return bs4
 
-@lazy_loader
 def nltk():
     import nltk
     _print_exec('import nltk\n'
@@ -1344,13 +1320,23 @@ def nltk():
                 'wordnet.synset')
     return nltk
 
-@lazy_loader
 def pint():
     import pint
     _print_exec('import pint\n'
                  'ureg = pint.UnitRegistry()\n'
                  'Q_ = ureg.Quantity')
     return pint
+
+def soundfile():
+    import soundfile
+    _print_exec('import soundfile, soundfile as sf')
+    return soundfile
+
+def sounddevice():
+    import sounddevice
+    _print_exec('import sounddevice, sounddevice as sd')
+    return sounddevice
+
 
 ################
 
@@ -1401,6 +1387,11 @@ def getdefault(seq, i, default=None):
         return seq[i]
     except LookupError:
         return default
+
+def multiget(seq, inds, default=_empty):
+    if default is _empty:
+        return [seq[ind] for ind in inds]
+    return [getdefault(seq, ind, default) for ind in inds]
 
 def unpack_defaults(seq, defaults=None, num=None):
     if num is not None:
