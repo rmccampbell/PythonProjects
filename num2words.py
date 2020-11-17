@@ -1,3 +1,4 @@
+#!/usr/bin/env python3
 import sys, math
 from fractions import Fraction
 from decimal import Decimal
@@ -62,7 +63,7 @@ def num2words(n, limit_denom=1000000):
     if not isinstance(n, int):
         n, f = int(n), n % 1
         if f:
-            return frac2words(sgn, n, f, limit_denom)
+            return _frac2words(sgn, n, f, limit_denom)
     n, r = divmod(n, 1000)
     e = 0
     ss = [smalln2words(r)] if r or not n else []
@@ -76,7 +77,7 @@ def num2words(n, limit_denom=1000000):
     return ' '.join(ss[::-1])
 
 
-def frac2words(sgn, i, f, limit_denom=1000000):
+def _frac2words(sgn, i, f, limit_denom=1000000):
     f = Fraction(f)
     if limit_denom:
         f = f.limit_denominator(limit_denom)
@@ -135,18 +136,17 @@ def words2num(s):
             if last_type == 'thousands':
                 raise ValueError('two thousands in a row')
             thousand = thousands_map[w]
-##            if n % 1000**(thousand + 1):
             if last_thousand and thousand >= last_thousand:
                 raise ValueError('thousands not in order')
-            n += x * 1000**thousand
+            n += int(x * 1000**thousand)
             last_type = 'thousands'
             last_thousand = thousand
             x = 0
         else:
             try:
                 m = Decimal(w)
-            except ValueError:
-                raise ValueError('invalid number')
+            except:
+                raise ValueError('invalid numeric component: {}'.format(w))
             if m >= 1000:
                 raise ValueError('numeric literal greater than 999')
             if m >= 100 and last_type == 'hundreds':
@@ -157,8 +157,8 @@ def words2num(s):
                 raise ValueError('two ones in a row')
             x += m
             last_type = 'ones'
-    n += x
-    return int(n)
+    n += int(x)
+    return n
 
 
 if __name__ == '__main__':
@@ -171,4 +171,4 @@ if __name__ == '__main__':
         if args.words2num:
             print(words2num(s))
         else:
-            print(num2words(int(s)))
+            print(num2words(float(s)))
