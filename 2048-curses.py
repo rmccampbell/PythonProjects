@@ -1,25 +1,25 @@
 #!/usr/bin/env python3
 import sys, os, curses, random
 
-# grid_fmt = '''\
-# ┌───────┬───────┬───────┬───────┐
-# │       │       │       │       │
-# │ {:^5} │ {:^5} │ {:^5} │ {:^5} │
-# │       │       │       │       │
-# ├───────┼───────┼───────┼───────┤
-# │       │       │       │       │
-# │ {:^5} │ {:^5} │ {:^5} │ {:^5} │
-# │       │       │       │       │
-# ├───────┼───────┼───────┼───────┤
-# │       │       │       │       │
-# │ {:^5} │ {:^5} │ {:^5} │ {:^5} │
-# │       │       │       │       │
-# ├───────┼───────┼───────┼───────┤
-# │       │       │       │       │
-# │ {:^5} │ {:^5} │ {:^5} │ {:^5} │
-# │       │       │       │       │
-# └───────┴───────┴───────┴───────┘
-# '''
+grid_fmt = '''\
+┌───────┬───────┬───────┬───────┐
+│       │       │       │       │
+│ {:^5} │ {:^5} │ {:^5} │ {:^5} │
+│       │       │       │       │
+├───────┼───────┼───────┼───────┤
+│       │       │       │       │
+│ {:^5} │ {:^5} │ {:^5} │ {:^5} │
+│       │       │       │       │
+├───────┼───────┼───────┼───────┤
+│       │       │       │       │
+│ {:^5} │ {:^5} │ {:^5} │ {:^5} │
+│       │       │       │       │
+├───────┼───────┼───────┼───────┤
+│       │       │       │       │
+│ {:^5} │ {:^5} │ {:^5} │ {:^5} │
+│       │       │       │       │
+└───────┴───────┴───────┴───────┘
+'''
 
 
 def make_positive(grid):
@@ -91,37 +91,37 @@ def move_right(grid):
     make_positive(grid)
     return moved
 
-##def draw(scr, grid):
-##    txt = grid_fmt.format(*[i or '' for r in grid for i in r])
-##    scr.addstr(0, 0, txt)
-
 def draw(scr, grid):
-    for y in range(0, 17, 4):
-        for x in range(1, 32):
-            if x % 8 != 0:
-                scr.addch(y, x, curses.ACS_HLINE)
-        if 4 <= y <= 12:
-            scr.addch(y, 0, curses.ACS_LTEE)
-            scr.addch(y, 32, curses.ACS_RTEE)
-            for x in range(8, 25, 8):
-                scr.addch(y, x, curses.ACS_PLUS)
-    for x in range(0, 33, 8):
-        for y in range(1, 16):
-            if y % 4 != 0:
-                scr.addch(y, x, curses.ACS_VLINE)
-        if 8 <= x <= 24:
-            scr.addch(0, x, curses.ACS_TTEE)
-            scr.addch(16, x, curses.ACS_BTEE)
-    scr.addch(0, 0, curses.ACS_ULCORNER)
-    scr.addch(0, 32, curses.ACS_URCORNER)
-    scr.addch(16, 0, curses.ACS_LLCORNER)
-    scr.addch(16, 32, curses.ACS_LRCORNER)
-    for i in range(4):
-        for j in range(4):
-            val = grid[i][j]
-            if val:
-                scr.addstr(i*4 + 2, j*8 + 2, format(val, '^5'))
-    scr.refresh()
+   txt = grid_fmt.format(*[i or '' for r in grid for i in r])
+   scr.addstr(0, 0, txt)
+
+# def draw(scr, grid):
+#     for y in range(0, 17, 4):
+#         for x in range(1, 32):
+#             if x % 8 != 0:
+#                 scr.addch(y, x, curses.ACS_HLINE)
+#         if 4 <= y <= 12:
+#             scr.addch(y, 0, curses.ACS_LTEE)
+#             scr.addch(y, 32, curses.ACS_RTEE)
+#             for x in range(8, 25, 8):
+#                 scr.addch(y, x, curses.ACS_PLUS)
+#     for x in range(0, 33, 8):
+#         for y in range(1, 16):
+#             if y % 4 != 0:
+#                 scr.addch(y, x, curses.ACS_VLINE)
+#         if 8 <= x <= 24:
+#             scr.addch(0, x, curses.ACS_TTEE)
+#             scr.addch(16, x, curses.ACS_BTEE)
+#     scr.addch(0, 0, curses.ACS_ULCORNER)
+#     scr.addch(0, 32, curses.ACS_URCORNER)
+#     scr.addch(16, 0, curses.ACS_LLCORNER)
+#     scr.addch(16, 32, curses.ACS_LRCORNER)
+#     for i in range(4):
+#         for j in range(4):
+#             val = grid[i][j]
+#             if val:
+#                 scr.addstr(i*4 + 2, j*8 + 2, format(val, '^5'))
+#     scr.refresh()
 
 def spawn(grid):
     x, y = random.randrange(4), random.randrange(4)
