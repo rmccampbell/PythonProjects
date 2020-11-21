@@ -6,7 +6,7 @@ def do_rename(old, new, verbose, dryrun):
         if not dryrun:
             os.rename(old, new)
         if verbose or dryrun:
-            print("%s -> %s" % (old, new))
+            print('%s -> %s' % (old, new))
     except OSError as e:
         print('error:', e, file=sys.stderr)
 
@@ -16,12 +16,18 @@ def incfiles(pattern, start=None, end=None, inc=1, cyclic=False, verbose=True,
         start = 0
         while not os.path.exists(pattern % start):
             start += 1
+            if start >= 100:
+                raise ValueError("couldn't find file matching pattern between 0-99")
     if end is None:
         stop = start
         while os.path.exists(pattern % stop):
             stop += 1
     else:
         stop = end + 1
+    if cyclic:
+        n = stop - start
+        # limit inc to interval [-n/2, n/2)
+        inc = (inc + n//2) % n - n//2
     rng = range(start, stop)
     if inc > 0:
         rng = rng[::-1]
@@ -56,4 +62,7 @@ if __name__ == '__main__':
     p.add_argument('-d', '--dryrun', action='store_true',
                    help="print substitutions but don't rename files")
     args = p.parse_args()
-    incfiles(**vars(args))
+    try:
+        incfiles(**vars(args))
+    except Exception as e:
+        print('error:', e, file=sys.stderr)
