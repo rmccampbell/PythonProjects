@@ -295,12 +295,12 @@ NOTE_NAMES = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B']
 def parse_note(note):
     if isinstance(note, int):
         return note
-    match = re.fullmatch(r'([A-G][#b]?)(-?[0-9])?', note)
+    match = re.fullmatch(r'([A-Ga-g][#b]?)(-?[0-9])?', note)
     if not match:
         raise ValueError(f'invalid note: {note}')
     note, num = match.groups()
     num = int(num) if num else 4
-    return NOTE_MAP[note] + 12*(num + 1)
+    return NOTE_MAP[note.upper()] + 12*(num + 1)
 
 def note_name(note):
     return NOTE_NAMES[note % 12] + str(note // 12 - 1)
