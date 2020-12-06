@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-import sys, os, curses, random
+import curses, random
 
 grid_fmt = '''\
 ┌───────┬───────┬───────┬───────┐
@@ -91,9 +91,11 @@ def move_right(grid):
     make_positive(grid)
     return moved
 
-def draw(scr, grid):
-   txt = grid_fmt.format(*[i or '' for r in grid for i in r])
-   scr.addstr(0, 0, txt)
+def spawn(grid):
+    x, y = random.randrange(4), random.randrange(4)
+    while grid[y][x]:
+        x, y = random.randrange(4), random.randrange(4)
+    grid[y][x] = 2 if random.random() < .9 else 4
 
 # def draw(scr, grid):
 #     for y in range(0, 17, 4):
@@ -123,11 +125,11 @@ def draw(scr, grid):
 #                 scr.addstr(i*4 + 2, j*8 + 2, format(val, '^5'))
 #     scr.refresh()
 
-def spawn(grid):
-    x, y = random.randrange(4), random.randrange(4)
-    while grid[y][x]:
-        x, y = random.randrange(4), random.randrange(4)
-    grid[y][x] = 2 if random.random() < .9 else 4
+def draw(scr, grid):
+    txt = grid_fmt.format(*[i or '' for r in grid for i in r])
+    for i, line in enumerate(txt.splitlines()):
+        scr.addstr(i, 0, line)
+    scr.refresh()
 
 def main(scr):
     curses.curs_set(0)
