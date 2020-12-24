@@ -81,8 +81,8 @@ class VideoPlayer(QtWidgets.QMainWindow):
         self.vlayout.addWidget(self.controls)
 
         self.video.setSizePolicy(QSizePolicy.Ignored, QSizePolicy.Ignored)
-        self.video.setMinimumSize(WIDTH, HEIGHT)
         self.video.resize(WIDTH, HEIGHT)
+        self.video.setMinimumSize(WIDTH, HEIGHT)
         self.adjustSize()
         self.video.setMinimumSize(0, 0)
 
@@ -171,13 +171,13 @@ class VideoPlayer(QtWidgets.QMainWindow):
         self.positionChanging = False
         secs = position // 1000
         mins, secs = divmod(secs, 60)
-        self.posLabel.setText(f'{mins}:{secs}')
+        self.posLabel.setText(f'{mins}:{secs:02}')
 
     def handleDurationChanged(self, duration):
         self.posSlider.setMaximum(duration)
         secs = duration // 1000
         mins, secs = divmod(secs, 60)
-        self.durLabel.setText(f'{mins}:{secs}')
+        self.durLabel.setText(f'{mins}:{secs:02}')
 
     def handlePlaybackRateChanged(self, rate):
         self.speedLabel.setText('' if rate == 1 else f'{rate:.3g}x')
@@ -221,9 +221,9 @@ class VideoPlayer(QtWidgets.QMainWindow):
             self.media.setVolume(min(self.media.volume() + VOLSTEP, 100))
         elif key == Qt.Key_Down:
             self.media.setVolume(max(self.media.volume() - VOLSTEP, 0))
-        elif key == Qt.Key_BracketLeft:
+        elif key in (Qt.Key_BracketLeft, Qt.Key_Less):
             self.media.setPlaybackRate(max(self.media.playbackRate() - .25, .25))
-        elif key == Qt.Key_BracketRight:
+        elif key in (Qt.Key_BracketRight, Qt.Key_Greater):
             self.media.setPlaybackRate(min(self.media.playbackRate() + .25, 4.0))
         elif key == Qt.Key_M:
             self.toggleMuted()
