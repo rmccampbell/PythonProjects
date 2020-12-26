@@ -1,16 +1,16 @@
 #!/usr/bin/env python3
 import sys, argparse, ctypes
-import os.path as op
+import os.path as osp
 from winreg import *
 
-##SendMessage = ctypes.windll.user32.SendMessageW
+# SendMessage = ctypes.windll.user32.SendMessageW
 SendMessageTimeout = ctypes.windll.user32.SendMessageTimeoutW
 HWND_BROADCAST = 0xffff
 WM_SETTINGCHANGE = 0x1a
 SMTO_NORMAL = 0
 
-def main(add=None, index=None, remove=None, contains=None, system=False,
-         lines=False):
+def pathx(add=None, index=None, remove=None, contains=None, system=False,
+          lines=False):
     if system:
         key = HKEY_LOCAL_MACHINE
         subkey = r'SYSTEM\CurrentControlSet\Control\Session Manager\Environment'
@@ -24,23 +24,23 @@ def main(add=None, index=None, remove=None, contains=None, system=False,
         value, typ = QueryValueEx(key, 'Path')
         values = value.split(';')
         if contains:
-            values = {op.normcase(op.normpath(op.expandvars(val)))
+            if not isinstance(contains, (list, tuple)):
+                contains = [contains]
+            values = {osp.normcase(osp.normpath(osp.expandvars(val)))
                       for val in values}
             for path in contains:
-                if op.normcase(op.abspath(path)) in values:
+                if osp.normcase(osp.abspath(path)) in values:
                     print('"%s" in path' % path)
                 else:
                     print('"%s" not in path' % path)
             return
         if remove is not None:
             if remove not in values:
-                print('"%s" not in path' % remove)
-                return
+                raise ValueError('"%s" not in path' % remove)
             values.remove(remove)
         if add is not None:
             if add in values:
-                print('"%s" already in path' % add)
-                return
+                raise ValueError('"%s" already in path' % add)
             if index is None:
                 index = len(values)
             values.insert(index, add)
@@ -48,10 +48,10 @@ def main(add=None, index=None, remove=None, contains=None, system=False,
             value = ';'.join(values)
             typ = REG_EXPAND_SZ if value.count('%') >= 2 else REG_SZ
             SetValueEx(key, 'Path', 0, typ, value)
-##            SendMessage(HWND_BROADCAST, WM_SETTINGCHANGE, 0, 'Environment')
+            # SendMessage(HWND_BROADCAST, WM_SETTINGCHANGE, 0, 'Environment')
             SendMessageTimeout(HWND_BROADCAST, WM_SETTINGCHANGE, 0,
                                'Environment', SMTO_NORMAL, 100, 0)
-            print('** Registry updated **')
+            print('** Registry updated **', file=sys.stderr)
     if lines:
         value = value.replace(';', '\n')
     print(value)
@@ -65,4 +65,7 @@ if __name__ == '__main__':
     parser.add_argument('-s', '--system', action='store_true')
     parser.add_argument('-l', '--lines', action='store_true')
     args = parser.parse_args()
-    main(**vars(args))
+    try:
+        pathx(**vars(args))
+    except Exception as e:
+        sys.exit(e)
