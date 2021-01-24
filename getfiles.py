@@ -141,7 +141,7 @@ def stdopen(file, mode='r', encoding=None, errors=ERRORS):
 def guess_open(file, mode='r', encoding=None, errors=ERRORS):
     if not _PY3:
         return open(file, mode)
-    if (not encoding and 'b' not in mode and ('r' in mode or 'a' in mode)
+    if (encoding is None and 'b' not in mode and ('r' in mode or 'a' in mode)
         and os.path.isfile(file)):
         with open(file, 'rb') as f:
             if f.seekable() and not f.isatty():
