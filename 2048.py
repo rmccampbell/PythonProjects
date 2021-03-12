@@ -1,7 +1,10 @@
 #!/usr/bin/env python3
-import curses, random
+import curses, random, argparse
+from curses import ascii
 
-grid_fmt = '''\
+QUIT_KEYS = {ascii.ESC, ord('q'), ascii.ctrl(ord('C'))}
+
+GRID_FMT = '''\
 ┌───────┬───────┬───────┬───────┐
 │       │       │       │       │
 │ {:^5} │ {:^5} │ {:^5} │ {:^5} │
@@ -21,6 +24,9 @@ grid_fmt = '''\
 └───────┴───────┴───────┴───────┘
 '''
 
+
+def copy_grid(grid):
+    return [r[:] for r in grid]
 
 def make_positive(grid):
     for y in range(4):
@@ -126,29 +132,45 @@ def spawn(grid):
 #     scr.refresh()
 
 def draw(scr, grid):
-    txt = grid_fmt.format(*[i or '' for r in grid for i in r])
+    txt = GRID_FMT.format(*[i or '' for r in grid for i in r])
     for i, line in enumerate(txt.splitlines()):
         scr.addstr(i, 0, line)
     scr.refresh()
 
-def main(scr):
+def push_state(grid):
+    grid_hist.append((grid, random.getstate()))
+
+def pop_state():
+    if not grid_hist:
+        return None
+    grid, state = grid_hist.pop()
+    random.setstate(state)
+    return grid
+
+def main(scr, init_board=None):
+    global grid_hist
     curses.curs_set(0)
     h, w = scr.getmaxyx()
     win = scr.subwin((h-1)//2 - 8, (w-1)//2 - 16)
 
-    grid = [[0]*4 for i in range(4)]
+    grid_hist = []
+
+    grid = init_board or [[0]*4 for i in range(4)]
     for i in range(2):
         spawn(grid)
+
     while True:
-        scr.clear()
+        win.clear()
         draw(win, grid)
-        gridcp = [r[:] for r in grid]
+        gridcp = copy_grid(grid)
         if not (move_up(gridcp) or move_down(gridcp) or
                 move_left(gridcp) or move_right(gridcp)):
             win.addstr(18, 0, 'Game over!')
-            while scr.getch() not in (0x1b, ord('q'), 0x03):
+            win.refresh()
+            while scr.getch() not in {*QUIT_KEYS, ord('\n')}:
                 pass
             break
+        oldgrid = copy_grid(grid)
         moved = False
         k = scr.getch()
         if k == curses.KEY_UP:
@@ -159,10 +181,19 @@ def main(scr):
             moved = move_left(grid)
         elif k == curses.KEY_RIGHT:
             moved = move_right(grid)
-        elif k in (0x1b, ord('q'), 0x03):
+        elif k in (ascii.BS, curses.KEY_BACKSPACE):
+            grid = pop_state() or grid
+        elif k in QUIT_KEYS:
             break
         if moved:
+            push_state(oldgrid)
             spawn(grid)
 
 if __name__ == '__main__':
-    curses.wrapper(main)
+    p = argparse.ArgumentParser()
+    p.add_argument('-b', '--init-board')
+    args = p.parse_args()
+    init_board = None
+    if args.init_board:
+        init_board = [list(map(int, row)) for row in args.init_board.split('|')]
+    curses.wrapper(main, init_board)
