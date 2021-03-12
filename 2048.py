@@ -155,9 +155,12 @@ def main(scr, init_board=None):
 
     grid_hist = []
 
-    grid = init_board or [[0]*4 for i in range(4)]
-    for i in range(2):
-        spawn(grid)
+    if init_board:
+        grid = init_board
+    else:
+        grid = [[0]*4 for i in range(4)]
+        for i in range(2):
+            spawn(grid)
 
     while True:
         win.clear()
@@ -189,11 +192,11 @@ def main(scr, init_board=None):
             push_state(oldgrid)
             spawn(grid)
 
+def parse_board(s):
+    return [list(map(int, row.split())) for row in s.split('|')]
+
 if __name__ == '__main__':
     p = argparse.ArgumentParser()
-    p.add_argument('-b', '--init-board')
+    p.add_argument('-b', '--init-board', type=parse_board)
     args = p.parse_args()
-    init_board = None
-    if args.init_board:
-        init_board = [list(map(int, row)) for row in args.init_board.split('|')]
-    curses.wrapper(main, init_board)
+    curses.wrapper(main, args.init_board)
