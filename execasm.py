@@ -49,7 +49,6 @@ else:
             None, len(code), mmap.PROT_READ | mmap.PROT_WRITE,
             mmap.MAP_PRIVATE | mmap.MAP_ANONYMOUS, -1, 0))
         ctypes.memmove(buff, code, len(code))
-        oldp = ctypes.c_uint32()
         libc.mprotect(buff, len(code), mmap.PROT_READ | mmap.PROT_EXEC)
         funcptr = ctypes.cast(buff, ctypes.CFUNCTYPE(restype, *argtypes))
         funcptr.length = len(code)
