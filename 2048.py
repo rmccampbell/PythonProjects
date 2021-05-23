@@ -24,6 +24,8 @@ GRID_FMT = '''\
 └───────┴───────┴───────┴───────┘
 '''
 
+GRID_W = len(GRID_FMT.splitlines()[0])
+GRID_H = len(GRID_FMT.splitlines())
 
 def copy_grid(grid):
     return [r[:] for r in grid]
@@ -131,7 +133,7 @@ def spawn(grid):
 #                 scr.addstr(i*4 + 2, j*8 + 2, format(val, '^5'))
 #     scr.refresh()
 
-def draw(scr, grid):
+def draw(scr: 'curses.window', grid):
     txt = GRID_FMT.format(*[i or '' for r in grid for i in r])
     for i, line in enumerate(txt.splitlines()):
         scr.addstr(i, 0, line)
@@ -147,11 +149,11 @@ def pop_state():
     random.setstate(state)
     return grid
 
-def main(scr, init_board=None):
+def main(scr: 'curses.window', init_board=None):
     global grid_hist
     curses.curs_set(0)
-    h, w = scr.getmaxyx()
-    win = scr.subwin((h-1)//2 - 8, (w-1)//2 - 16)
+    scrh, scrw = scr.getmaxyx()
+    win = scr.subwin((scrh-GRID_H) // 2, (scrw-GRID_W) // 2)
 
     grid_hist = []
 

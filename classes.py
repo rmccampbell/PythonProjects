@@ -1,7 +1,7 @@
 """A bunch of classes I made."""
 
 import sys, types, collections, itertools, re, math, operator, inspect
-import functools, io, textwrap, enum, reprlib
+import functools, io, textwrap, enum, reprlib, ctypes
 import functools2
 from functools2 import typechecking, autocurrying, Sentinel
 from collections import OrderedDict, defaultdict
@@ -2035,3 +2035,11 @@ class IndexerDescriptor:
     def deleter(self, fdel):
         self.fdel = fdel
         return self
+
+
+class StructureRepr(ctypes.Structure):
+    def __repr__(self):
+        return '{}({})'.format(
+            type(self).__name__,
+            ', '.join(f'{n}={getattr(self, n)}' for n, t in self._fields_)
+        )

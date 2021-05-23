@@ -39,7 +39,7 @@ def parse_table(html='-', selector=None, number=None, columns=None,
         if table.name != 'table':
             table = table.table or table
     elif number is not None:
-        table = doc.find_all('table')[number]
+        table = doc.find_all('table', limit=number+1)[number]
     else:
         table = doc.table or doc.body or doc
 
@@ -48,7 +48,8 @@ def parse_table(html='-', selector=None, number=None, columns=None,
     else:
         for tname in 'thead', 'tbody', 'tfoot':
             tag = table.find(tname)
-            tag and tag.unwrap()
+            if tag:
+                tag.unwrap()
 
     columns = columns and _parse_columns(columns)
 

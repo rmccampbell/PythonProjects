@@ -34,9 +34,9 @@ def grep(pattern, *files, **kwargs):
     if args.fixed:
         pattern = re.escape(pattern)
     if args.line:
-        pattern = r'^' + pattern + r'$'
+        pattern = r'^(?:' + pattern + r')$'
     if args.word:
-        pattern = r'\b' + pattern + r'\b'
+        pattern = r'\b(?:' + pattern + r')\b'
 
     pattern = re.compile(pattern, flags)
 
@@ -50,65 +50,64 @@ def grep(pattern, *files, **kwargs):
     if args.match_files or args.no_match_files:
         args.count, args.with_filename = False, False
 
-    stdout = getfiles.set_encoding()
+    with getfiles.stdout_encoding():
 
-    for file in files:
-        if args.count:
-            count = 0
+        for file in files:
+            if args.count:
+                count = 0
 
-        print_filename = args.with_filename
-        before_buff.clear()
-        after_limit = 0
+            print_filename = args.with_filename
+            before_buff.clear()
+            after_limit = 0
 
-        for lno, line in enumerate(file):
-            match = pattern.search(line)
-            if args.only_match:
-                matches = pattern.finditer(line)
-            if (match and not args.invert) or (not match and args.invert):
-                if args.match_files:
-                    print(file.name)
-                    break
-                if args.no_match_files:
-                    break
-
-                if print_filename:
-                    print('\n-- {} --'.format(file.name))
-                    print_filename = False
-
-                if args.count:
-                    count += 1
-                    continue
-
-                print(''.join(before_buff), end='')
-                before_buff.clear()
-
-                prefix = '{:3}:'.format(lno) if args.line_number else ''
-
+            for lno, line in enumerate(file):
+                match = pattern.search(line)
                 if args.only_match:
-                    print('\n'.join(prefix + m.group() for m in matches))
+                    matches = pattern.finditer(line)
+                if (match and not args.invert) or (not match and args.invert):
+                    if args.match_files:
+                        print(file.name)
+                        break
+                    if args.no_match_files:
+                        break
+
+                    if print_filename:
+                        print('\n-- {} --'.format(file.name))
+                        print_filename = False
+
+                    if args.count:
+                        count += 1
+                        continue
+
+                    print(''.join(before_buff), end='')
+                    before_buff.clear()
+
+                    prefix = '{:3}:'.format(lno) if args.line_number else ''
+
+                    if args.only_match:
+                        print('\n'.join(prefix + m.group() for m in matches))
+                    else:
+                        print(prefix + line, end='')
+
+                    after_limit = after
+
+                elif after_limit:
+                    if args.line_number:
+                        line = '{:3}-{}'.format(lno, line)
+                    print(line, end='')
+                    after_limit -= 1
+
                 else:
-                    print(prefix + line, end='')
-
-                after_limit = after
-
-            elif after_limit:
-                if args.line_number:
-                    line = '{:3}-{}'.format(lno, line)
-                print(line, end='')
-                after_limit -= 1
+                    if args.line_number:
+                        line = '{:3}-{}'.format(lno, line)
+                    before_buff.append(line)
 
             else:
-                if args.line_number:
-                    line = '{:3}-{}'.format(lno, line)
-                before_buff.append(line)
+                if args.no_match_files: print(file.name)
 
-        else:
-            if args.no_match_files: print(file.name)
+            if args.count:
+                print(count)
 
-        if args.count:
-            print(count)
-
-    getfiles.reset_encoding(stdout)
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()

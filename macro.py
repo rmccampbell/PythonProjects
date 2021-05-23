@@ -5,9 +5,9 @@ import pymouse, pykeyboard
 # Note: High DPI scaling must be disabled for python.exe on windows
 
 class Recorder:
-    def __init__(self):
+    def __init__(self, init_events=None):
         super().__init__()
-        self.events = []
+        self.events = init_events or []
         self.starttime = self.time = 0
 
     def run(self):
@@ -42,10 +42,13 @@ class Recorder:
     def save(self, file=None):
         return save(file, self.events)
 
+    def load(self, file):
+        self.events = load(file)
+
 
 class MouseRecorder(Recorder, pymouse.PyMouseEvent):
-    def __init__(self, track_movement=True):
-        super().__init__()
+    def __init__(self, track_movement=True, init_events=None):
+        super().__init__(init_events)
         self.track_movement = track_movement
 
     def click(self, x, y, button, press):
@@ -60,8 +63,8 @@ class MouseRecorder(Recorder, pymouse.PyMouseEvent):
 
 
 class KeyRecorder(Recorder, pykeyboard.PyKeyboardEvent):
-    def __init__(self, escape_key=None, remove_dups=True):
-        super().__init__()
+    def __init__(self, escape_key=None, remove_dups=True, init_events=None):
+        super().__init__(init_events)
         self.escape_key = escape_key
         self.remove_dups = remove_dups
         self.pressed_keys = set()
@@ -87,9 +90,11 @@ class KeyRecorder(Recorder, pykeyboard.PyKeyboardEvent):
 
 recorder = None
 
-def record(keys=False, track_movement=True, escape_key=None, blocking=True):
+def record(keys=False, track_movement=True, escape_key=None, blocking=True,
+           init_events=None):
     global recorder
-    recorder = KeyRecorder(escape_key) if keys else MouseRecorder(track_movement)
+    recorder = (KeyRecorder(escape_key, init_events) if keys else
+                MouseRecorder(track_movement, init_events))
     recorder.start()
     if blocking:
         recorder.run_until_escape()
@@ -119,20 +124,18 @@ def save(file=None, events=None):
     return getattr(file, 'name', None)
 
 def load(file):
-    global recorder
     if isinstance(file, str):
         file = open(file, 'r')
     with file:
         events = json.load(file)
-    if recorder is None:
-        recorder = MouseRecorder()
-    recorder.events = events
     return events
 
-def playback(events=None, speed=1.0, repeat=False):
+def playback(events=None, speed=1.0, repeat=False, starttime=0.0, endtime=float('inf')):
     global recorder
     if events is None:
         events = recorder.events
+    if starttime or endtime != float('inf'):
+        events = macro_slice(events, starttime, endtime)
     if repeat:
         events = itertools.cycle(events)
     mouse = pymouse.PyMouse()
@@ -170,7 +173,7 @@ def playback(events=None, speed=1.0, repeat=False):
                 keyboard.release_key(keycode)
         elif type == 'wait':
             pass
-    return True, realtime
+    return True, tottime
 
 def macro_length(events):
     return sum(event[1] for event in events)
@@ -193,7 +196,7 @@ def macro_speedup(events, speed=1.0):
 if __name__ == '__main__':
     import argparse
     p = argparse.ArgumentParser()
-    sp = p.add_subparsers(dest='command')
+    sp = p.add_subparsers(dest='command')#, required=True)
     sp.required = True
 
     p1 = sp.add_parser('record')
@@ -201,11 +204,14 @@ if __name__ == '__main__':
     p1.add_argument('-k', '--keys', action='store_true')
     p1.add_argument('-T', '--no-track', action='store_true')
     p1.add_argument('-e', '--escape-key', type=int)
+    p1.add_argument('-a', '--append')
 
     p2 = sp.add_parser('play')
     p2.add_argument('file')
     p2.add_argument('-s', '--speed', type=float, default=1.0)
     p2.add_argument('-r', '--repeat', action='store_true')
+    p2.add_argument('-S', '--starttime', type=float, default=0)
+    p2.add_argument('-e', '--endtime', type=float, default=float('inf'))
 
     p3 = sp.add_parser('concat')
     p3.add_argument('file1')
@@ -222,7 +228,7 @@ if __name__ == '__main__':
     p5.add_argument('starttime', type=float)
     p5.add_argument('endtime', type=float, nargs='?', default=float('inf'))
 
-    p5 = sp.add_parser('speed')
+    p5 = sp.add_parser('speedup', aliases=['speed'])
     p5.add_argument('file')
     p5.add_argument('outfile')
     p5.add_argument('speed', type=float)
@@ -231,43 +237,40 @@ if __name__ == '__main__':
 
     if args.command == 'record':
         print('Recording...')
+        init_events = None
+        if args.append:
+            init_events = load(args.append)
         recorder = record(keys=args.keys, track_movement=not args.no_track,
-                          escape_key=args.escape_key, blocking=True)
+                          escape_key=args.escape_key, blocking=True,
+                          init_events=init_events)
         print('\aStopped: {:.2f} s'.format(recorder.tottime()))
         print('Saved:', recorder.save(args.file))
 
     elif args.command == 'play':
         print('Playing...')
         events = load(args.file)
-        finished, tottime = playback(events, args.speed, args.repeat)
+        finished, tottime = playback(events, args.speed, args.repeat, args.starttime, args.endtime)
         msg = 'Finished' if finished else 'Interrupted'
         print('\a{}: {:.2f} s'.format(msg, tottime))
 
     elif args.command == 'concat':
-        with open(args.file1) as f1, open(args.file2) as f2:
-            events = json.load(f1)
-            events2 = json.load(f2)
+        events = load(args.file1)
+        events2 = load(args.file2)
         if args.delay:
             events.append(('wait', args.delay))
         events += events2
-        with open(args.outfile, 'w') as f3:
-            json.dump(events, f3, indent=1)
+        save(args.outfile, events)
 
     elif args.command in ('length', 'len'):
-        with open(args.file) as f:
-            events = json.load(f)
-            print(macro_length(events))
+        events = load(args.file)
+        print(macro_length(events))
 
     elif args.command == 'slice':
-        with open(args.file) as f1:
-            events = json.load(f1)
+        events = load(args.file)
         newevents = macro_slice(events, args.starttime, args.endtime)
-        with open(args.outfile, 'w') as f2:
-            json.dump(newevents, f2, indent=1)
+        save(args.outfile, newevents)
 
-    elif args.command == 'speed':
-        with open(args.file) as f1:
-            events = json.load(f1)
+    elif args.command in ('speedup', 'speed'):
+        events = load(args.file)
         newevents = macro_speedup(events, args.speed)
-        with open(args.outfile, 'w') as f2:
-            json.dump(newevents, f2, indent=1)
+        save(args.outfile, newevents)

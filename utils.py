@@ -18,6 +18,7 @@ import os, collections, functools, itertools, operator, types, math, cmath, re
 import io, random, inspect, textwrap, dis, timeit, time, datetime, string
 import fractions, decimal, unicodedata, codecs, locale, shutil, numbers
 import subprocess, json, base64, copy, hashlib, contextlib, glob, heapq
+import struct
 import os.path as osp
 from math import pi, e, sqrt, exp, log, log10, floor, ceil, factorial, \
      sin, cos, tan, asin, acos, atan, atan2
@@ -44,7 +45,7 @@ if _PY3:
     import urllib.request
     from urllib.request import urlopen
     import urllib.parse as urlparse
-    _try_import('enum', 'pathlib', 'typing')
+    _try_import('enum', 'pathlib', 'typing', 'dataclasses')
 else:
     from urllib2 import urlopen
     import urlparse
@@ -1156,6 +1157,14 @@ def qt5():
                 'app = QApplication([])')
     return Qt
 
+def pyside():
+    from PyQt5 import Qt
+    _print_exec('import PySide2\n'
+                'from PySide2 import QtCore, QtGui, QtWidgets\n'
+                'from PySide2.QtCore import Qt\n'
+                'app = QtWidgets.QApplication([])')
+    return Qt
+
 @lazy_loader
 def mpl(backend=None, interactive=True):
     if isinstance(backend, (bool, int)):
@@ -1341,14 +1350,13 @@ def sounddevice():
 ################
 
 def qenum_name(x):
-    if 'PyQt4' in sys.modules:
-        import PyQt4
-    if 'PyQt5' in sys.modules:
-        import PyQt5
+    locs = {m: sys.modules[m]
+            for m in ['PyQt4', 'PyQt5', 'PySide2', 'PySide6']
+            if m in sys.modules}
     tp = type(x)
     pname = tp.__module__ + '.' + tp.__qualname__.rsplit('.', 1)[0]
     pname = re.sub(r'\bphonon\b(?!\.Phonon)', 'phonon.Phonon', pname)
-    pclass = eval(pname)
+    pclass = eval(pname, locs)
     for n, v in vars(pclass).items():
         if type(v) is tp and v == x:
             return n
@@ -1566,7 +1574,7 @@ def eq(a, b=None):
     import numpy as np
     if b is None:
         return np.all(a)
-    return np.array_equal(a, b)
+    return np.array_equiv(a, b)
 
 
 def multi_shuffle(*arrs):

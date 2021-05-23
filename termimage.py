@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+import sys
 import argparse
 import numpy as np
 from PIL import Image
@@ -6,6 +7,8 @@ from PIL import Image
 UPPER_BLOCK = '▀'
 
 def main(imagefile, width=None, height=None):
+    if imagefile == '-':
+        imagefile = sys.stdin.buffer
     img = Image.open(imagefile).convert('RGB')
     if width or height:
         width = width or round(height/img.size[1]*img.size[0])

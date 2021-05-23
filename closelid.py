@@ -17,7 +17,7 @@ Shut down: 3
 ''')
 
         lines = subprocess.check_output(
-            ['powercfg', '-query', guid, 'sub_buttons'],
+            ['powercfg', '-query', guid, 'sub_buttons', 'lidaction'],
             universal_newlines=True).splitlines()
         oldac, olddc = [int(lines[n].split()[-1], 16) for n in (14, 15)]
         print('current settings:', olddc, oldac)

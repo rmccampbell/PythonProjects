@@ -1,5 +1,5 @@
 from __future__ import print_function
-import sys, io, functools
+import sys, io, types, functools
 
 class FileWrapper(io.IOBase):
     def __init__(self, file):
@@ -85,9 +85,9 @@ class LoggingFileWrapper(FileWrapper):
         return wrapper
 
     for _name, _func in vars(FileWrapper).items():
-        if isinstance(_func, type(lambda: None)) and _name != '__init__':
+        if isinstance(_func, types.FunctionType) and _name != '__init__':
             locals()[_name] = _wrap(_func)
-
-    closed = property(_wrap(FileWrapper.closed.fget))
+        elif isinstance(_func, property):
+            locals()[_name] = property(_wrap(_func.fget))
 
     del _wrap, _name, _func

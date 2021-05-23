@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-import sys, os, struct, enum, time, re, warnings
+import sys, os, struct, enum, time, re, math, warnings
 
 DEFAULT_BACKEND = 'rtmidi'
 _backend = None
@@ -311,23 +311,38 @@ def note_frequency(note):
     note = parse_note(note)
     return 440.0 * 2**((note - 69) / 12)
 
+def frequency_to_note(freq):
+    return round(math.log2(freq / 440.0) * 12) + 69
 
-def major_scale(start, end):
+
+def scale(start, end, intervals):
     start = parse_note(start)
     end = parse_note(end)
-    steps = [2, 2, 1, 2, 2, 2, 1]
     i = 0
     l = []
     while start <= end:
         l.append(start)
-        start += steps[i]
-        i = (i + 1) % 7
+        start += intervals[i]
+        i = (i + 1) % len(intervals)
     return l
+
+def major_scale(start, end):
+    return scale(start, end, [2, 2, 1, 2, 2, 2, 1])
+
+def natural_minor_scale(start, end):
+    return scale(start, end, [2, 1, 2, 2, 1, 2, 2])
+
+def harmonic_minor_scale(start, end):
+    return scale(start, end, [2, 1, 2, 2, 1, 3, 1])
 
 
 def pitch_bend_bytes(p):
     x = min(max(int(8192*(p+1)), 0), 16383)
     return x & 127, x >> 7
+
+def pitch_bend_value(lowb, highb):
+    x = highb << 7 | lowb
+    return (x / 8192) - 1
 
 
 INSTRUMENT_NAMES = [
@@ -436,14 +451,14 @@ class MidiPlayer:
     def note_off(self, note, velocity=0, channel=0):
         self.send_message([NoteOff + channel, parse_note(note), velocity])
 
-    def all_notes_off(self, channel=None):
+    def all_notes_off(self, channel=None, fallback=True):
         channels = [channel] if channel is not None else range(16)
         for ch in channels:
             # Channel Mode 120: All Sound Off
-            self.send_message([CtrlChange, 120, 0])
-            # Fallback
-            for note in range(128):
-                self.note_off(note, channel=ch)
+            self.send_message([CtrlChange + ch, 120, 0])
+            if fallback:
+                for note in range(128):
+                    self.note_off(note, channel=ch)
 
     def set_instrument(self, instrument, channel=0):
         if isinstance(instrument, str):
@@ -455,7 +470,7 @@ class MidiPlayer:
             time.sleep(duration)
 
     def time(self):
-        return time.monotonic()
+        return time.perf_counter()
 
     def play_midi(self, file=None, events=None, volume=1, tempo_scale=1,
                   start=0, sysex=False, print_progress=True):
@@ -479,16 +494,18 @@ class MidiPlayer:
                 elif sysex and evt[0] == SysExEsc:
                     self.send_sysex(evt[1])
                 elif evt[0] < NonMidi:
-                    if evt[0] & STATUS_MASK == NoteOn:
+                    if evt[0] & STATUS_MASK == NoteOn and evt[2]:
                         if volume != 1:
                             evt = (evt[0], evt[1], min(int(evt[2]*volume), 127))
                         notes_on.add((evt[0] & CHANNEL_MASK, evt[1]))
-                    elif evt[0] & STATUS_MASK == NoteOff:
+                    elif evt[0] & STATUS_MASK in (NoteOn, NoteOff):
                         notes_on.discard((evt[0] & CHANNEL_MASK, evt[1]))
                     self.send_message(bytes(evt))
                 last_ts = ts
             self.wait(.5)
         except KeyboardInterrupt:
+            pass
+        finally:
             for ch, note in notes_on:
                 self.note_off(note, channel=ch)
         if print_progress:
@@ -534,15 +551,18 @@ class MidiPlayer:
     def __enter__(self):
         return self
 
-    def __exit__(self, exc_type, exc_val, exc_tb):
+    def __exit__(self, *args):
         self.close()
 
 
 class RtMidiPlayer(MidiPlayer):
     def __init__(self, output=None, instrument=None):
         import rtmidi
-        self.output = rtmidi.MidiOut()
-        self.output.open_port(output or 0)
+        if isinstance(output, rtmidi.MidiOut):
+            self.output = output
+        else:
+            self.output = rtmidi.MidiOut()
+            self.output.open_port(output or 0)
         super().__init__(output, instrument)
 
     @staticmethod
@@ -565,9 +585,12 @@ class PygameMidiPlayer(MidiPlayer):
         global pygame
         import pygame.midi
         pygame.midi.init()
-        if output is None:
-            output = pygame.midi.get_default_output_id()
-        self.output = pygame.midi.Output(output)
+        if isinstance(output, pygame.midi.Output):
+            self.output = output
+        else:
+            if output is None:
+                output = pygame.midi.get_default_output_id()
+            self.output = pygame.midi.Output(output)
         super().__init__(output, instrument)
 
     @staticmethod
@@ -595,7 +618,10 @@ class PygameMidiPlayer(MidiPlayer):
 
     def close(self):
         if hasattr(self, 'output'):
-            self.output.close()
+            try:
+                self.output.close()
+            except:
+                pass
             del self.output
 
 
@@ -630,7 +656,7 @@ def play_notes(notes, duration=0.5, delay=0.0, velocity=127, channel=0,
 
 def all_notes_off(output=None):
     with MidiPlayer(output) as player:
-        player.all_notes_off()
+        player.all_notes_off(fallback=True)
 
 
 def list_outputs():

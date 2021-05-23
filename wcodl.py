@@ -20,24 +20,24 @@ def get_video_url(url, hd=False):
     iframe = decode(codes, key)
     src = re.search(r'src="([^"]+)"', iframe).group(1)
     url2 = urllib.parse.urljoin(url, src)
-##    print(url2)
+    # print(url2)
 
     resp = requests.get(url2)
     resp.raise_for_status()
     urlre = r'get\("([^"]+)"\)\.then'
     url3 = re.search(urlre, resp.text).group(1)
     url3 = urllib.parse.urljoin(url2, url3)
-##    print(url3)
+    # print(url3)
 
     resp = requests.get(url3, headers={'X-Requested-With': 'XMLHttpRequest'})
     resp.raise_for_status()
-    js = json.loads(resp.text)
-##    ppring.pprint(js)
+    js = resp.json()
+    # pprint.pprint(js)
     vidurl = js['server'] + '/getvid?evid=' + (js['hd'] if hd else js['enc'])
-##    print(vidurl)
-##    resp2 = requests.head(vidurl, allow_redirects=True)
-##    print(resp2)
-##    pprint.pprint(resp2.headers)
+    # print(vidurl)
+    # resp2 = requests.head(vidurl, allow_redirects=True)
+    # print(resp2)
+    # pprint.pprint(resp2.headers)
     return vidurl
 
 def url2file(url, restrict=False, default=''):

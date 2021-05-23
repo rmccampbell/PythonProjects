@@ -119,10 +119,16 @@ def move_right(grid):
     make_positive(grid)
     return moved
 
+def spawn(grid):
+    x, y = random.randrange(4), random.randrange(4)
+    while grid[y][x]:
+        x, y = random.randrange(4), random.randrange(4)
+    grid[y][x] = 2 if random.random() < .9 else 4
+
 def main():
     grid = [[0]*4 for i in range(4)]
-    x, y = random.randrange(4), random.randrange(4)
-    grid[y][x] = 2 if random.random() < .9 else 4
+    for i in range(2):
+        spawn(grid)
     while True:
         print('\n' * H)
         print(grid_fmt.format(*[i or '' for r in grid for i in r]), end='')
@@ -146,10 +152,7 @@ def main():
         elif k in (b'\x1b', b'q'):
             break
         if moved:
-            x, y = random.randrange(4), random.randrange(4)
-            while grid[y][x]:
-                x, y = random.randrange(4), random.randrange(4)
-            grid[y][x] = 2 if random.random() < .9 else 4
+            spawn(grid)
 
 if __name__ == '__main__':
     main()

@@ -17,5 +17,5 @@ if __name__ == '__main__':
     p.add_argument('-d', '--delim', default='\t',
                    help='default: %(default)r')
     args = p.parse_args()
-    table = [l.rstrip().split(args.delim) for l in args.file]
+    table = [l.rstrip().split(args.delim or None) for l in args.file]
     print_table(table, args.pad)

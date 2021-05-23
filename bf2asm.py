@@ -2,54 +2,84 @@
 import sys
 
 HEADER = '''\
+#ifdef __x86_64__
+	#define XSP %rsp
+	#define XBX %rbx
+	#if defined(_WIN64) || defined(__CYGWIN__)
+		#define PARAM %ecx
+	#else
+		#define PARAM %edi
+	#endif
+#else
+	#define XSP %esp
+	#define XBX %ebx
+	#define PARAM %eax
+#endif
+
 	.bss
 mem:
-	.space 0x10000
+	.zero	0x10000
+
 	.text
-	.globl	_main
-_main:
-	pushl	%ebx
-	subl	$4, %esp
-	movl	$mem, %ebx
+	.globl	main
+main:
+	push	XBX
+	sub	$32, XSP
+#ifdef __x86_64__
+	leaq	mem(%rip), XBX
+#else
+	movl	$mem, XBX
+#endif
 '''
+
 FOOTER = '''\
 	xorl	%eax, %eax
-	addl	$4, %esp
-	popl	%ebx
+	add	$32, XSP
+	pop	XBX
 	ret
 '''
+
 GT = '''\
-	addl	$1, %ebx
+	add	$1, XBX
 '''
+
 LT = '''\
-	subl	$1, %ebx
+	sub	$1, XBX
 '''
+
 PLUS = '''\
-	addb	$1, (%ebx)
+	addb	$1, (XBX)
 '''
+
 MINUS = '''\
-	subb	$1, (%ebx)
+	subb	$1, (XBX)
 '''
+
 DOT = '''\
-	movzbl	(%ebx), %eax
-	movl	%eax, (%esp)
-	call	_putchar
+	movzbl	(XBX), PARAM
+#ifdef __i386__
+	movl	PARAM, (%esp)
+#endif
+	call	putchar
 '''
+
 COMMA = '''\
-	call	_getchar
+	call	getchar
 	movl	$0, %ecx
 	cmpl	$-1, %eax
 	cmove	%ecx, %eax
-	movb	%al, (%ebx)
+	movb	%al, (XBX)
 '''
+
 LBRACKET = '''\
-	movb	(%ebx), %al
+	movb	(XBX), %al
 	testb	%al, %al
 	jz	.END{lbl}
 .BEGIN{lbl}:
 '''
+
 RBRACKET = '''\
-	movb	(%ebx), %al
+	movb	(XBX), %al
 	testb	%al, %al
 	jnz	.BEGIN{lbl}
 .END{lbl}:

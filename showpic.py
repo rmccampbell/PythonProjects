@@ -2,7 +2,7 @@
 import sys, os, glob, pygame, urllib.request, io, threading
 from PIL import Image
 
-IMG_EXTS = {'.jpg', '.jpeg', '.png', '.gif', '.tiff', '.tif', '.bmp'}
+IMG_EXTS = {'.jpg', '.jpeg', '.png', '.gif', '.tiff', '.tif', '.bmp', '.webp'}
 
 def load_img(url, scale=1, maxh=0, interp=Image.BICUBIC, base=None, cache={}):
     subcache = cache.setdefault((scale, maxh), set())
@@ -21,7 +21,7 @@ def load_img(url, scale=1, maxh=0, interp=Image.BICUBIC, base=None, cache={}):
                 url = url['src']
         try:
             i = pygame.image.load(url)
-        except pygame.error:
+        except (pygame.error, FileNotFoundError):
             url = urllib.parse.urljoin(base, url)
             req = urllib.request.Request(url, headers=
                                          {'User-Agent': 'Chrome'})

@@ -1,4 +1,4 @@
-#!/usr/bin/env python3
+#!/usr/bin/env python3.8
 import os
 import contextlib
 import argparse
@@ -8,10 +8,10 @@ from Crypto.Hash import SHA256
 from Crypto.Protocol.KDF import PBKDF2
 
 SALT_SIZE = 16
-NONCE_SIZE = 16
+NONCE_SIZE = 12
 KEY_SIZE = 32
 MAC_SIZE = 16
-CHUNK_SIZE = 8192
+CHUNK_SIZE = 128*1024
 
 
 @contextlib.contextmanager
@@ -31,9 +31,10 @@ def encrypt_file(infile, outfile, password):
         salt = os.urandom(SALT_SIZE)
         key = PBKDF2(password, salt, KEY_SIZE, count=100_000,
                      hmac_hash_module=SHA256)
-        cipher = AES.new(key, AES.MODE_GCM, mac_len=MAC_SIZE)
+        nonce = os.urandom(NONCE_SIZE)
+        cipher = AES.new(key, AES.MODE_GCM, nonce=nonce, mac_len=MAC_SIZE)
         outfile.write(salt)
-        outfile.write(cipher.nonce)
+        outfile.write(nonce)
 
         while chunk := infile.read(CHUNK_SIZE):
             outfile.write(cipher.encrypt(chunk))
@@ -50,7 +51,7 @@ def decrypt_file(infile, outfile, password):
         nonce = infile.read(NONCE_SIZE)
         key = PBKDF2(password, salt, KEY_SIZE, count=100_000,
                      hmac_hash_module=SHA256)
-        cipher = AES.new(key, AES.MODE_GCM, mac_len=MAC_SIZE, nonce=nonce)
+        cipher = AES.new(key, AES.MODE_GCM, nonce=nonce, mac_len=MAC_SIZE)
 
         digest = b''
         while chunk := infile.read(CHUNK_SIZE):

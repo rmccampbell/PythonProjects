@@ -5,10 +5,11 @@ def do_rename(old, new, verbose, dryrun):
     try:
         if not dryrun:
             os.rename(old, new)
-        if verbose or dryrun:
-            print('%s -> %s' % (old, new))
     except OSError as e:
-        print('error:', e, file=sys.stderr)
+        print(f'error: {e}', file=sys.stderr)
+    else:
+        if verbose or dryrun:
+            print(f'{old} -> {new}')
 
 def incfiles(pattern, start=None, end=None, inc=1, cyclic=False, verbose=True,
              dryrun=False):
@@ -17,20 +18,24 @@ def incfiles(pattern, start=None, end=None, inc=1, cyclic=False, verbose=True,
         while not os.path.exists(pattern % start):
             start += 1
             if start >= 100:
-                raise ValueError("couldn't find file matching pattern between 0-99")
+                raise ValueError(
+                    f'no files found matching {pattern!r} from 0-99')
     if end is None:
         stop = start
         while os.path.exists(pattern % stop):
             stop += 1
+        if stop == start:
+            raise ValueError(
+                f'no files found matching {pattern!r} starting from {start}')
     else:
+        if end < start:
+            raise ValueError(f'end must be >= start')
         stop = end + 1
     if cyclic:
         n = stop - start
         # limit inc to interval [-n/2, n/2)
         inc = (inc + n//2) % n - n//2
-    rng = range(start, stop)
-    if inc > 0:
-        rng = rng[::-1]
+    rng = range(start, stop)[::-1] if inc > 0 else range(start, stop)
     for i in rng:
         j = i + inc        
         old = pattern % i
@@ -41,7 +46,8 @@ def incfiles(pattern, start=None, end=None, inc=1, cyclic=False, verbose=True,
             new = pattern % j
         do_rename(old, new, verbose, dryrun)
     if cyclic:
-        rng = range(start, start + inc) if inc >= 0 else range(stop + inc, stop)
+        rng = (range(start, start + inc) if inc >= 0 else
+               range(stop + inc, stop))
         for i in rng:
             old = '_TEMP_' + pattern % i
             new = pattern % i
@@ -65,4 +71,4 @@ if __name__ == '__main__':
     try:
         incfiles(**vars(args))
     except Exception as e:
-        print('error:', e, file=sys.stderr)
+        sys.exit(f'error: {e}')

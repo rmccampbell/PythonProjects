@@ -1,36 +1,43 @@
 #!/usr/bin/env python3
 import sys
 import argparse
-import termcolor
+import colors
+
+RESET = '\x1b[0m'
 
 def dash_none(x):
     return x if x != '-' else None
 
 if __name__ == '__main__':
-    if sys.platform == 'win32':
-        try:
-            import winansi
-            winansi.enable()
-        except:
-            pass
+##    if sys.platform == 'win32':
+##        try:
+##            import winansi
+##            winansi.enable()
+##        except:
+##            pass
 
     p = argparse.ArgumentParser()
-    p.add_argument('color', nargs='?', type=dash_none)
+    p.add_argument('fgcolor', nargs='?', type=dash_none)
     p.add_argument('bgcolor', nargs='?', type=dash_none)
-    for char, attr in [('b', 'bold'), ('d', 'dark'), ('u', 'underline'), 
-                       ('k', 'blink'), ('r', 'reverse'), ('c', 'concealed')]:
-        p.add_argument('-' + char, '--' + attr, const=attr, dest='attrs',
+    p.add_argument('-m', '--message')
+    for char, flag, style in [
+        ('b', 'bold', 'bold'),           ('f', 'faint', 'faint'),
+        ('i', 'italic', 'italic'),       ('u', 'underline', 'underline'),
+        ('k', 'blink', 'blink'),         ('r', 'reverse', 'negative'),
+        ('c', 'concealed', 'concealed'), ('s', 'strikethrough', 'crossed'),
+    ]:
+        p.add_argument('-' + char, '--' + flag, const=style, dest='styles',
                        action='append_const')
     args = p.parse_args()
 
-    if not (args.color or args.bgcolor or args.attrs):
-        args.color = 'red'
-    if args.bgcolor and not args.bgcolor.startswith('on_'):
-        args.bgcolor = 'on_' + args.bgcolor
+    if not (args.fgcolor or args.bgcolor or args.styles):
+        args.fgcolor = 'red'
+    style = '+'.join(args.styles or [])
 
-    escapes = termcolor.colored('', args.color, args.bgcolor, args.attrs)
-    start = escapes[:-len(termcolor.RESET)]
-
-    sys.stdout.write(start)
-    sys.stdout.writelines(sys.stdin)
-    sys.stdout.write(termcolor.RESET)
+    if args.message:
+        print(colors.color(args.message, args.fgcolor, args.bgcolor, style))
+    else:
+        escapes = colors.color('', args.fgcolor, args.bgcolor, style)
+        sys.stdout.write(escapes[:-len(RESET)])
+        sys.stdout.writelines(sys.stdin)
+        sys.stdout.write(RESET)

@@ -103,15 +103,15 @@ def fp_mul(a, b):
 def fp_div(a, b):
     sgn1, exp1, mant1 = fp_split(a)
     sgn2, exp2, mant2 = fp_split(b)
+    sgn = sgn1 ^ sgn2
     if mant2 == 0:
         if mant1 == 0:  # nan
             return NAN
         else:  # infinity
-            return INF
+            return INF | sgn << SOFF
     else:
         mant = (mant1 << DIG) // mant2
         exp = exp1 - exp2 - DIG
-    sgn = sgn1 ^ sgn2
     return fp_normalize(sgn, exp, mant)
 
 def fp_sqrt(a):
@@ -132,17 +132,19 @@ def fp_sqrt(a):
 
 def fp_str(a):
     sgn, exp, mant = fp_split(a)
-    e10 = (exp * 0x13441 >> 18) + 1 # approx exp * log10(2)
+    e10 = (exp * 0x4d104d42 >> 32) + 1  # approx exp * log10(2)
     if exp >= 0:
         x = (mant << exp) // 10**e10
     else:
         x = mant * 10**-e10 >> -exp
     s = str(x)
     if e10 >= 0:
-        return s + '0'*e10 + '.'
+        mag_s = s + '0'*e10 + '.'
     elif e10 <= -len(s):
-        return '.' + s.rjust(-e10, '0')
-    return s[:e10] + '.' + s[e10:]
+        mag_s = '.' + s.rjust(-e10, '0')
+    else:
+        mag_s = s[:e10] + '.' + s[e10:]
+    return ('-' if sgn else '') + mag_s
 
 def fp_sin(a):
     pass

@@ -1,4 +1,3 @@
-#!/usr/bin/env python3
 import sys, math
 from fractions import Fraction
 from decimal import Decimal
@@ -63,7 +62,7 @@ def num2words(n, limit_denom=1000000):
     if not isinstance(n, int):
         n, f = int(n), n % 1
         if f:
-            return _frac2words(sgn, n, f, limit_denom)
+            return frac2words(sgn, n, f, limit_denom)
     n, r = divmod(n, 1000)
     e = 0
     ss = [smalln2words(r)] if r or not n else []
@@ -77,7 +76,7 @@ def num2words(n, limit_denom=1000000):
     return ' '.join(ss[::-1])
 
 
-def _frac2words(sgn, i, f, limit_denom=1000000):
+def frac2words(sgn, i, f, limit_denom=1000000):
     f = Fraction(f)
     if limit_denom:
         f = f.limit_denominator(limit_denom)
@@ -133,12 +132,15 @@ def words2num(s):
             x *= 100
             last_type = 'hundreds'
         elif w in thousands_map:
-            if last_type == 'thousands':
+            if not last_type:
+                raise ValueError('thousands unit not preceded by number')
+            elif last_type == 'thousands':
                 raise ValueError('two thousands in a row')
             thousand = thousands_map[w]
+##            if n % 1000**(thousand + 1):
             if last_thousand and thousand >= last_thousand:
                 raise ValueError('thousands not in order')
-            n += int(x * 1000**thousand)
+            n += x * 1000**thousand
             last_type = 'thousands'
             last_thousand = thousand
             x = 0
@@ -146,7 +148,7 @@ def words2num(s):
             try:
                 m = Decimal(w)
             except:
-                raise ValueError('invalid numeric component: {}'.format(w))
+                raise ValueError('invalid number')
             if m >= 1000:
                 raise ValueError('numeric literal greater than 999')
             if m >= 100 and last_type == 'hundreds':
@@ -157,8 +159,8 @@ def words2num(s):
                 raise ValueError('two ones in a row')
             x += m
             last_type = 'ones'
-    n += int(x)
-    return n
+    n += x
+    return int(n)
 
 
 if __name__ == '__main__':
@@ -171,4 +173,4 @@ if __name__ == '__main__':
         if args.words2num:
             print(words2num(s))
         else:
-            print(num2words(float(s)))
+            print(num2words(int(s)))

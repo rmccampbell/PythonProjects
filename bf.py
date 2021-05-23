@@ -4,7 +4,7 @@ import sys, argparse, io
 MEMSIZE = 0x10000
 
 def run(source, debug=False, newline_conv=False, eof_nochange=False):
-    commands = set('><+-.,[]' + ('dpi' if debug else ''))
+    commands = set('><+-.,[]' + ('dDpi' if debug else ''))
     code = []
     brackets = []
     for c in source:
@@ -55,12 +55,14 @@ def run(source, debug=False, newline_conv=False, eof_nochange=False):
             if array[p]:
                 i = code[i]
         elif debug:
-            if c == 'd':
+            if c in ('d', 'D'):
                 end = next((i for i in range(256)[::-1] if array[i]), 0)
                 x = array[p]
                 array[p] = Highlighter(x)
                 print(p, array[:max(end+1, 20)])
                 array[p] = x
+                if c == 'D':
+                    input()
             elif c == 'p':
                 print(array[p])
             elif c == 'i':

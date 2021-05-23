@@ -45,6 +45,8 @@ if __name__ == '__main__':
 
     if os.name == 'nt' and not args.shell:
         whichcmd = shutil.which(command[0])
+        if whichcmd is None:
+            raise FileNotFoundError(command[0])
         ext = os.path.splitext(whichcmd)[1].lower()
         if ext in ('.py', '.pyw'):
             command[:1] = [sys.executable, whichcmd]

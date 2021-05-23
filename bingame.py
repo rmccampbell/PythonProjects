@@ -10,7 +10,7 @@ def getnum(prompt='', base=0):
         return int(inpt, base)
     except ValueError:
         return inpt
-    except EOFError:
+    except (EOFError, KeyboardInterrupt):
         return 'q'
 
 def game():
@@ -27,7 +27,4 @@ def game():
         print("Correct!")
 
 if __name__ == '__main__':
-    try:
-        game()
-    except KeyboardInterrupt:
-        pass
+    game()

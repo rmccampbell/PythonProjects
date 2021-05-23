@@ -2,7 +2,7 @@
 """Shows a progress bar on the windows taskbar"""
 import comtypes.client as cc
 import win32console
-import enum
+import os.path as osp
 
 TBPF_NOPROGRESS = 0
 TBPF_INDETERMINATE = 0x1
@@ -10,8 +10,9 @@ TBPF_NORMAL = 0x2
 TBPF_ERROR = 0x4
 TBPF_PAUSED = 0x8
 
-tbl = cc.GetModule('data\\TaskbarLib.tlb')
-taskbar = cc.CreateObject('{56FDF344-FD6D-11d0-958A-006097C9A090}', interface=tbl.ITaskbarList3)
+tbl = cc.GetModule(osp.join(osp.basename(__file__), 'data\\TaskbarLib.tlb'))
+taskbar = cc.CreateObject('{56FDF344-FD6D-11d0-958A-006097C9A090}',
+                          interface=tbl.ITaskbarList3)
 taskbar.HrInit()
 
 hwnd = win32console.GetConsoleWindow()

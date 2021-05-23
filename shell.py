@@ -15,20 +15,29 @@ if __name__ == '__main__':
             tokens = line.split()
             tok_groups = []
             tok_group = []
+            tok = None
             for tok in tokens:
                 if tok == '|':
+                    if not tok_group:
+                        print('error: empty token group', file=sys.stderr)
+                        tok_groups = []
+                        break
                     tok_groups.append(tok_group)
                     tok_group = []
                 else:
                     tok_group.append(tok)
             if tok_group:
                 tok_groups.append(tok_group)
+            elif tok_groups and tok == '|':
+                print('error: empty token group', file=sys.stderr)
+                tok_groups = []
+            if not tok_groups:
+                continue
 
+            files = []
             pids = []
             read_pipe = None
             for i, tok_group in enumerate(tok_groups):
-                if not tok_group:
-                    continue
                 file = tok_group[0]
                 if file == 'exit':
                     running = False
@@ -50,13 +59,16 @@ if __name__ == '__main__':
                     if read_pipe:
                         os.dup2(read_pipe, 0)
                     elif stdin:
-                        os.dup2(os.open(stdin, os.O_RDONLY), 0)
+                        fd = os.open(stdin, os.O_RDONLY)
+                        os.dup2(fd, 0)
                     if write_pipe:
                         os.close(next_read_pipe)
                         os.dup2(write_pipe, 1)
                     elif stdout:
-                        os.dup2(os.open(stdout, os.O_WRONLY|os.O_CREAT), 1)
+                        fd = os.open(stdout, os.O_WRONLY | os.O_CREAT | os.O_TRUNC)
+                        os.dup2(fd, 1)
                     os.execv(file, args)
+                files.append(file)
                 pids.append(pid)
                 if read_pipe:
                     os.close(read_pipe)
@@ -68,8 +80,8 @@ if __name__ == '__main__':
             for pid in pids:
                 pid, status = os.waitpid(pid, 0)
                 statuses.append(os.WEXITSTATUS(status))
-            for status in statuses:
-                print(status, file=sys.stderr)
+            for file, status in zip(files, statuses):
+                print('%s exited with exit code %d' % (file, status))
 
         except KeyboardInterrupt:
             pass

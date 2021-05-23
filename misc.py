@@ -1,5 +1,6 @@
 # -*- coding: utf-8 -*-
 import math, cmath, re, struct, functools, operator, string, itertools, io
+import codecs
 
 def isprime_re(n):
     return not re.match(r'^1?$|^(11+?)\1+$', '1'*n)
@@ -521,18 +522,21 @@ def ibm437_visible_decode(b):
     return b.decode('cp437').translate(_ibm437_visible_table)
 
 
-# codecs.register_error('fallback_latin1', codec_error_fallback_latin1)
 def codec_error_fallback_latin1(e):
     if isinstance(e, UnicodeEncodeError):
         return e.object[e.start:e.end].encode('latin-1'), e.end
     return e.object[e.start:e.end].decode('latin-1'), e.end
 
-# codecs.register_error('fallback_cp1252', codec_error_fallback_cp1252)
+codec_error_fallback_latin1.register = lambda: codecs.register_error(
+    'fallback_latin1', codec_error_fallback_latin1)
+
 def codec_error_fallback_cp1252(e):
     if isinstance(e, UnicodeEncodeError):
         return e.object[e.start:e.end].encode('cp1252', 'fallback_latin1'), e.end
     return e.object[e.start:e.end].decode('cp1252', 'fallback_latin1'), e.end
 
+codec_error_fallback_cp1252.register = lambda: codecs.register_error(
+    'fallback_cp1252', codec_error_fallback_cp1252)
 
 def farey_approx(x, m=100):
     an, ad = 0, 1
@@ -566,3 +570,12 @@ def parse_time(string):
         m, s = string.split(':')
         return int(m)*60 + float(s)
     return float(string)
+
+
+# Get image extents for integer pixel boundaries in Matplotlib 
+def integer_extent(array, origin='upper'):
+    h, w = array.shape[:2]
+    if origin == 'upper':
+        return (0, w, h, 0)
+    else:
+        return (0, w, 0, h)

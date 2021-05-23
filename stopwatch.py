@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-import sys, time
+import sys, time, argparse
 
 stemp = '{}:{:02}'
 cstemp = '{}:{:02}:{:02}'
@@ -23,5 +23,7 @@ def stopwatch(hundredths=False):
         print()
 
 if __name__ == '__main__':
-    hundredths = '-h' in sys.argv
-    stopwatch(hundredths)
+    p = argparse.ArgumentParser()
+    p.add_argument('-H', '--hundredths', action='store_true')
+    args = p.parse_args()
+    stopwatch(args.hundredths)

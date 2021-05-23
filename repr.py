@@ -13,4 +13,4 @@ if len(sys.argv) > 1:
 else:
     file = sys.stdin if unicode else sys.stdin.buffer
 
-print(repr(file.read()).lstrip('b'))
+print(ascii(file.read()).lstrip('b'))

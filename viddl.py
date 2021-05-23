@@ -6,6 +6,13 @@ CHUNK = 0x4000
 EXTS = 'mp4|mov|flv|webm|ogg'
 PATTERN = r'["=](http[^";?]+\.(?:%s)\b[^";]*)(?:"|&amp;)'
 
+def human_readable(n, prec=1, strip=True):
+    power = max((int(n).bit_length() - 1) // 10, 0)
+    num = '{:.{}f}'.format(n / 1024**power, prec)
+    if strip and '.' in num:
+        num = num.rstrip('0').rstrip('.')
+    return num + 'BKMGTPE'[power]
+
 def main(url, file=None, num=None, list_urls=False, url_only=False,
          force_download=False, size_only=False, exts=EXTS):
     url = urllib.parse.unquote(url)
@@ -64,7 +71,8 @@ def main(url, file=None, num=None, list_urls=False, url_only=False,
         return
 
     if size_only:
-        print(resp.headers.get('Content-Length', 'unknown size'))
+        size = int(resp.headers.get('Content-Length', -1))
+        print(human_readable(size) if size >= 0 else 'unknown size')
         resp.close()
         return
 

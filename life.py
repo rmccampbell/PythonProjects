@@ -89,10 +89,9 @@ class Life:
 
     def run(self):
         clock = pg.time.Clock()
-        frame = 0
+        time = 0
         self.running = True
         while self.running:
-            clock.tick(FPS)
             redraw = False
             step = False
 
@@ -147,8 +146,8 @@ class Life:
                         redraw = True
                 elif event.type == pg.VIDEORESIZE:
                     px = self.px
-                    self.swidth = sw = int(round(event.w / px))
-                    self.sheight = sh = int(round(event.h / px))
+                    self.swidth = sw = int(np.ceil(event.w / px))
+                    self.sheight = sh = int(np.ceil(event.h / px))
                     if abs(sw - self.width) < 5:
                         self.swidth = sw = self.width
                     if abs(sh - self.height) < 5:
@@ -158,9 +157,9 @@ class Life:
                     pg.display.set_mode((px*sw, px*sh), pg.RESIZABLE)
                     redraw = True
 
-            frame += 1
-            if frame >= FPS//self.speed or step:
-                frame = 0
+            time += clock.tick(FPS) / 1000
+            if time >= 1/self.speed or step:
+                time = 0
                 if not self.paused or step:
                     self.tick()
                     redraw = True
@@ -170,8 +169,8 @@ class Life:
     def zoom(self, amount):
         oldpx = self.px
         self.px = px = max(oldpx + amount, 1)
-        self.swidth = sw = int(round(self.swidth * oldpx / px))
-        self.sheight = sh = int(round(self.sheight * oldpx / px))
+        self.swidth = sw = int(np.ceil(self.swidth * oldpx / px))
+        self.sheight = sh = int(np.ceil(self.sheight * oldpx / px))
         self.scrolly = max(min(self.scrolly, self.height - sh), 0)
         self.scrollx = max(min(self.scrollx, self.width - sw), 0)
         pg.display.set_mode((px*sw, px*sh), pg.RESIZABLE)
@@ -193,6 +192,9 @@ class Life:
                           self.scrolly: self.scrolly + self.sheight]
         pixels[:self.width, :self.height] = np.where(grid[..., None], COLOR1, COLOR0)
         scaled = pixels.repeat(self.px, 0).repeat(self.px, 1)
+        w, h = self.screen.get_size()
+        if scaled.shape[:2] != (w, h):
+            scaled = scaled[:w, :h]
         pg.surfarray.blit_array(self.screen, scaled)
         pg.display.flip()
 

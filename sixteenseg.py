@@ -8,27 +8,27 @@ PATTERN = r'''
  - - .
 |/|\| 
  - - .
-'''[1:]
+'''[1:-1]
 
-TEMPLATE = '''\
+TEMPLATE = '''
  0 1  
 789A2 
  F B H
 6EDC3 
  5 4 G
-'''
+'''[1:-1]
 
 PATTERN_A = r'''
  _  _   
 |_\|_/|.
 |_/|_\|.
-'''[1:]
+'''[1:-1]
 
-TEMPLATE_A = '''\
+TEMPLATE_A = '''
  0  1   
 7F89BA2H
 65ED4C3G
-'''
+'''[1:-1]
 
 ASCII_TABLE = [
 #            !        "        #        $        %        &        '
@@ -38,7 +38,7 @@ ASCII_TABLE = [
 #   0        1        2        3        4        5        6        7
     0x044ff, 0x0040c, 0x08877, 0x0083f, 0x0888c, 0x090b3, 0x088fb, 0x0000f,
 #   8        9        :        ;        <        =        >        ?
-    0x088ff, 0x088bf, 0x30000, 0x0c000, 0x09400, 0x08830, 0x04900, 0x12807,
+    0x088ff, 0x088bf, 0x30000, 0x0c000, 0x01400, 0x08830, 0x04100, 0x12807,
 #   @        A        B        C        D        E        F        G
     0x00af7, 0x088cf, 0x02a3f, 0x000f3, 0x0223f, 0x080f3, 0x080c3, 0x008fb,
 #   H        I        J        K        L        M        N        O
@@ -61,7 +61,7 @@ ASCII_TABLE_A = ASCII_TABLE[:]
 ASCII_TABLE_A[ord('!') - 0x20] = 0x10004
 
 def ansi_len(s):
-    return len(re.sub(r'\x1b\[.*?m', '', s))
+    return len(re.sub(r'\x1b\[[^m]*m', '', s))
 
 def ansi_pad(s, w):
     return s + ' '*(w - ansi_len(s))
@@ -69,7 +69,7 @@ def ansi_pad(s, w):
 def hconcat(*strings):
     # Reverse lines so zip_longest pads at top instead of bottom
     line_lists = [s.splitlines()[::-1] for s in strings]
-    widths = [max(map(ansi_len, lines)) for lines in line_lists]
+    widths = [max(map(ansi_len, lines), default=0) for lines in line_lists]
     return '\n'.join(
         ''.join(ansi_pad(line, w) for line, w in zip(row, widths))
         for row in reversed(list(zip_longest(*line_lists, fillvalue='')))
@@ -88,12 +88,14 @@ def decode(x, ansi=True):
         s = re.sub(r'_(.)', '\x1b[4m\\1\x1b[24m', s)
     return s
 
-def sixteenseg(s, ansi=True):
+def sixteenseg(s, ansi=True, combine_dot=True):
     table = ASCII_TABLE_A if ansi else ASCII_TABLE
     rows = []
-    for line in s.splitlines():
+    for line in s.split('\n'):
         row = []
-        for c in re.findall(r'(?=[ -\x7f])[^.:!?][.:]|.', line):
+        if combine_dot:
+            line = re.findall(r'(?=[ -\x7f])[^.:!?][.:]|.', line)
+        for c in line:
             # Pass through non-ascii characters
             if not ' ' <= c[0] <= '\x7f':
                 row.append(c)
@@ -105,6 +107,9 @@ def sixteenseg(s, ansi=True):
             row.append(decode(code, ansi))
         rows.append(hconcat(*row))
     return '\n'.join(rows)
+
+def decode_segs(segs):
+    return decode(sum(1 << n for n in segs))
 
 
 if __name__ == '__main__':
