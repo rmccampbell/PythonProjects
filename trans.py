@@ -46,25 +46,26 @@ def vec4(x=0, y=None, z=0, w=1):
         return vec(x, 4, True)
     return np.array([x, y, z, w], float)
 
+
 def normalize(v):
     return v / norm(v)
 
 def unit2(x, y=None):
-    v = vec2(x, y)
-    return v / norm(v)
+    return normalize(vec2(x, y))
 
 def unit3(x, y=None, z=0):
-    v = vec3(x, y, z)
-    return v / norm(v)
+    return normalize(vec3(x, y, z))
 
 def unit4(x, y=None, z=0, w=1):
-    v = vec4(x, y, z, w)
-    return v / norm(v)
+    return normalize(vec4(x, y, z, w))
+
 
 def mat(arr, n):
     if np.isscalar(arr):
         return arr * np.eye(n)
-    arr = np.atleast_2d(arr)
+    arr = np.asarray(arr)
+    if arr.shape == (n, n):
+        return arr
     arr2 = np.eye(n)
     h, w = arr.shape
     arr2[:h, :w] = arr[:n, :n]
@@ -78,6 +79,7 @@ def mat3(arr=0):
 
 def mat4(arr=0):
     return mat(arr, 4)
+
 
 def ident2():
     return np.eye(2)
@@ -103,6 +105,7 @@ def scale4(x, y=None, z=None):
     elif z is None: z = 1
     return np.diag([x, y, z, 1])
 
+
 def rot2(th):
     return np.array([[np.cos(th), -np.sin(th)],
                      [np.sin(th),  np.cos(th)]])
@@ -122,7 +125,7 @@ def rotz3(th):
                      [np.sin(th),  np.cos(th), 0],
                      [0,           0,          1]])
 
-rot3 = rotz3
+rot3h = rotz3
 
 def rotx4(th):
     return np.array([[1, 0,           0,          0],
@@ -142,6 +145,78 @@ def rotz4(th):
                      [0,           0,          1, 0],
                      [0,           0,          0, 1]])
 
+def reflx2(a):
+    return np.diag([-1, 1])
+
+def refly2(a):
+    return np.diag([1, -1])
+
+def reflx3(a):
+    return np.diag([-1, 1, 1])
+
+def refly3(a):
+    return np.diag([1, -1, 1])
+
+def reflz3(a):
+    return np.diag([1, 1, -1])
+
+def reflx4(a):
+    return np.diag([-1, 1, 1, 1])
+
+def refly4(a):
+    return np.diag([1, -1, 1, 1])
+
+def reflz4(a):
+    return np.diag([1, 1, -1, 1])
+
+
+def skewx2(a):
+    return np.array([[1, a], [0, 1]])
+
+def skewy2(a):
+    return np.array([[1, 0], [a, 1]])
+
+def skewxy3(a):
+    return np.array([[1, a, 0], [0, 1, 0], [0, 0, 1]])
+
+def skewxz3(a):
+    return np.array([[1, 0, a], [0, 1, 0], [0, 0, 1]])
+
+def skewyx3(a):
+    return np.array([[1, 0, 0], [a, 1, 0], [0, 0, 1]])
+
+def skewyz3(a):
+    return np.array([[1, 0, 0], [0, 1, a], [0, 0, 1]])
+
+def skewzx3(a):
+    return np.array([[1, 0, 0], [0, 1, 0], [a, 0, 1]])
+
+def skewzy3(a):
+    return np.array([[1, 0, 0], [0, 1, 0], [0, a, 1]])
+
+skewx3h = skewxy3
+
+skewy3h = skewyx3
+
+def skewxy4(a):
+    return mat4(skewxy3(a))
+
+def skewxz4(a):
+    return mat4(skewxz3(a))
+
+def skewyx4(a):
+    return mat4(skewyx3(a))
+
+def skewyz4(a):
+    return mat4(skewyz3(a))
+
+def skewzx4(a):
+    return mat4(skewzx3(a))
+
+def skewzy4(a):
+    return mat4(skewzy3(a))
+
+
 def trans3(x, y):
     return np.array([[1, 0, x],
                      [0, 1, y],
@@ -156,6 +231,7 @@ def trans4(x, y, z=0):
 
 def persp_div(v):
     return v / v[-1]
+
 
 def frustum(left, right, bottom, top, near, far):
     return np.array([
