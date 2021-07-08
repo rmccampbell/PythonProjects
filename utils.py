@@ -547,23 +547,23 @@ def float_frombin(s):
 
 
 @pipe
-def head(s=None, n=10, wrap=True):
+def head(s=None, n=10, wrap=80):
     if s is None:
         return pipe(head, n=n, wrap=wrap)
     if isinstance(s, int):
         return pipe(head, n=s, wrap=wrap)
     if wrap:
-        s = textwrap.fill(str(s), 80, replace_whitespace=False)
+        s = textwrap.fill(str(s), wrap, replace_whitespace=False)
     print(''.join(s.splitlines(True)[:n]))
 
 @pipe
-def tail(s, n=10, wrap=True):
+def tail(s, n=10, wrap=80):
     if s is None:
         return pipe(tail, n=n, wrap=wrap)
     if isinstance(s, int):
         return pipe(tail, n=s, wrap=wrap)
     if wrap:
-        s = textwrap.fill(str(s), 80, replace_whitespace=False)
+        s = textwrap.fill(str(s), wrap, replace_whitespace=False)
     print(''.join(s.splitlines(True)[-n:]))
 
 @pipe
