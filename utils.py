@@ -1494,7 +1494,9 @@ def thousands(n, sep='_'):
     return format(n, ',').replace(',', sep)
 
 
+@alias('pu')
 @alias('punicode')
+@pipe
 def prunicode(s):
     for c in s:
         try:
