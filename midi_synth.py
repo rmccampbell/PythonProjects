@@ -38,10 +38,12 @@ class MidiSynth:
         self.start_time = 0.0
         self.last_time = 0.0
 
-        if args.envelope:
-            self.envelope = getattr(self, 'envelope_' + args.envelope)
-        if args.waveform:
-            self.waveform = getattr(self, 'waveform_' + args.waveform)
+        self.waveform = getattr(self, 'waveform_' + args.waveform)
+        self.envelope = getattr(self, 'envelope_' + args.envelope)
+        self.attack = args.attack
+        self.decay = args.decay
+        self.sustain = args.sustain
+        self.release = args.release
 
         self.stream = sd.OutputStream(
             device=args.output_device, samplerate=self.sample_rate, channels=1,
@@ -91,35 +93,36 @@ class MidiSynth:
     def envelope_flat(self, t_on, t_off):
         return np.float32((t_on >= 0) & (t_off < 0))
 
-    def envelope_asr(self, t_on, t_off, t_att=.1, t_rel=.5):
-        y = t_on/t_att
-        np.minimum(y, 1-t_off/t_rel, out=y)
+    def envelope_asr(self, t_on, t_off):
+        y = t_on/self.attack
+        np.minimum(y, 1-t_off/self.release, out=y)
         np.clip(y, 0, 1, out=y)
         return y
 
-    def envelope_adsr(self, t_on, t_off, t_att=.05, t_dec=.2, sus=.8, t_rel=.5):
-        y = t_on/t_att
-        dec_sus = np.maximum(1-(1-sus)/t_dec*(t_on-t_att), sus)
+    def envelope_adsr(self, t_on, t_off):
+        y = t_on/self.attack
+        dec_sus = np.maximum(1-(1-self.sustain)/self.decay*(t_on-self.attack),
+                             self.sustain)
         np.minimum(y, dec_sus, out=y)
-        np.minimum(y, sus*(1-t_off/t_rel), out=y)
+        np.minimum(y, self.sustain*(1-t_off/self.release), out=y)
         np.clip(y, 0, 1, out=y)
         return y
 
-    def envelope_asr_exp(self, t_on, t_off, t_att=.05, t_rel=.5):
-        y = 1. - np.exp(-4./t_att*t_on)
-        y *= np.where(t_off < 0, 1, np.exp(-4./t_rel*t_off))
-        # np.minimum(y, np.exp(-4./t_rel*t_off), out=y)
+    def envelope_asr_exp(self, t_on, t_off):
+        y = 1. - np.exp(-4./self.attack*t_on)
+        y *= np.where(t_off < 0, 1, np.exp(-4./self.release*t_off))
+        # np.minimum(y, np.exp(-4./self.release*t_off), out=y)
         np.clip(y, 0, 1, out=y)
         return y
 
-    def envelope_adsr_exp(self, t_on, t_off, t_att=.05, t_dec=.2, sus=.8, t_rel=.5):
-        y = 1. - np.exp(-4./t_att*t_on)
-        y *= np.where(t_on < t_att, 1, np.exp(-4./t_dec*(t_on-t_att))*(1-sus)+sus)
-        y *= np.where(t_off < 0, 1, np.exp(-4./t_rel*t_off))
+    def envelope_adsr_exp(self, t_on, t_off):
+        y = 1. - np.exp(-4./self.attack*t_on)
+        y *= np.where(
+            t_on < self.attack, 1,
+            np.exp(-4./self.decay*(t_on-self.attack))*(1-self.sustain)+self.sustain)
+        y *= np.where(t_off < 0, 1, np.exp(-4./self.release*t_off))
         np.clip(y, 0, 1, out=y)
         return y
-
-    envelope = envelope_adsr
 
     def waveform_sine(self, t):
         return np.sin(2*np.pi * t)
@@ -132,8 +135,6 @@ class MidiSynth:
 
     def waveform_tri(self, t):
         return abs((4*t - 1) % 4 - 2) - 1
-
-    waveform = waveform_tri
 
     def process_msg(self, msg):
         channel = self.channels[msg.channel]
@@ -156,7 +157,7 @@ class MidiSynth:
         for ch in range(16):
             channel = self.channels[ch]
             channel.notes = {n: note for n, note in channel.notes.items()
-                             if self.stream.time - note.offtime < 1.}
+                             if self.stream.time - note.offtime < self.release}
 
     def run(self):
         with self.stream:
@@ -187,29 +188,36 @@ def int_or_str(text):
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument(
-        '-l', '--list-ports', action='store_true',
-        help='show list of midi input ports and exit')
-    parser.add_argument(
-        '-L', '--list-outputs', action='store_true',
-        help='show list of audio output devices and exit')
-    parser.add_argument(
-        '-i', '--input-port', type=int_or_str,
-        help='midi input port (numeric ID or string)')
-    parser.add_argument(
-        '-o', '--output-device', type=int_or_str,
-        help='output device (numeric ID or string)')
-    parser.add_argument(
-        '-v', '--virtual-port', action='store_true',
-        help='open a virtual midi input port')
-    parser.add_argument(
-        '-t', '--latency', type=float, default=.5,
-        help='latency for audio output')
-    parser.add_argument('-e', '--envelope')
-    parser.add_argument('-w', '--waveform')
+    parser.add_argument('-l', '--list-ports', action='store_true',
+                        help='show list of midi input ports and exit')
+    parser.add_argument('-L', '--list-outputs', action='store_true',
+                        help='show list of audio output devices and exit')
+    parser.add_argument('-i', '--input-port', type=int_or_str,
+                        help='midi input port (numeric ID or string)')
+    parser.add_argument('-o', '--output-device', type=int_or_str,
+                        help='output device (numeric ID or string)')
+    parser.add_argument('-v', '--virtual-port', action='store_true',
+                        help='open a virtual midi input port')
+    parser.add_argument('-t', '--latency', type=float, default=.5,
+                        help='latency for audio output')
+    parser.add_argument('-w', '--waveform', default='tri',
+                        choices=['sine', 'square', 'saw', 'tri'],
+                        help='set the shape of the wave function')
+    parser.add_argument('-e', '--envelope', default='adsr',
+                        choices=['flat', 'asr', 'adsr', 'asr_exp', 'adsr_exp'],
+                        help='set the envelope shape')
+    parser.add_argument('-a', '--attack', type=float, default=.05,
+                        help='ADSR attack')
+    parser.add_argument('-d', '--decay', type=float, default=.2,
+                        help='ADSR decay')
+    parser.add_argument('-s', '--sustain', type=float, default=.8,
+                        help='ADSR sustain')
+    parser.add_argument('-r', '--release', type=float, default=.5,
+                        help='ADSR release')
     args = parser.parse_args()
     if args.list_outputs:
-        print(sd.query_devices())
+        # Some audio devices on windows have weird names with line breaks
+        print(str(sd.query_devices()).replace('\r\n', ''))
         parser.exit()
     if args.list_ports:
         print('\n'.join(mido.get_input_names()))
