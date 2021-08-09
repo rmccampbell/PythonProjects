@@ -9,13 +9,6 @@ def dash_none(x):
     return x if x != '-' else None
 
 if __name__ == '__main__':
-##    if sys.platform == 'win32':
-##        try:
-##            import winansi
-##            winansi.enable()
-##        except:
-##            pass
-
     p = argparse.ArgumentParser()
     p.add_argument('fgcolor', nargs='?', type=dash_none)
     p.add_argument('bgcolor', nargs='?', type=dash_none)
