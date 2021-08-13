@@ -1,4 +1,6 @@
 #!/usr/bin/env python3
+"""Prints text in double width/height on terminals with DECDHL support (e.g. mintty)"""
+
 import sys
 
 if __name__ == '__main__':
