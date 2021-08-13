@@ -4,6 +4,8 @@ They are mostly pretty unstructured and poorly commented but there's some cool s
 
 Some of the more interesting scripts are:
 
+- midi.py - a midi parser/sequencer built from scratch
+- midi_synth.py - a midi synthesizer (can be connected to midi sequencer using loopMIDI on Windows)
 - chess.py - 2-player chess in PyGame
 - chess2.pyw - primitive chess AI
 - life.py - Conway's Game of Life in PyGame
