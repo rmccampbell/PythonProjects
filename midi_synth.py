@@ -9,7 +9,8 @@ import numpy as np
 import sounddevice as sd
 import mido
 
-import midi
+def note_frequency(note):
+    return 440.0 * 2**((note - 69) / 12)
 
 @dataclass
 class Note:
@@ -141,7 +142,7 @@ class MidiSynth:
         if msg.type in ('note_on', 'note_off'):
             notes = channel.notes.copy()
             if msg.type == 'note_on' and msg.velocity:
-                freq = midi.note_frequency(msg.note)
+                freq = note_frequency(msg.note)
                 notes[msg.note] = Note(freq, msg.velocity/127, self.stream.time)
             else:
                 # notes.pop(msg.note, None)
@@ -205,15 +206,15 @@ if __name__ == '__main__':
                         help='set the shape of the wave function')
     parser.add_argument('-e', '--envelope', default='adsr',
                         choices=['flat', 'asr', 'adsr', 'asr_exp', 'adsr_exp'],
-                        help='set the envelope shape')
+                        help='set the envelope type')
     parser.add_argument('-a', '--attack', type=float, default=.05,
-                        help='ADSR attack')
+                        help='ADSR attack time')
     parser.add_argument('-d', '--decay', type=float, default=.2,
-                        help='ADSR decay')
+                        help='ADSR decay time')
     parser.add_argument('-s', '--sustain', type=float, default=.8,
-                        help='ADSR sustain')
+                        help='ADSR sustain level')
     parser.add_argument('-r', '--release', type=float, default=.5,
-                        help='ADSR release')
+                        help='ADSR release time')
     args = parser.parse_args()
     if args.list_outputs:
         # Some audio devices on windows have weird names with line breaks
