@@ -3,7 +3,7 @@
 import sys
 import argparse
 from dataclasses import dataclass, field, replace
-from time import perf_counter
+import time
 
 import numpy as np
 import sounddevice as sd
@@ -166,6 +166,7 @@ class MidiSynth:
                 for msg in self.input.iter_pending():
                     self.process_msg(msg)
                 self.flush_notes()
+                time.sleep(.01)
 
 
 def main(args):
