@@ -36,9 +36,8 @@ def translate(phrase, lang1='auto', lang2=None):
     phrase = urllib.parse.quote(phrase)
     url = apiurl.format(lang1=lang1, lang2=lang2, text=phrase)
     res = requests.get(url)
+    res.raise_for_status()
     js = res.json()
-    if not js[0]:
-        raise Exception('language not recognized')
     return ''.join(part[0] for part in js[0])
 
 def change_encoding(file, encoding='utf-8'):
