@@ -4,6 +4,7 @@ import sys
 import argparse
 from dataclasses import dataclass, field, replace
 import time
+from typing import Dict
 
 import numpy as np
 import sounddevice as sd
@@ -21,14 +22,14 @@ class Note:
 
 @dataclass
 class Channel:
-    notes: dict[int, Note] = field(default_factory=dict)
+    notes: Dict[int, Note] = field(default_factory=dict)
     program: int = 0
     pitch_bend: float = 0.0
 
 class MidiSynth:
     def __init__(self, args):
         input_port = args.input_port
-        if isinstance(input_port, int):
+        if isinstance(input_port, int) and not args.virtual_port:
             input_port = mido.get_input_names()[input_port]
         self.input = mido.open_input(input_port, virtual=args.virtual_port)
         self.channels = [Channel() for i in range(16)]
@@ -53,7 +54,7 @@ class MidiSynth:
     def close(self):
         self.input.close()
         self.stream.close()
-    
+
     def __enter__(self):
         return self
 
@@ -69,7 +70,7 @@ class MidiSynth:
         t = t.reshape(-1, 1)
         self.synthesize(outdata, t)
         self.start_idx += frames
-        # print(f'{self.stream.time - time.currentTime:f} '
+        # print(f'{time.currentTime:f} {self.stream.time - time.currentTime:f} '
         #       f'{time.outputBufferDacTime - time.currentTime:f} '
         #       f'{time.currentTime - self.last_time:f} {frames}')
         # self.last_time = time.currentTime
@@ -162,6 +163,7 @@ class MidiSynth:
 
     def run(self):
         with self.stream:
+            self.stream.start()
             while True:
                 for msg in self.input.iter_pending():
                     self.process_msg(msg)
@@ -176,8 +178,6 @@ def main(args):
             synth.run()
     except KeyboardInterrupt:
         pass
-    except Exception as e:
-        sys.exit(f'{type(e).__name__}: {e}')
 
 
 def int_or_str(text):
