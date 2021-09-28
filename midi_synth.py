@@ -147,7 +147,8 @@ class MidiSynth:
                 notes[msg.note] = Note(freq, msg.velocity/127, self.stream.time)
             else:
                 # notes.pop(msg.note, None)
-                if note := notes.get(msg.note):
+                note = notes.get(msg.note)
+                if note:
                     notes[msg.note] = replace(note, offtime=self.stream.time)
             channel.notes = notes
         elif msg.type == 'program_change':
