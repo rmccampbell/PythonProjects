@@ -1958,7 +1958,7 @@ class DynamicPrompt:
 
 
 
-class MapSeq(collections.Sequence):
+class MapSeq(cabc.Sequence):
     def __init__(self, seq, func):
         self.seq = seq
         self.func = func
