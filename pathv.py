@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-import sys, os, argparse, ctypes
+import sys, os, argparse, ctypes, shlex
 import os.path as osp
 
 def pathv(add=None, index=None, remove=None, contains=None, lines=False,
@@ -32,7 +32,7 @@ def pathv(add=None, index=None, remove=None, contains=None, lines=False,
     if lines:
         print(value.replace(os.pathsep, '\n'))
     elif evalable:
-        print('PATH=' + value)
+        print('PATH=' + shlex.quote(value))
     else:
         print(value)
 
