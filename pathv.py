@@ -2,7 +2,8 @@
 import sys, os, argparse, ctypes
 import os.path as osp
 
-def pathv(add=None, index=None, remove=None, contains=None, lines=False):
+def pathv(add=None, index=None, remove=None, contains=None, lines=False,
+          evalable=False):
     value = os.environ['PATH']
     values = value.split(os.pathsep)
     if contains:
@@ -30,8 +31,10 @@ def pathv(add=None, index=None, remove=None, contains=None, lines=False):
         value = os.pathsep.join(values)
     if lines:
         print(value.replace(os.pathsep, '\n'))
-    else:
+    elif evalable:
         print('PATH=' + value)
+    else:
+        print(value)
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
@@ -40,6 +43,7 @@ if __name__ == '__main__':
     parser.add_argument('-r', '--remove')
     parser.add_argument('-c', '--contains', nargs='+')
     parser.add_argument('-l', '--lines', action='store_true')
+    parser.add_argument('-e', '--evalable', action='store_true')
     args = parser.parse_args()
     try:
         pathv(**vars(args))
