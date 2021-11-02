@@ -390,6 +390,13 @@ def nthroots(z, n):
     a = cmath.phase(z)
     return [r * cmath.exp((a+2*math.pi*k)*1j/n) for k in range(n)]
 
+def np_nthroots(z, n):
+    import numpy as np
+    r = np.abs(z)**(1/n)
+    a = np.angle(z)
+    k = np.arange(n).reshape((n,)+(1,)*a.ndim)
+    return r * np.exp((a+2*np.pi*k)*1j/n)
+
 
 def randcolor(h=(0, 1), s=(.75, 1), v=(.75, 1), a=None):
     import colorsys

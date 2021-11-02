@@ -24,9 +24,11 @@ langs = {'afrikaans': 'af', 'albanian': 'sq', 'arabic': 'ar',
          'telugu': 'te', 'thai': 'th', 'turkish': 'tr', 'ukrainian': 'uk',
          'urdu': 'ur', 'vietnamese': 'vi', 'welsh': 'cy', 'yiddish': 'yi'}
 
+rlangs = {v: k for k, v in langs.items()}
+
 apiurl = 'https://translate.googleapis.com/translate_a/single?client=gtx&sl={lang1}&tl={lang2}&dt=t&q={text}'
 
-def translate(phrase, lang1='auto', lang2=None):
+def translate(phrase, lang1='auto', lang2=None, return_lang=False):
     if lang2 is None:
         lang1, lang2 = 'auto', lang1
     if lang2 == 'auto':
@@ -38,7 +40,10 @@ def translate(phrase, lang1='auto', lang2=None):
     res = requests.get(url)
     res.raise_for_status()
     js = res.json()
-    return ''.join(part[0] for part in js[0])
+    translated = ''.join(part[0] for part in js[0])
+    if return_lang:
+        return translated, rlangs.get(js[2], js[2])
+    return translated
 
 def change_encoding(file, encoding='utf-8'):
     if file.encoding == encoding:
@@ -54,6 +59,7 @@ if __name__ == '__main__':
     p.add_argument('phrase')
     p.add_argument('lang1', nargs='?', default='auto')
     p.add_argument('lang2', nargs='?')
+    p.add_argument('-l', '--print-lang', action='store_true')
     p.add_argument('-u', '--utf8', action='store_true')
     args = p.parse_args()
     if args.utf8:
@@ -62,6 +68,9 @@ if __name__ == '__main__':
     if args.phrase == '-':
         args.phrase = sys.stdin.read()
     try:
-        print(translate(args.phrase, args.lang1, args.lang2))
+        text, lang = translate(args.phrase, args.lang1, args.lang2, True)
+        if args.print_lang:
+            print(lang)
+        print(text)
     except Exception as e:
         sys.exit('Error: {}: {}'.format(type(e).__name__, e))

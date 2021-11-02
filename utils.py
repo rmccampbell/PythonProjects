@@ -934,8 +934,8 @@ bf = lambda bits=8, sign=False, prefix=False: \
 hf = lambda digs=8, sign=False, prefix=False: \
      pipe(lambda n: print(hexfmt(n, digs, sign, prefix)))
 pf = lambda p=4: pipe(lambda f: print('%.*g' % (p, f)))
-hd = lambda n=10, wrap=True: pipe(head, n=n, wrap=wrap)
-tl = lambda n=10, wrap=True: pipe(tail, n=n, wrap=wrap)
+hd = lambda n=10, wrap=80: pipe(head, n=n, wrap=wrap)
+tl = lambda n=10, wrap=80: pipe(tail, n=n, wrap=wrap)
 doc = pipe(inspect.getdoc)
 dp = pipe(lambda obj: print(inspect.getdoc(obj)))
 sig = pipe(lambda f: print(inspect.signature(f)))
