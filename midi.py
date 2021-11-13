@@ -472,6 +472,9 @@ class MidiPlayer:
     def note_off(self, note, velocity=0, channel=0):
         self.send_message([NoteOff + channel, parse_note(note), velocity])
 
+    def pitch_bend(self, bend, channel=0):
+        self.send_message([PitchBend + channel, *pitch_bend_bytes(bend)])
+
     def all_notes_off(self, channel=None, fallback=True):
         channels = [channel] if channel is not None else range(16)
         for ch in channels:
@@ -494,35 +497,39 @@ class MidiPlayer:
         return time.perf_counter()
 
     def play_midi(self, file=None, events=None, volume=1, tempo_scale=1,
-                  start=0, sysex=False, print_progress=True):
+                  start=0, loop=False, sysex=False, print_progress=True):
         if events is None:
             events = MidiFile.read(file).schedule_events(sysex=True, meta=True)
         tottime = events[-1][1] / tempo_scale
-        last_ts = 0
         notes_on = set()
         try:
-            t0 = self.time() - start
-            for evt, ts in events:
-                ts /= tempo_scale
-                if ts < start and evt[0] & STATUS_MASK in (NoteOn, NoteOff):
-                    continue
-                # Print before waiting to hide delay
-                if print_progress and last_ts != ts and last_ts >= start:
-                    print(f'\r{fmt_time(last_ts)}/{fmt_time(tottime)}', end='')
-                self.wait(ts + t0 - self.time())
-                if sysex and evt[0] == SysEx:
-                    self.send_sysex(b'\xf0' + evt[1])
-                elif sysex and evt[0] == SysExEsc:
-                    self.send_sysex(evt[1])
-                elif evt[0] < NonMidi:
-                    if evt[0] & STATUS_MASK == NoteOn and evt[2]:
-                        if volume != 1:
-                            evt = (evt[0], evt[1], min(int(evt[2]*volume), 127))
-                        notes_on.add((evt[0] & CHANNEL_MASK, evt[1]))
-                    elif evt[0] & STATUS_MASK in (NoteOn, NoteOff):
-                        notes_on.discard((evt[0] & CHANNEL_MASK, evt[1]))
-                    self.send_message(bytes(evt))
-                last_ts = ts
+            do_loop = True
+            while do_loop:
+                last_ts = 0
+                t0 = self.time() - start
+                for evt, ts in events:
+                    ts /= tempo_scale
+                    if ts < start and evt[0] & STATUS_MASK in (NoteOn, NoteOff):
+                        continue
+                    # Print before waiting to hide delay
+                    if print_progress and last_ts != ts and last_ts >= start:
+                        print(f'\r{fmt_time(last_ts)}/{fmt_time(tottime)}', end='')
+                    self.wait(ts + t0 - self.time())
+                    if sysex and evt[0] == SysEx:
+                        self.send_sysex(b'\xf0' + evt[1])
+                    elif sysex and evt[0] == SysExEsc:
+                        self.send_sysex(evt[1])
+                    elif evt[0] < NonMidi:
+                        if evt[0] & STATUS_MASK == NoteOn and evt[2]:
+                            if volume != 1:
+                                evt = (evt[0], evt[1], min(int(evt[2]*volume), 127))
+                            notes_on.add((evt[0] & CHANNEL_MASK, evt[1]))
+                        elif evt[0] & STATUS_MASK in (NoteOn, NoteOff):
+                            notes_on.discard((evt[0] & CHANNEL_MASK, evt[1]))
+                        self.send_message(bytes(evt))
+                    last_ts = ts
+                do_loop = loop
+                start=0
             self.wait(.5)
         except KeyboardInterrupt:
             pass
@@ -698,10 +705,11 @@ def parse_time(string):
 
 
 def play_midi(file=None, events=None, volume=1, tempo_scale=1, start=0,
-              sysex=False, print_progress=True, output=None):
+              loop=False, sysex=False, print_progress=True, output=None):
     with MidiPlayer(output) as player:
         player.play_midi(
-            file, events, volume, tempo_scale, start, sysex, print_progress)
+            file=file, events=events, volume=volume, tempo_scale=tempo_scale,
+            start=start, loop=loop, sysex=sysex, print_progress=print_progress)
 
 
 def play_notes(notes, duration=0.5, delay=0.0, velocity=127, channel=0,
@@ -729,9 +737,10 @@ def main():
     p.add_argument('-p', '--progress', action='store_true', default=True, help='(default)')
     p.add_argument('-P', '--no-progress', dest='progress', action='store_false')
     p.add_argument('-S', '--sysex', action='store_true')
+    p.add_argument('-L', '--loop', action='store_true')
     p.add_argument('-o', '--output', type=int)
     p.add_argument('-b', '--backend')
-    p.add_argument('-L', '--length', action='store_true')
+    p.add_argument('-T', '--length', action='store_true')
     p.add_argument('-A', '--all-notes-off', action='store_true')
     p.add_argument('-l', '--list-outputs', action='store_true')
     args = p.parse_args()
@@ -751,8 +760,8 @@ def main():
     else:
         play_midi(
             args.file, volume=args.volume, tempo_scale=args.tempo_scale,
-            start=args.start, sysex=args.sysex, print_progress=args.progress,
-            output=args.output)
+            start=args.start, loop=args.loop, sysex=args.sysex,
+            print_progress=args.progress, output=args.output)
 
 if __name__ == '__main__':
     main()
