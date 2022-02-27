@@ -57,6 +57,10 @@ charsets = {'hiragana': HIRAGANA, 'hiragana-ext': HIRAGANA_EXT,
             'katakana-all': KATAKANA + KATAKANA_EXT,
             'all': HIRAGANA + HIRAGANA_EXT + KATAKANA + KATAKANA_EXT}
 
+def kana_name(c):
+    name = unicodedata.name(c).split()[-1].lower()
+    return IRREGULAR.get(name, name)
+
 def print_double(s):
     print('\x1b#3' + s)
     print('\x1b#4' + s)
@@ -75,8 +79,7 @@ if __name__ == '__main__':
                 print_double(c)
             else:
                 print(c)
-            name = unicodedata.name(c).split()[-1].lower()
-            name = IRREGULAR.get(name, name)
+            name = kana_name(c)
             if input().lower() == name:
                 print('Correct!')
             else:
