@@ -121,7 +121,7 @@ class VideoPlayer(QtWidgets.QMainWindow):
         if url.isLocalFile():
             self.directory = os.path.dirname(url.toLocalFile())
         else:
-            url = QUrl(get_video_url(url.toString()))
+            url = QUrl(youtubedl_resolve_url(url.toString()))
         self.media.setMedia(QtMultimedia.QMediaContent(url))
         self.media.play()
 
@@ -263,13 +263,14 @@ class VideoPlayer(QtWidgets.QMainWindow):
         windows.remove(self)
 
 
-def get_video_url(url):
+def youtubedl_resolve_url(url):
+    flags = subprocess.CREATE_NO_WINDOW if os.name == 'nt' else 0
     try:
         return subprocess.run(
             ['youtube-dl', '--get-url', url],
-            capture_output=True, check=True, text=True,
-            creationflags=subprocess.CREATE_NO_WINDOW).stdout.strip()
-    except:
+            capture_output=True, check=True, text=True, creationflags=flags
+        ).stdout.strip()
+    except (FileNotFoundError, subprocess.CalledProcessError):
         return url
 
 

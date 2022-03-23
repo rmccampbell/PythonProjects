@@ -1,12 +1,14 @@
 import functools, itertools, collections, inspect, random, operator
 import threading, time
 from functools import partial, total_ordering
-from collections import Iterable, deque
+from collections import deque
 from itertools import islice, groupby, chain, combinations
 try:
     from itertools import zip_longest
+    from collections.abc import Iterable
 except ImportError:
     from itertools import izip_longest as zip_longest
+    from collections import Iterable
 
 class Sentinel(object):
     def __init__(self, repr=None):

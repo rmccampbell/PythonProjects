@@ -175,7 +175,7 @@ class MidiSynth:
 def main(args):
     try:
         with MidiSynth(args) as synth:
-            print('Recieving midi messages... Press Ctr+C to quit')
+            print('Receiving midi messages... Press Ctr+C to quit')
             synth.run()
     except KeyboardInterrupt:
         pass
