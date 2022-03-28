@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 import math, cmath, re, struct, functools, operator, string, itertools, io
-import codecs
+import codecs, unicodedata
 
 def isprime_re(n):
     return not re.match(r'^1?$|^(11+?)\1+$', '1'*n)
@@ -284,6 +284,13 @@ def human_readable(n, prec=1, strip=True):
     if strip and '.' in num:
         num = num.rstrip('0').rstrip('.')
     return num + 'BKMGTPE'[power]
+
+
+def parse_human(s):
+    s = s.strip().upper()
+    m = re.fullmatch(r'(.*?)([KMGTPE])?B?', s)
+    power = ' KMGTPE'.index(m.group(2) or ' ')
+    return int(float(m.group(1)) * 1024**power)
 
 
 def download_size(url, readable=False):
