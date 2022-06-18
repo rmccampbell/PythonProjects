@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-import sys, os, struct, enum, time, re, math, warnings
+import sys, os, struct, enum, time, re, math, collections, warnings
 
 #######################
 # Midi File Constants #
@@ -58,7 +58,7 @@ class MetaEvent(HexInt, enum.Enum):
     MIDIPort  = 0x21
     EndOfTrk  = 0x2f
     SetTempo  = 0x51
-    SMTPEOff  = 0x54
+    SMPTEOff  = 0x54
     TimeSig   = 0x58
     KeySig    = 0x59
     Specific  = 0x7f
@@ -113,6 +113,8 @@ class ScheduledMidiEvents(list):
     def __repr__(self):
         return f'ScheduledMidiEvents({super().__repr__()})'
 
+SmpteDivision = collections.namedtuple('SmpteDivision', ['fps', 'tpf'])
+
 
 class MidiFile:
     def __init__(self, tracks, division, format=1):
@@ -136,7 +138,7 @@ class MidiFile:
         if isinstance(self.division, int):
             sec_per_tick = tempo / (self.division * 1000_000)
         else:
-            sec_per_tick = 1 / (self.division[0] * self.division[1])
+            sec_per_tick = 1 / (self.division.fps * self.division.tpf)
         midievents = ScheduledMidiEvents()
         last_tick = last_ts = 0
         for evt, tick in self.merged_events():
@@ -174,9 +176,7 @@ class MidiFile:
                     raise ValueError('failed to parse midi file: multiple header chunks found')
                 fmt, _ntrks, div = header_data_fmt.unpack_from(buffer, i)
                 if div & 0x8000:
-                    fps = -(div >> 8)
-                    tpf = div & 0xff
-                    div = (fps, tpf)
+                    div = SmpteDivision(-(div >> 8), div & 0xff)
             elif fmt is None:
                 raise ValueError('failed to parse midi file: no header chunk found')
             elif typ == b'MTrk':
@@ -239,7 +239,7 @@ def metaevent_data(typ, data):
     if typ in {MetaEvent.SeqNumber, MetaEvent.ChannPref,
                MetaEvent.MIDIPort, MetaEvent.SetTempo}:
         data = int.from_bytes(data, 'big')
-    elif typ == MetaEvent.SMTPEOff:
+    elif typ == MetaEvent.SMPTEOff:
         data = tuple(data)
     elif typ == MetaEvent.TimeSig:
         data = data[0], 2**data[1], data[2], data[3]
@@ -359,6 +359,8 @@ def frequency_to_note(freq):
 def scale(start, end, intervals):
     start = parse_note(start)
     end = parse_note(end)
+    if start > end:
+        return scale(end, start, intervals)[::-1]
     i = 0
     l = []
     while start <= end:
@@ -367,14 +369,18 @@ def scale(start, end, intervals):
         i = (i + 1) % len(intervals)
     return l
 
+MAJOR_SCALE = [2, 2, 1, 2, 2, 2, 1]
+NATURAL_MINOR_SCALE = [2, 1, 2, 2, 1, 2, 2]
+HARMONIC_MINOR_SCALE = [2, 1, 2, 2, 1, 3, 1]
+
 def major_scale(start, end):
-    return scale(start, end, [2, 2, 1, 2, 2, 2, 1])
+    return scale(start, end, MAJOR_SCALE)
 
 def natural_minor_scale(start, end):
-    return scale(start, end, [2, 1, 2, 2, 1, 2, 2])
+    return scale(start, end, NATURAL_MINOR_SCALE)
 
 def harmonic_minor_scale(start, end):
-    return scale(start, end, [2, 1, 2, 2, 1, 3, 1])
+    return scale(start, end, HARMONIC_MINOR_SCALE)
 
 
 def pitch_bend_bytes(p):
