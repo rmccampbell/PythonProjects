@@ -1310,7 +1310,7 @@ def Crypto():
 def OpenGL():
     import OpenGL
     _print_exec('import OpenGL\n'
-                'from OpenGL import GL, GLU, GLUT\n'
+                'from OpenGL import GL, GLU\n'
                 'from OpenGL.GL import shaders\n'
                 'from OpenGL.arrays.vbo import VBO\n'
                 'import glm')
