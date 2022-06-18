@@ -2,21 +2,30 @@
 import math, cmath, re, struct, functools, operator, string, itertools, io
 import codecs
 
-def isprime_re(n):
-    return not re.match(r'^1?$|^(11+?)\1+$', '1'*n)
-
-
 def tobase(n, b):
+    if b <= 1:
+        raise ValueError('base must be > 1')
+    sgn, n = n < 0, abs(n)
     digs = []
     while n:
         n, r = divmod(n, b)
         digs.append('0123456789abcdefghijklmnopqrstuvwxyz'[r])
-    return ''.join(digs)[::-1] or '0'
+    return ('-' if sgn else '') + ''.join(digs)[::-1] or '0'
 
 def frombase(s, b):
+    s = s.strip()
+    if not s:
+        raise ValueError('invalid number format')
+    sgn = 1
+    if s.startswith('-'):
+        sgn = -1
+        s = s[1:]
     digs = dict(zip('0123456789abcdefghijklmnopqrstuvwxyz', range(math.ceil(b))))
-    # return sum(digs[c]*b**i for i, c in enumerate(reversed(s.lower())))
-    return functools.reduce(lambda n, c: n*b + digs[c], s.lower(), 0)
+    # return sgn * sum(digs[c]*b**i for i, c in enumerate(reversed(s.lower())))
+    try:
+        return sgn * functools.reduce(lambda n, c: n*b + digs[c], s.lower(), 0)
+    except KeyError:
+        raise ValueError('invalid number format for base {}'.format(b))
 
 
 ##def float_tobase(num, b, p=10, pad0=False):
@@ -36,6 +45,8 @@ def frombase(s, b):
 ##    return ''.join(ss)
 
 def float_tobase(num, b, p=10, pad0=False):
+    if b <= 1:
+        raise ValueError('base must be > 1')
     p = max(p, 0)
     ss = ['-'] if num < 0 else []
     num = abs(num)
@@ -49,9 +60,13 @@ def float_tobase(num, b, p=10, pad0=False):
         ss.append('0123456789abcdefghijklmnopqrstuvwxyz'[int(dig)])
         if i == e:
             ss.append('.')
-    return ''.join(ss)
+    s = ''.join(ss)
+    return s if pad0 else s.rstrip('0')
 
 def float_frombase(s, b):
+    s = s.strip()
+    if not re.match(r'^-?[0-9a-zA-Z]*\.?[0-9a-zA-Z]*$', s):
+        raise ValueError('invalid number format')
     exp = 0
     point = s.find('.')
     if point >= 0:
@@ -390,13 +405,6 @@ def nthroots(z, n):
     a = cmath.phase(z)
     return [r * cmath.exp((a+2*math.pi*k)*1j/n) for k in range(n)]
 
-def np_nthroots(z, n):
-    import numpy as np
-    r = np.abs(z)**(1/n)
-    a = np.angle(z)
-    k = np.arange(n).reshape((n,)+(1,)*a.ndim)
-    return r * np.exp((a+2*np.pi*k)*1j/n)
-
 
 def randcolor(h=(0, 1), s=(.75, 1), v=(.75, 1), a=None):
     import colorsys
@@ -545,6 +553,23 @@ def codec_error_fallback_cp1252(e):
 codec_error_fallback_cp1252.register = lambda: codecs.register_error(
     'fallback_cp1252', codec_error_fallback_cp1252)
 
+
+def split_unicode_surrogates(s):
+    bs = s.encode('utf-16le')
+    return ''.join(bs[i:i+2].decode('utf-16le', 'surrogatepass')
+                   for i in range(0, len(bs), 2))
+
+def combine_unicode_surrogates(s):
+    return s.encode('utf-16le', 'surrogatepass').decode('utf-16le')
+
+
+def unicode_escape(s):
+    return s.encode('unicode_escape').decode()
+
+def unicode_unescape(s):
+    return s.encode('latin-1', 'backslashreplace').decode('unicode_escape')
+
+
 def farey_approx(x, m=100):
     an, ad = 0, 1
     bn, bd = 1, 0
@@ -557,8 +582,9 @@ def farey_approx(x, m=100):
             bn, bd = cn, cd
         else:
             an, ad = cn, cd
+        if ad + bd > m:
+            break
         cn, cd = an + bn, ad + bd
-        print((an,ad), (bn,bd), (cn,cd))
     return cn, cd
 
 
@@ -579,10 +605,50 @@ def parse_time(string):
     return float(string)
 
 
-# Get image extents for integer pixel boundaries in Matplotlib 
 def integer_extent(array, origin='upper'):
+    """Get image extents for integer pixel boundaries in Matplotlib"""
     h, w = array.shape[:2]
     if origin == 'upper':
         return (0, w, h, 0)
     else:
         return (0, w, 0, h)
+
+
+def gauss_seidel(eqs, maxiters=20, rel_tol=1e-9, abs_tol=0):
+    """Simultaneous equation solver"""
+    n = len(eqs)
+    assert all(len(eq) == n+1 for eq in eqs)
+    vars = [0] * n
+    iters = 0
+    converged = False
+    while not converged and iters < maxiters:
+        iters += 1
+        converged = True
+        for i, (oldvar, eq) in enumerate(zip(vars, eqs)):
+            vars[i] = ((sum(eq[j]*vars[j] for j in range(n) if j != i) + eq[-1])
+                       / -eq[i])
+            if not math.isclose(vars[i], oldvar,
+                                rel_tol=rel_tol, abs_tol=abs_tol):
+                converged = False
+    return vars
+
+
+def segment_intersect(ab, cd):
+    # a + t1*(b-a) == c + t2*(d-c)
+    # t1*(b-a) - t2*(d-c) == c - a
+    # [ab, -cd]*[t1, t2].T == c - a
+    # t = [ab, -cd]**-1 * ac
+    # det = ab.x*-cd.y + cd.x*ab.y
+    # t = [[-cd.y, cd.x], [-ab.y, ab.x]] * ac / det
+    # t = [-cd.y*ac.x + cd.x*ac.y, -ab.y*ac.x + ab.x*ac.y] / det
+    (ax, ay), (bx, by) = ab
+    (cx, cy), (dx, dy) = cd
+    abx, aby = bx - ax, by - ay
+    cdx, cdy = dx - cx, dy - cy
+    acx, acy = cx - ax, cy - ay
+    inv_det = 1/(abx*-cdy + cdx*aby)
+    t1 = (-cdy*acx + cdx*acy) * inv_det
+    t2 = (-aby*acx + abx*acy) * inv_det
+    if 0 <= t1 <= 1 and 0 <= t2 <= 1:
+        return (t1*abx + ax, t1*aby + ay)
+    return None
