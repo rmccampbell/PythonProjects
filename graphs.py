@@ -27,7 +27,7 @@ def get_path(s, t, pred):
     return path[::-1]
 
 def bfs_all(adj, s):
-    adj = _func1(adj)
+    adj = _func1(adj, ())
     q = collections.deque([s])
     d = {s: 0}
     pred = {s: None}
@@ -43,7 +43,7 @@ def bfs_all(adj, s):
     return d, pred
 
 def bfs(adj, s, t):
-    adj = _func1(adj)
+    adj = _func1(adj, ())
     q = collections.deque([s])
     d = {s: 0}
     pred = {s: None}
@@ -62,7 +62,7 @@ def bfs(adj, s, t):
 
 
 def dijkstra_all(adj, w, s):
-    adj = _func1(adj)
+    adj = _func1(adj, ())
     w = _func2(w)
     q = [(0, s)]
     d = {s: 0}
@@ -84,7 +84,7 @@ def dijkstra_all(adj, w, s):
     return d, pred
 
 def dijkstra(adj, w, s, t):
-    adj = _func1(adj)
+    adj = _func1(adj, ())
     w = _func2(w)
     q = [(0, s)]
     d = {s: 0}
@@ -109,17 +109,21 @@ def dijkstra(adj, w, s, t):
 
 
 
-def l1_dist(u, v):
+def manhattan_dist(u, v):
     return sum(abs(ui-vi) for ui, vi in zip(u, v))
 
-def l2_dist(u, v):
+def euclidean_dist(u, v):
     return math.sqrt(sum((ui-vi)**2 for ui, vi in zip(u, v)))
 
-def linf_dist(u, v):
+def chebyshev_dist(u, v):
     return max(abs(ui-vi) for ui, vi in zip(u, v))
 
-def a_star(adj, w, s, t, h=l1_dist):
-    adj = _func1(adj)
+l1_dist = manhattan_dist
+l2_dist = euclidean_dist
+l_inf_dist = chebyshev_dist
+
+def a_star(adj, w, s, t, h=manhattan_dist):
+    adj = _func1(adj, ())
     w = _func2(w)
     f = {s: h(s, t)}
     g = {s: 0}
@@ -147,7 +151,7 @@ def a_star(adj, w, s, t, h=l1_dist):
 
 
 def max_flow(adj, cap, s, t):
-    adj = _func1(adj)
+    adj = _func1(adj, ())
     cap = _func2(cap, default=0)
     maxf = 0
     flow = {}
@@ -186,5 +190,38 @@ def get_path_edges(s, t, pred):
     return path[::-1]
 
 
-def matrix_to_adj(mat):
-    return lambda n: [i for i, x in enumerate(mat[n]) if x]
+def matrix_to_adj_fun(mat):
+    return lambda v: [u for u, x in enumerate(mat[v]) if x]
+
+def matrix_to_adj_list(mat):
+    return [[u for u, x in enumerate(row) if x] for row in mat]
+
+def edges_to_adj(edges, directed=True):
+    adj = {}
+    for u, v in edges:
+        adj.setdefault(u, set()).add(v)
+        if not directed:
+            adj.setdefault(v, set()).add(u)
+    return adj
+
+def von_neumann_neighborhood(v=None, width=None, height=None):
+    if v is None:
+        return lambda v: von_neumann_neighborhood(v, width=width, height=height)
+    x, y = v
+    neighbors = [(x+1, y), (x, y+1), (x-1, y), (x, y-1)]
+    return [(x2, y2) for x2, y2 in neighbors
+            if (width is None or 0 <= x2 < width)
+            and (height is None or 0 <= y2 < height)]
+
+def moore_neighborhood(v=None, width=None, height=None):
+    if v is None:
+        return lambda v: moore_neighborhood(v, width=width, height=height)
+    x, y = v
+    neighbors = [(x+1, y), (x+1, y+1), (x, y+1), (x-1, y+1),
+                 (x-1, y), (x-1, y-1), (x, y-1), (x+1, y-1)]
+    return [(x2, y2) for x2, y2 in neighbors
+            if (width is None or 0 <= x2 < width)
+            and (height is None or 0 <= y2 < height)]
+
+four_neighborhood = von_neumann_neighborhood
+eight_neighborhood = moore_neighborhood
