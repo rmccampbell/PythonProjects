@@ -183,7 +183,8 @@ def double_frombits(s):
 
 def parse_roman(s):
     s = s.upper()
-    digs = dict(I=1, V=5, X=10, L=50, C=100, D=500, M=1000)
+    digs = dict(I=1, V=5, X=10, L=50, C=100, D=500, M=1000,
+                ↀ=1000, ↁ=5000, ↂ=10_000, ↇ=50_000, ↈ=100_000)
     x = 0
     for i, c in enumerate(s):
         n = digs[c]
