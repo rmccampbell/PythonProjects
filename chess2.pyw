@@ -1,4 +1,4 @@
-#!/usr/bin/env python3
+#!/usr/bin/python3
 """Usage: chess2.pyw [WHITE_CPU=0] [BLACK_CPU=1] [MINIMAX_DEPTH=4]"""
 
 import sys, os, random, threading

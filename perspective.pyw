@@ -1,4 +1,4 @@
-#!/usr/bin/env python3
+#!/usr/bin/python3
 import pygame, numpy, math, pygame.gfxdraw
 from pygame.locals import *
 
