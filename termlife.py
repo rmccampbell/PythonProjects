@@ -137,7 +137,7 @@ class Life:
                 self.display()
 
     def tick(self):
-        #neighbors = convolve2d(self.board, [[1,1,1],[1,0,1],[1,1,1]], 'same')
+        # neighbors = convolve2d(self.board, [[1,1,1],[1,0,1],[1,1,1]], 'same')
         padded = np.pad(self.board, 1, 'wrap' if self.wrap else 'constant')
         neighbors = np.zeros_like(self.board, int)
         for di, dj in [(-1, -1), (-1, 0), (-1, 1), (0, 1),
@@ -148,7 +148,7 @@ class Life:
         self.board[neighbors == 3] = True
 
     def display(self):
-        self.screen.clear()
+        # self.screen.clear()
         grid = self.board[self.scrollx: self.scrollx + self.swidth,
                           self.scrolly: self.scrolly + self.sheight].T.tolist()
         chars = ' ▄▀█'
@@ -156,7 +156,7 @@ class Life:
             row1 = grid[i]
             row2 = grid[i+1] if i+1 < len(grid) else [False]*len(row1)
             line = [chars[2*x+y] for x, y in zip(row1, row2)]
-            self.screen.insstr(i//2, 0, ''.join(line))
+            self.screen.addstr(i//2, 0, ''.join(line))
         self.screen.refresh()
 
 
