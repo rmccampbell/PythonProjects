@@ -13,7 +13,7 @@ Some of the more interesting scripts are:
 - waves.py - 2d wave simulator
 - perspective.pyw - 3d perspective renderer in PyGame
 - bf.py - Brainfuck interpreter
-- ibcm.py - assembler and interpreter for [Itty Bitty Computing Machine (IBCM)](http://pegasus.cs.virginia.edu/ibcm/)
+- ibcm.py - assembler and interpreter for [Itty Bitty Computing Machine (IBCM)](https://uva-cs.github.io/pdr/ibcm/index.html)
 - gravitysim.pyw - gravity simulator
 - 2048.py - command-line 2048 game
 - graph.py - equation grapher using PyGame

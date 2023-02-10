@@ -1,4 +1,4 @@
-#!/usr/bin/env python3
+#!/usr/bin/python3
 import sys, os, subprocess
 from PyQt5 import QtWidgets, QtCore, QtMultimedia
 from PyQt5.QtWidgets import QStyle, QSizePolicy
