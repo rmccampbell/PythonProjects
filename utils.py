@@ -4,14 +4,14 @@ del print_function, division
 import sys
 _PY3 = sys.version_info[0] >= 3
 
-import importlib
+import importlib, warnings
 
 def _try_import(*mods):
     for m in mods:
         try:
             globals()[m] = importlib.import_module(m)
-        except ImportError:
-            pass
+        except (ImportError, SyntaxError) as e:
+            warnings.warn('Failed to import %s: %s' % (m, e))
 
 # Builtin imports
 import os, collections, functools, itertools, operator, types, math, cmath, re
