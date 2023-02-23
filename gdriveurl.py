@@ -1,10 +1,16 @@
 #!/usr/bin/env python3
-import sys, re
+import re, argparse
 
-def gdrive_dl_url(url):
+def gdrive_direct_url(url, download=False):
     id = re.match('https://drive.google.com/file/d/([^/]+)/', url).group(1)
-    return f'https://drive.google.com/uc?export=download&id={id}'
+    if download:
+        return f'https://drive.google.com/uc?export=download&id={id}'
+    return f'https://drive.google.com/uc?id={id}'
 
 if __name__ == '__main__':
-    for url in sys.argv[1:]:
-        print(gdrive_dl_url(url))
+    p = argparse.ArgumentParser()
+    p.add_argument('urls', nargs='+')
+    p.add_argument('-d', '--download', dest='download', action='store_true')
+    args = p.parse_args()
+    for url in args.urls:
+        print(gdrive_direct_url(url, args.download))
