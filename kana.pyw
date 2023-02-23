@@ -1,3 +1,4 @@
+#!/usr/bin/python3
 import enum
 import random
 import unicodedata
@@ -20,8 +21,8 @@ CLICKCOLOR = (0, 192, 255)
 
 NCHOICES = 5
 
-JAP_FONT = 'MS Gothic'
-LATIN_FONT = 'Arial'
+JAP_FONT = ['MS Gothic', 'notosanscjkjp']
+LATIN_FONT = ['arialnarrow', 'Arial']
 TITLE_FONT = 'Verdana'
 
 class Mode(enum.Enum):
