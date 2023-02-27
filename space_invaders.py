@@ -1,11 +1,13 @@
 #!/usr/bin/env python3
 
 import os.path as osp
+import random
 import pygame as pg
 from typing import Optional
 
 WIDTH = 640
 HEIGHT = 480
+FPS = 60
 
 BGCOLOR = (0, 0, 0)
 
@@ -16,17 +18,32 @@ IMAGE_DIR = osp.join(DIR, 'images/space_invaders/')
 # ENEMY_IMAGE = pg.image.load(osp.join(IMAGE_DIR, 'enemy.png'))
 # BULLET_IMAGE = pg.image.load(osp.join(IMAGE_DIR, 'bullet.png'))
 
+def get_bbox(points: list[tuple[float, float]]):
+    x0 = min(x for x, y in points)
+    y0 = min(y for x, y in points)
+    x1 = max(x for x, y in points)
+    y1 = max(y for x, y in points)
+    return pg.Rect(x0, y0, x1-x0, y1-y0)
+
 class Entity:
-    def __init__(self, pos: tuple[int, int],
+    def __init__(self, pos: tuple[float, float],
                  image: Optional[pg.Surface] = None,
-                 poly: Optional[list[tuple[int, int]]] = None,
+                 poly: Optional[list[tuple[float, float]]] = None,
                  color: Optional[tuple[int, int, int]] = None,
-                 linewidth=0):
+                 linewidth=0,
+                 rect: Optional[pg.Rect] = None):
         self.x, self.y = pos
         self.image = image
         self.poly = poly
         self.color = color
         self.linewidth = linewidth
+        if rect is None:
+            if self.image:
+                rect = self.image.get_rect(center=(0, 0))
+            elif self.poly:
+                rect = get_bbox(self.poly)
+        self.rect = pg.Rect(rect)
+        self.alive = True
 
     @property
     def pos(self):
@@ -36,26 +53,32 @@ class Entity:
     def pos(self, pos):
         (self.x, self.y) = pos
 
-    def get_rect(self):
-        return self.image.get_rect(center=(self.x, self.y))
+    def kill(self):
+        self.alive = False
 
-    def get_poly(self):
-        return [(x + self.x, y + self.y) for x, y in self.poly]
+    def get_rect(self):
+        return self.rect.move(self.pos)
 
     def draw(self, screen: pg.Surface):
         if self.image:
-            screen.blit(self.image, self.get_rect())
+            img_rect = self.image.get_rect(center=(self.x, self.y))
+            screen.blit(self.image, img_rect)
         elif self.poly:
-            pg.draw.polygon(screen, self.color, self.get_poly(), self.linewidth)
+            points = [(x + self.x, y + self.y) for x, y in self.poly]
+            pg.draw.polygon(screen, self.color, points, self.linewidth)
+        # pg.draw.rect(screen, (255,255,255), self.get_rect(), 1)
 
     def update(self):
         pass
 
+    def collide(self, other):
+        pass
+
 class Player(Entity):
-    def __init__(self, pos: tuple[int, int]):
+    def __init__(self, pos: tuple[float, float]):
         poly = [(-20, 20), (20, 20), (0, 0)]
         super().__init__(pos, poly=poly, color=(0, 0, 255), linewidth=2)
-        self.speed = 1
+        self.speed = 5
 
     def move_left(self):
         self.x -= self.speed
@@ -66,16 +89,29 @@ class Player(Entity):
         self.x = min(self.x, WIDTH-30)
 
 class Enemy(Entity):
-    def __init__(self, pos: tuple[int, int]):
-        super().__init__(pos)
-
-class Bullet(Entity):
-    def __init__(self, pos: tuple[int, int]):
-        super().__init__(pos, poly=[(0, 0), (0, 10)], linewidth=4, color=(255, 0, 0))
+    def __init__(self, pos: tuple[float, float]):
+        poly = [(-20, 15), (0, 10), (20, 15), (15, 0),
+                (20, -15), (0, -10), (-20, -15), (-15, 0)]
+        super().__init__(pos, poly=poly, color=(192, 0, 0), linewidth=2)
         self.speed = 1
 
     def update(self):
+        self.y += self.speed
+
+class Bullet(Entity):
+    def __init__(self, pos: tuple[float, float]):
+        poly = [(0, 0), (0, 10)]
+        rect = (-5, 0, 10, 10)
+        super().__init__(pos, poly=poly, linewidth=4, color=(255, 0, 0), rect=rect)
+        self.speed = 10
+
+    def update(self):
         self.y -= self.speed
+
+    def collide(self, other):
+        if isinstance(other, Enemy):
+            self.kill()
+            other.kill()
 
 class Game:
     def __init__(self):
@@ -84,17 +120,26 @@ class Game:
         self.player = Player((640/2, 480-40))
         self.entities: list[Entity] = [self.player]
         self.running = False
+        self.enemy_timer = 0
 
     def run(self):
         self.running = True
+        clock = pg.time.Clock()
         while self.running:
             self.update()
             self.draw()
             self.events()
+            clock.tick(FPS)
 
     def update(self):
+        self.collisions()
         for entity in self.entities:
             entity.update()
+        self.entities = [e for e in self.entities if e.alive]
+        self.enemy_timer += 1
+        if self.enemy_timer >= 100:
+            self.spawn(Enemy((random.randrange(30, WIDTH-30), 0)))
+            self.enemy_timer = 0
 
     def draw(self):
         self.screen.fill(BGCOLOR)
@@ -118,6 +163,13 @@ class Game:
             self.player.move_left()
         if keys[pg.K_RIGHT]:
             self.player.move_right()
+
+    def collisions(self):
+        for i, e1 in enumerate(self.entities):
+            for e2 in self.entities[i+1:]:
+                if e1.get_rect().colliderect(e2.get_rect()):
+                    e1.collide(e2)
+                    e2.collide(e1)
 
     def spawn(self, entity: Entity):
         self.entities.append(entity)
