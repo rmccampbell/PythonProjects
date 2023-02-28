@@ -110,28 +110,34 @@ class Bullet(Entity):
 
     def update(self):
         self.y -= self.speed
+        if self.y < 0:
+            self.kill()
 
     def collide(self, other):
         if isinstance(other, Enemy):
             self.kill()
             other.kill()
+            self.game.score += 1
 
 class Game:
     def __init__(self):
         pg.init()
         self.screen = pg.display.set_mode((WIDTH, HEIGHT))
+        self.font = pg.font.Font(None, 48)
         self.titlefont = pg.font.Font(None, 144)
         self.running = False
         self.player: Player = None
         self.entities: list[Entity] = []
         self.is_game_over = False
         self.enemy_timer = 0
+        self.score = 0
         self.start()
 
     def start(self):
         self.player = Player(self, (WIDTH//2, HEIGHT-80))
         self.entities = [self.player]
         self.is_game_over = False
+        self.score = 0
         self.reset_enemy_timer()
 
     def run(self):
@@ -162,6 +168,8 @@ class Game:
         else:
             for entity in self.entities:
                 entity.draw(self.screen)
+            score_img = self.font.render(str(self.score), True, (255, 255, 255))
+            self.screen.blit(score_img, (50, 50))
         pg.display.flip()
 
     def draw_game_over(self):
