@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Shows a progress bar on the windows taskbar"""
 import comtypes.client as cc
-import win32console
+import win32console, win32gui
 import os.path as osp
 
 TBPF_NOPROGRESS = 0
@@ -15,7 +15,8 @@ taskbar = cc.CreateObject('{56FDF344-FD6D-11d0-958A-006097C9A090}',
                           interface=tbl.ITaskbarList3)
 taskbar.HrInit()
 
-hwnd = win32console.GetConsoleWindow()
+# hwnd = win32console.GetConsoleWindow()
+hwnd = win32gui.FindWindow(None, win32console.GetConsoleTitle())
 
 if __name__ == '__main__':
     import tqdm, time
