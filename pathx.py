@@ -2,24 +2,25 @@
 import sys, argparse, ctypes
 import os.path as osp
 from winreg import *
+from ctypes.wintypes import *
 
 # SendMessage = ctypes.windll.user32.SendMessageW
 SendMessageTimeout = ctypes.windll.user32.SendMessageTimeoutW
+SendMessageTimeout.argtypes = [HWND, UINT, WPARAM, ctypes.c_wchar_p, UINT, UINT, PDWORD]
+SendMessageTimeout.restype = ctypes.c_ssize_t
 HWND_BROADCAST = 0xffff
 WM_SETTINGCHANGE = 0x1a
 SMTO_NORMAL = 0
 
 def pathx(add=None, index=None, remove=None, contains=None, system=False,
-          lines=False):
+          lines=False, dryrun=False):
     if system:
         key = HKEY_LOCAL_MACHINE
         subkey = r'SYSTEM\CurrentControlSet\Control\Session Manager\Environment'
     else:
         key, subkey = HKEY_CURRENT_USER, 'Environment'
-    if add is not None or remove is not None:
-        mode = KEY_ALL_ACCESS
-    else:
-        mode = KEY_READ
+    modifying = not dryrun and (add is not None or remove is not None)
+    mode = KEY_ALL_ACCESS if modifying else KEY_READ
     with OpenKey(key, subkey, 0, mode) as key:
         value, typ = QueryValueEx(key, 'Path')
         values = value.split(';')
@@ -44,13 +45,13 @@ def pathx(add=None, index=None, remove=None, contains=None, system=False,
             if index is None:
                 index = len(values)
             values.insert(index, add)
-        if add is not None or remove is not None:
-            value = ';'.join(values)
+        value = ';'.join(values)
+        if modifying:
             typ = REG_EXPAND_SZ if value.count('%') >= 2 else REG_SZ
             SetValueEx(key, 'Path', 0, typ, value)
             # SendMessage(HWND_BROADCAST, WM_SETTINGCHANGE, 0, 'Environment')
             SendMessageTimeout(HWND_BROADCAST, WM_SETTINGCHANGE, 0,
-                               'Environment', SMTO_NORMAL, 100, 0)
+                               'Environment', SMTO_NORMAL, 100, None)
             print('** Registry updated **', file=sys.stderr)
     if lines:
         value = value.replace(';', '\n')
@@ -64,8 +65,9 @@ if __name__ == '__main__':
     parser.add_argument('-c', '--contains', nargs='+')
     parser.add_argument('-s', '--system', action='store_true')
     parser.add_argument('-l', '--lines', action='store_true')
+    parser.add_argument('-d', '--dryrun', action='store_true')
     args = parser.parse_args()
     try:
         pathx(**vars(args))
     except Exception as e:
-        sys.exit(e)
+        sys.exit(f'error: {e}')

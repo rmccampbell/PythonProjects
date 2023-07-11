@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-import sys, os, argparse, ctypes, shlex
+import sys, os, argparse, shlex
 import os.path as osp
 
 def pathv(add=None, index=None, remove=None, contains=None, lines=False,
@@ -32,7 +32,10 @@ def pathv(add=None, index=None, remove=None, contains=None, lines=False,
     if lines:
         print(value.replace(os.pathsep, '\n'))
     elif evalable:
-        print('PATH=' + shlex.quote(value))
+        if sys.platform == 'win32':
+            print('set PATH=' + value)
+        else:
+            print('PATH=' + shlex.quote(value))
     else:
         print(value)
 
@@ -48,4 +51,4 @@ if __name__ == '__main__':
     try:
         pathv(**vars(args))
     except Exception as e:
-        sys.exit(e)
+        sys.exit(f'error: {e}')
