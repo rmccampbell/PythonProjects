@@ -1,5 +1,5 @@
 #!/usr/bin/python3
-import sys, os, subprocess
+import sys, os, subprocess, shutil
 from PyQt5 import QtWidgets, QtCore, QtMultimedia
 from PyQt5.QtWidgets import QStyle, QSizePolicy
 from PyQt5.QtMultimedia import QMediaPlayer
@@ -206,7 +206,7 @@ class VideoPlayer(QtWidgets.QMainWindow):
         key = event.key()
         mod = event.modifiers()
         step = BIGSTEP if mod & Qt.CTRL else STEP
-        if key == Qt.Key_Space:
+        if key in (Qt.Key_Space, Qt.Key_Play):
             self.togglePlay()
         elif key == Qt.Key_Right:
             self.media.setPosition(min(self.media.position() + step,
@@ -264,14 +264,18 @@ class VideoPlayer(QtWidgets.QMainWindow):
 
 
 def youtubedl_resolve_url(url):
-    flags = subprocess.CREATE_NO_WINDOW if os.name == 'nt' else 0
-    try:
-        return subprocess.run(
-            ['youtube-dl', '--get-url', url],
-            capture_output=True, check=True, text=True, creationflags=flags
-        ).stdout.strip()
-    except (FileNotFoundError, subprocess.CalledProcessError):
-        return url
+    YTDL_BINARIES = ['yt-dlp', 'youtube-dl']
+    binary = next((b for b in YTDL_BINARIES if shutil.which(b)), None)
+    if binary:
+        flags = subprocess.CREATE_NO_WINDOW if os.name == 'nt' else 0
+        try:
+            return subprocess.run(
+                [binary, '--get-url', url],
+                capture_output=True, check=True, text=True, creationflags=flags
+            ).stdout.strip()
+        except (FileNotFoundError, subprocess.CalledProcessError):
+            pass
+    return url
 
 
 # Modified from http://code.qt.io/cgit/%7bgraveyard%7d/qtphonon.git/tree/src/3rdparty/phonon/phonon/swiftslider.cpp

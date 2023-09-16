@@ -1,11 +1,12 @@
 #!/usr/bin/env python3
 import sys
 import io
+import locale
 import argparse
 import urllib.parse
 import requests
 
-langs = {'afrikaans': 'af', 'albanian': 'sq', 'arabic': 'ar',
+LANGS = {'afrikaans': 'af', 'albanian': 'sq', 'arabic': 'ar',
          'azerbaijani': 'az', 'basque': 'eu', 'belarusian': 'be',
          'bengali': 'bn', 'bulgarian': 'bg', 'catalan': 'ca',
          'chinese simplified': 'zh-cn', 'chinese traditional': 'zh-tw',
@@ -24,25 +25,25 @@ langs = {'afrikaans': 'af', 'albanian': 'sq', 'arabic': 'ar',
          'telugu': 'te', 'thai': 'th', 'turkish': 'tr', 'ukrainian': 'uk',
          'urdu': 'ur', 'vietnamese': 'vi', 'welsh': 'cy', 'yiddish': 'yi'}
 
-rlangs = {v: k for k, v in langs.items()}
+RLANGS = {v: k for k, v in LANGS.items()}
 
-apiurl = 'https://translate.googleapis.com/translate_a/single?client=gtx&sl={lang1}&tl={lang2}&dt=t&q={text}'
+API_URL = 'https://translate.googleapis.com/translate_a/single?client=gtx&sl={lang1}&tl={lang2}&dt=t&q={text}'
 
 def translate(phrase, lang1='auto', lang2=None, return_lang=False):
     if lang2 is None:
         lang1, lang2 = 'auto', lang1
     if lang2 == 'auto':
-        lang2 = 'english'
-    lang1 = langs.get(lang1.lower(), lang1)
-    lang2 = langs.get(lang2.lower(), lang2)
+        lang2 = locale.getlocale()[0].split('_')[0]
+    lang1 = LANGS.get(lang1.lower().replace('-', ' '), lang1.lower())
+    lang2 = LANGS.get(lang2.lower().replace('-', ' '), lang2.lower())
     phrase = urllib.parse.quote(phrase)
-    url = apiurl.format(lang1=lang1, lang2=lang2, text=phrase)
+    url = API_URL.format(lang1=lang1, lang2=lang2, text=phrase)
     res = requests.get(url)
     res.raise_for_status()
     js = res.json()
     translated = ''.join(part[0] for part in js[0])
     if return_lang:
-        return translated, rlangs.get(js[2], js[2])
+        return translated, RLANGS.get(js[2], js[2])
     return translated
 
 def change_encoding(file, encoding='utf-8'):
@@ -56,7 +57,7 @@ def change_encoding(file, encoding='utf-8'):
 
 if __name__ == '__main__':
     p = argparse.ArgumentParser()
-    p.add_argument('phrase')
+    p.add_argument('phrase', nargs='?', default='-')
     p.add_argument('lang1', nargs='?', default='auto')
     p.add_argument('lang2', nargs='?')
     p.add_argument('-l', '--print-lang', action='store_true')
@@ -66,7 +67,7 @@ if __name__ == '__main__':
         sys.stdin = change_encoding(sys.stdin, 'utf-8')
         sys.stdout = change_encoding(sys.stdout, 'utf-8')
     if args.phrase == '-':
-        args.phrase = sys.stdin.read()
+        args.phrase = sys.stdin.read().strip()
     try:
         text, lang = translate(args.phrase, args.lang1, args.lang2, True)
         if args.print_lang:
