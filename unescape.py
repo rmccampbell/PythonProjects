@@ -17,5 +17,5 @@ for inpt in args.input:
     else:
         sys.stdout.write(unescaped)
 
-    if not args.nonewline:
+    if not args.binary or args.nonewline:
         print(flush=True)
