@@ -45,7 +45,7 @@ def maybeclose(file, close=True):
 @contextlib.contextmanager
 def maybeopen(file, *args, **kwargs):
     if isinstance(file, PATHTYPES):
-        with open(file, *args, **kwargs) as file:
+        with extopen(file, *args, **kwargs) as file:
             yield file
     else:
         yield file
@@ -54,14 +54,6 @@ def maybeopen(file, *args, **kwargs):
 def maybe_stdopen(file, *args, **kwargs):
     if isinstance(file, PATHTYPES):
         with safeclose(stdopen(file, *args, **kwargs)) as file:
-            yield file
-    else:
-        yield file
-
-@contextlib.contextmanager
-def maybe_guess_open(file, *args, **kwargs):
-    if isinstance(file, PATHTYPES):
-        with safeclose(guess_open(file, *args, **kwargs)) as file:
             yield file
     else:
         yield file
@@ -82,10 +74,9 @@ chunk = iterchunks
 chars = iterchars
 lines = iterlines
 
-def getfiles(paths=None, mode='r', encoding=None, errors=ERRORS,
-             default='-', stdio=True, recursive=True, close=True):
+def getfiles(paths=None, mode='r', encoding=None, errors=ERRORS, default='-',
+             stdio=True, guess=False, recursive=True, close=True):
     """Return an iterator yielding file objects matching glob patterns."""
-    openf = stdopen if stdio else guess_open
     if not stdio and default == '-':
         default = None
     if paths is None:
@@ -98,7 +89,8 @@ def getfiles(paths=None, mode='r', encoding=None, errors=ERRORS,
             continue
         for file in expandpaths([path], recursive):
             try:
-                f = openf(file, mode, encoding=encoding, errors=errors)
+                f = extopen(file, mode, encoding=encoding, errors=errors,
+                            stdio=stdio, guess=guess)
                 if close:
                     with safeclose(f):
                         yield f
@@ -114,7 +106,19 @@ def expandpaths(paths, recursive=True):
                 glob.glob(path, recursive=recursive) or (path,)]
     return [file for path in paths for file in glob.glob(path) or (path,)]
 
-def stdopen(file, mode='r', encoding=None, errors=ERRORS):
+def extopen(file, mode='r', encoding=None, errors=ERRORS, stdio=False,
+            guess=False):
+    if stdio:
+        return stdopen(file, mode, encoding=encoding, errors=errors,
+                       guess=guess)
+    elif guess:
+        return guess_open(file, mode, encoding=encoding, errors=errors)
+    else:
+        if 'b' in mode:
+            errors = None
+        return open(file, mode, encoding=encoding, errors=errors)
+
+def stdopen(file, mode='r', encoding=None, errors=ERRORS, guess=False):
     """Open a file, or return stdin or stdout for '-'"""
     if file == '-':
         mode2 = mode.strip('btU')
@@ -135,14 +139,14 @@ def stdopen(file, mode='r', encoding=None, errors=ERRORS):
                 except AttributeError:
                     pass
         return file
-    else:
-        return guess_open(file, mode, encoding=encoding, errors=errors)
+    return extopen(file, mode, encoding=encoding, errors=errors, guess=guess)
 
 def guess_open(file, mode='r', encoding=None, errors=ERRORS):
     if not _PY3:
         return open(file, mode)
-    if (encoding is None and 'b' not in mode and ('r' in mode or 'a' in mode)
-        and os.path.isfile(file)):
+    if (encoding is None
+            and 'b' not in mode and ('r' in mode or 'a' in mode)
+            and os.path.isfile(file)):
         with open(file, 'rb') as f:
             if f.seekable() and not f.isatty():
                 encoding = detect_enc(f)
