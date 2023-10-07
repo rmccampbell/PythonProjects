@@ -2016,9 +2016,9 @@ class IndexerDescriptor:
         if instance is None:
             return self
         indexer = Indexer(
-            self.fget.__get__(instance, owner),
-            self.fset.__get__(instance, owner),
-            self.fdel.__get__(instance, owner),
+            self.fget and self.fget.__get__(instance, owner),
+            self.fset and self.fset.__get__(instance, owner),
+            self.fdel and self.fdel.__get__(instance, owner),
             self.__doc__)
         indexer.__name__ = self.__name__
         indexer.__qualname__ = self.__qualname__
@@ -2043,3 +2043,40 @@ class StructureRepr(ctypes.Structure):
             type(self).__name__,
             ', '.join(f'{n}={getattr(self, n)}' for n, t in self._fields_)
         )
+
+
+def tuple_struct(*types):
+    class TupleStruct(ctypes.Structure):
+        _fields_ = [(f'_{i}', typ) for i, typ in enumerate(types)]
+
+        def __repr__(self):
+            fields = ', '.join(map(repr, self))
+            return f'{type(self).__name__}({fields})'
+
+        def __iter__(self):
+            for f, t in self._fields_:
+                yield getattr(self, f)
+
+        def __getitem__(self, ind):
+            return getattr(self, self._fields_[ind][0])
+
+    TupleStruct.__name__ = 'tuple_' + '_'.join(t.__name__ for t in types)
+    TupleStruct.__qualname__ = TupleStruct.__name__
+    return TupleStruct
+
+
+class c_uint80(ctypes.Structure):
+    _fields_ = [('data', ctypes.c_uint8*10)]
+
+    def __init__(self, x):
+        self.data = (ctypes.c_uint8*10)(*x.to_bytes(10, 'little'))
+
+    def __repr__(self):
+        return f'c_uint80({hex(self)})'
+
+    @property
+    def value(self):
+        return int.from_bytes(self.data, 'little')
+
+    def __index__(self):
+        return self.value

@@ -60,6 +60,13 @@ def nprimesi(n):
 def nthprime(n):
     return next(islice(nprimesi(n+1), n, None))
 
+
+# Just for fun: a primality test based on regex
+def isprime_re(n):
+    import re
+    return not re.match(r'^1?$|^(11+?)\1+$', '1'*n)
+
+
 for f in ('pfactor', 'factor', 'primes', 'nprimes'):
     exec('def {0}(n): return list({0}i(n))'.format(f))
 del f

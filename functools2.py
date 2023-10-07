@@ -338,17 +338,20 @@ def window(seq, size=2, step=1, fill=_empty, partial=True):
             yield tuple(pad(window, size, fill))
         elif partial or len(window) == size:
             yield tuple(window)
-        newelts = take(it, step)
-        if not newelts or step - len(newelts) > size:
+        if len(window) != size:
             break
-        window.extend(newelts)
-        for i in range(step - len(newelts)):
+        new_elts = take(it, step)
+        missing_elts = step - len(new_elts)
+        if not new_elts or missing_elts > size:
+            break
+        window.extend(new_elts)
+        for i in range(missing_elts):
             window.popleft()
 
-_exclude = (str, bytes, bytearray, dict)
+_flatten_exclude = (str, bytes, bytearray, dict)
 
 def iflatten(it, types=None, exclude=None):
-    exclude = exclude or (_exclude if types is None else ())
+    exclude = exclude or (_flatten_exclude if types is None else ())
     types = types or Iterable
     return (b for a in it for b in
             (iflatten(a, types)
@@ -356,28 +359,30 @@ def iflatten(it, types=None, exclude=None):
              else (a,)))
 
 def flatten(lst, types=(list, tuple), exclude=None):
-    exclude = exclude or (_exclude if types is None else ())
+    exclude = exclude or (_flatten_exclude if types is None else ())
     types = types or Iterable
     return [b for a in lst for b in
             (flatten(a, types)
              if isinstance(a, types) and not isinstance(a, exclude)
              else (a,))]
 
-_copyable = (list, tuple, set, frozenset, str, bytes, bytearray)
+_copyable = (list, tuple, set, frozenset, dict, str, bytes, bytearray)
 
-def deepcopy(lst, types=(list, tuple), copy=None):
-    types = types or NonStrIter
-    if not isinstance(lst, types):
-        return lst
-    c = copy or (type(lst) if isinstance(lst, _copyable) else list)
-    return c(deepcopy(o, types, copy) for o in lst)
+def deepcopy(lst, types=(list, tuple), factory_func=None):
+    return deepmap(ident, lst, types, factory_func)
 
-def deepmap(func, lst, types=(list, tuple), copy=None):
+def deepmap(func, lst, types=(list, tuple), factory_func=None):
     types = types or NonStrIter
     if not isinstance(lst, types):
         return func(lst)
-    c = copy or (type(lst) if isinstance(lst, _copyable) else list)
-    return c(deepmap(func, o, types, copy) for o in lst)
+    factory = (factory_func(type(lst)) if factory_func
+               else type(lst) if isinstance(lst, _copyable)
+               else dict if isinstance(lst, collections.abc.Mapping)
+               else list)
+    if isinstance(lst, collections.abc.Mapping):
+        return factory((k, deepmap(func, v, types, factory_func))
+                       for k, v in lst.items())
+    return factory(deepmap(func, o, types, factory_func) for o in lst)
 
 
 def binsearch(seq, obj):

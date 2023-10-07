@@ -1,3 +1,4 @@
+# -*- coding: utf-8 -*-
 from __future__ import print_function, division
 del print_function, division
 
@@ -378,10 +379,15 @@ def sdelete(s, ind, ind2=_empty):
     return s[:ind] + s[ind2:]
 
 def sfilter(func, s):
+    if not callable(func):
+        func = func.__contains__
     return ''.join(filter(func, s))
 
 def smap(func, s):
     return ''.join(map(str, map(func, s)))
+
+def strunc(s, n, suffix='…'):
+    return s[:n-len(suffix)] + suffix if len(s) > n else s
 
 
 def hsplit(string, *inds):
@@ -500,13 +506,12 @@ def float_binf(num, p=23, pad0=False, prefix=False):
         return str(num)
     if p is None or p < 0: p = 1074
     sign = '-' if num < 0 else ''
-    num = abs(num)
-    num, whole = math.modf(num)
+    whole, num = divmod(abs(num), 1)
     ss = [sign, format(int(whole), '#b' if prefix else 'b'), '.']
     for i in range(p):
         if not (num or pad0):
             break
-        num, whole = math.modf(num * 2)
+        whole, num = divmod(num*2, 1)
         ss.append('01'[int(whole)])
     return ''.join(ss)
 
@@ -515,13 +520,12 @@ def float_hexf(num, p=13, pad0=False, prefix=False):
         return str(num)
     if p is None or p < 0: p = 269
     sign = '-' if num < 0 else ''
-    num = abs(num)
-    num, whole = math.modf(num)
+    whole, num = divmod(abs(num), 1)
     ss = [sign, format(int(whole), '#x' if prefix else 'x'), '.']
     for i in range(p):
         if not (num or pad0):
             break
-        num, whole = math.modf(num * 16)
+        whole, num = divmod(num*16, 1)
         ss.append('0123456789abcdef'[int(whole)])
     return ''.join(ss)
 
@@ -537,10 +541,11 @@ def float_bin(num, p=23):
 
 def float_frombin(s):
     s = s.strip()
-    if re.search(r'\s', s):
+    m = re.fullmatch(r'((?:0b)?[01]+(?:\.[01]*)?|\.[01]+)(?:p([+-]?\d+))?', s)
+    if not m:
         raise ValueError('invalid format')
-    s, p, e = s.lower().partition('p')
-    exp = int(e) if p else 0
+    s, e = m.groups()
+    exp = int(e) if e else 0
     if '.' in s:
         exp -= len(s) - s.index('.') - 1
     return float(int(s.replace('.', '', 1), 2) * 2**exp)
@@ -593,22 +598,23 @@ _justs = {'left': str.ljust, 'right': str.rjust, 'center': str.center,
 
 @pipe_alias('pc')
 @pipe_alias('pcr', rows=True)
-def printcols(seq, rows=False, swidth=None, sep='', pad=2, just='left'):
+def printcols(seq, rows=False, sep='', pad=2, just='left', swidth=None,
+              ncols=None):
     if not swidth:
         swidth, _ = shutil.get_terminal_size()
-    sep = sep.ljust(pad)
     just = _justs[just]
     seq = list(map(str, seq))
     if not seq: return
     width = max(map(len, seq)) + len(sep)
-    ncols = max(swidth // width, 1)
+    if ncols is None:
+        ncols = max((swidth - width) // (width + pad) + 1, 1)
     if rows:
         rows = chunk(seq, ncols)
     else:
-        nrows = (len(seq)-1) // ncols + 1
+        nrows = (len(seq) - 1) // ncols + 1
         rows = zip(*chunk(seq, nrows, ''))
     for r in rows:
-        print(''.join(just(s + sep, width) for s in r).rstrip())
+        print((' ' * pad).join(just(s + sep, width) for s in r).rstrip())
 
 @pipe_alias('p2d')
 def print2d(arr, sep='', pad=2, just='left'):
@@ -719,13 +725,15 @@ def dunion(dct1, dct2):
     dct.update(dct2)
     return dct
 
-def dsearch(dct, s):
+def dsearch(dct, s, case=False):
     if isinstance(dct, types.ModuleType): dct = vars(dct)
-    return {k: v for k, v in dct.items() if re.search(s, str(k), re.IGNORECASE)}
+    flags = 0 if case else re.IGNORECASE
+    return {k: v for k, v in dct.items() if re.search(s, str(k), flags)}
 
-def dvsearch(dct, s):
+def dvsearch(dct, s, case=False):
     if isinstance(dct, types.ModuleType): dct = vars(dct)
-    return {k: v for k, v in dct.items() if re.search(s, str(v), re.IGNORECASE)}
+    flags = 0 if case else re.IGNORECASE
+    return {k: v for k, v in dct.items() if re.search(s, str(v), flags)}
 
 @pipe
 def dsort(dct, key=None):
@@ -744,9 +752,10 @@ def dhead(dct=None, n=10):
         return pipe(dhead, n=dct)
     return dict(islice(dct.items(), n))
 
-def search(seq, s):
+def search(seq, s, case=False):
     if isinstance(seq, types.ModuleType): seq = dir(seq)
-    return [s2 for s2 in seq if re.search(s, str(s2), re.IGNORECASE)]
+    flags = 0 if case else re.IGNORECASE
+    return [s2 for s2 in seq if re.search(s, str(s2), flags)]
 
 def replace(seq, x, y):
     return [o if o != x else y for o in seq]
@@ -797,7 +806,8 @@ def lists(its):
     return [list(it) for it in its]
 
 
-for f in (map, zip, range, filter, reversed, enumerate, islice, chunk, unique):
+for f in (map, zip, range, filter, reversed, enumerate, islice, chunk, window,
+          unique, take):
     lwrap_alias(f)
 del f
 
@@ -954,9 +964,9 @@ dvflt = lambda f=None, typ=None: pipe(dvfilter, cond=f, typ=typ)
 dmp = lambda f: pipe(dmap, func=f)
 dkmp = lambda f: pipe(dkmap, func=f)
 dvmp = lambda f: pipe(dvmap, func=f)
-sch = lambda s: pipe(search, s=s)
-dsch = lambda s: pipe(dsearch, s=s)
-dvsch = lambda s: pipe(dvsearch, s=s)
+sch = lambda s, case=False: pipe(search, s=s, case=case)
+dsch = lambda s, case=False: pipe(dsearch, s=s, case=case)
+dvsch = lambda s, case=False: pipe(dvsearch, s=s, case=case)
 dct = pipe(dict)
 ditems = pipe(lambda d: list(d.items()))
 dkeys = pipe(lambda d: list(d.keys()))
@@ -986,6 +996,8 @@ ii = IIndexPipe()
 
 class VarSetter(object):
     def __getattr__(self, name):
+        if name.startswith('_'):
+            raise AttributeError(name)
         return pipe(setl, name, _depth=1)
     def __call__(self, n, v=None):
         return setl(n, v, 1) if v else pipe(setl, n, _depth=1)
@@ -1127,6 +1139,8 @@ class lazy_loader(object):
     def __call__(self, *args, **kwargs):
         return self.func(*args, **kwargs)
     def __getattr__(self, name):
+        if name.startswith('_'):
+            raise AttributeError(name)
         return getattr(self.func(), name)
     def __dir__(self):
         return ['func'] + dir(self.func())
@@ -1157,18 +1171,28 @@ def qt5():
                 'app = QApplication([])')
     return Qt
 
-def pyside():
-    from PyQt5 import Qt
+def pyside2():
+    import PySide2
     _print_exec('import PySide2\n'
                 'from PySide2 import QtCore, QtGui, QtWidgets\n'
                 'from PySide2.QtCore import Qt\n'
                 'app = QtWidgets.QApplication([])')
-    return Qt
+    return PySide2
+
+def pyside6():
+    import PySide6
+    _print_exec('import PySide6\n'
+                'from PySide6 import QtCore, QtGui, QtWidgets\n'
+                'from PySide6.QtCore import Qt\n'
+                'app = QtWidgets.QApplication([])')
+    return PySide6
 
 @lazy_loader
 def mpl(backend=None, interactive=True):
     if isinstance(backend, (bool, int)):
         backend, interactive = None, backend
+    if backend is None and sys.stdout.__class__.__module__ == 'idlelib.run':
+        backend = 'QtAgg'
     import matplotlib
     _print_exec('import matplotlib, matplotlib as mpl\n'
                 + ('mpl.use({!r})\n'.format(backend) if backend else '') +
@@ -1199,6 +1223,7 @@ def mpl3d(backend=None, interactive=True):
                 'import matplotlib.pyplot as plt\n'
                 + ('plt.ion()\n' if interactive else '') +
                 'from mpl_toolkits import mplot3d\n'
+                'from mpl_toolkits.mplot3d.art3d import Poly3DCollection\n'
                 "ax = plt.subplot(projection='3d')")
     return matplotlib
 
@@ -1211,6 +1236,7 @@ def pylab3d(backend=None, interactive=True):
                 'from pylab import *\n'
                 + ('ion()\n' if interactive else '') +
                 'from mpl_toolkits import mplot3d\n'
+                'from mpl_toolkits.mplot3d.art3d import Poly3DCollection\n'
                 "ax = subplot(projection='3d')")
     return pylab
 
@@ -1219,12 +1245,12 @@ def sns():
     _print_exec('import seaborn, seaborn as sns')
     return seaborn
 
-def sympy(all=True):
+def sympy(all=False):
     import sympy
     _print_exec('import sympy, sympy as sp\n'
                 + ('from sympy import *\n' if all else '') +
                 'R = sympy.Rational\n'
-                'sympy.var("x, y, z, a, b, c, t", real=True)')
+                'sympy.var("x, y, z, a, b, c, d, t", real=True)')
     return sympy
 
 def scipy():
@@ -1236,6 +1262,7 @@ def scipy():
         'from scipy import stats')
     return scipy
 
+@alias('pg')
 def pygame(init=True):
     import pygame
     _print_exec('import pygame, pygame as pg\n'
@@ -1310,7 +1337,7 @@ def Crypto():
 def OpenGL():
     import OpenGL
     _print_exec('import OpenGL\n'
-                'from OpenGL import GL, GLU\n'
+                'from OpenGL import GL, GLU, GLUT\n'
                 'from OpenGL.GL import shaders\n'
                 'from OpenGL.arrays.vbo import VBO\n'
                 'import glm')
@@ -1546,8 +1573,9 @@ def atleast_nd(a, nd, newaxes=0):
         newaxes = [newaxes] * nd
     elif len(newaxes) < nd:
         newaxes = [newaxes[0]]*(nd - len(newaxes)) + list(newaxes)
+    assert len(newaxes) == nd
     while a.ndim < nd:
-        a = np.expand_dims(a, newaxes[a.ndim - nd])
+        a = np.expand_dims(a, newaxes[a.ndim])
     return a
 
 
@@ -1567,10 +1595,15 @@ def probs(a, axis=None):
     return a / a.sum(axis=axis, keepdims=True)
 
 
-def unit(v, axis=None):
+def unit(v, axis=None, ord=2):
     import numpy as np
     v = np.asarray(v)
-    return v / np.linalg.norm(v, axis=axis, keepdims=True)
+    return v / np.linalg.norm(v, ord=ord, axis=axis, keepdims=True)
+
+
+def dot(a, b, axis=-1, keepdims=False):
+    import numpy as np
+    return np.sum(np.multiply(a, b), axis=axis, keepdims=keepdims)
 
 
 def eq(a, b=None):

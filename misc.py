@@ -55,7 +55,7 @@ def float_tobase(num, b, p=10, pad0=False):
     for i in range(e + p + 1):
         if i > e and not (num or pad0):
             break
-        num, dig = math.modf(num)
+        dig, num = divmod(num, 1)
         num *= b
         ss.append('0123456789abcdefghijklmnopqrstuvwxyz'[int(dig)])
         if i == e:
@@ -73,6 +73,21 @@ def float_frombase(s, b):
         exp = point + 1 - len(s)
         s = s[:point] + s[point + 1:]
     return float(frombase(s, b) * b**exp)
+
+
+def int_to_bits(num):
+    bits = []
+    while num > 0:
+        bits.append(num & 1)
+        num >>= 1
+    bits.reverse()
+    return bits
+
+def bits_to_int(bits):
+    num = 0
+    for bit in bits:
+        num = (num << 1) | bool(bit)
+    return num
 
 
 def nthbit(x, n):
@@ -261,8 +276,7 @@ def divmod_ceil(x, y):
 
 def divmod_round(x, y):
     q, r = divmod(x, y)
-    r2 = 2*r
-    if r2 > y or r2 == y and q & 1:
+    if 2*r > y or 2*r == y and q & 1:
         q += 1
         r -= y
     return q, r
@@ -660,3 +674,14 @@ def segment_intersect(ab, cd):
     if 0 <= t1 <= 1 and 0 <= t2 <= 1:
         return (t1*abx + ax, t1*aby + ay)
     return None
+
+
+def mod_inv(e, n):
+    r0, r1 = e, n
+    s0, s1 = 1, 0
+    t0, t1 = 0, 1
+    while r1:
+        r0, (q, r1) = r1, divmod(r0, r1)
+        s0, s1 = s1, s0 - q*s1
+        t0, t1 = t1, t0 - q*t1
+    return s0 % n
