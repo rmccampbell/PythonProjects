@@ -20,7 +20,7 @@ HOVERCOLOR = (0, 255, 255)
 CLICKCOLOR = (0, 192, 255)
 
 NCHOICES = 5
-NTRIES = 5
+NTRIES = 4
 
 JAP_FONT = ['MS Gothic', 'notosanscjkjp']
 LATIN_FONT = ['arialnarrow', 'Arial']
@@ -31,9 +31,10 @@ class Mode(enum.Enum):
     LATIN_TO_KANA = 2
     KANA_TO_LATIN_TEXT = 3
 
-class Charset(enum.Enum):
+class Charset(enum.Flag):
     HIRAGANA = 1
     KATAKANA = 2
+    EXT = 4
 
 #region data
 
@@ -62,6 +63,8 @@ HIRAGANA_EXT_CHARS = nospace('''
 ぱぴぷぺぽ
 ''')
 
+HIRAGANA_ALL_CHARS = HIRAGANA_CHARS + HIRAGANA_EXT_CHARS
+
 KATAKANA_CHARS = nospace('''
 アイウエオ
 カキクケコ
@@ -84,11 +87,18 @@ KATAKANA_EXT_CHARS = nospace('''
 パピプペポ
 ''')
 
+KATAKANA_ALL_CHARS = KATAKANA_CHARS + KATAKANA_EXT_CHARS
+
+ALL_CHARS = HIRAGANA_ALL_CHARS + KATAKANA_ALL_CHARS
+
 #endregion
 
 CHARSETS = {
     Charset.HIRAGANA: HIRAGANA_CHARS,
     Charset.KATAKANA: KATAKANA_CHARS,
+    Charset.HIRAGANA | Charset.EXT: HIRAGANA_ALL_CHARS,
+    Charset.KATAKANA | Charset.EXT: KATAKANA_ALL_CHARS,
+    Charset.HIRAGANA | Charset.KATAKANA | Charset.EXT: ALL_CHARS,
 }
 
 IRREGULAR = {
@@ -122,15 +132,15 @@ class Widget:
 
     def event(self, event: pg.event.Event):
         if event.type == pg.MOUSEBUTTONDOWN:
-            self.mouse_down(event)
+            return self.mouse_down(event)
         elif event.type == pg.MOUSEBUTTONUP:
-            self.mouse_up(event)
+            return self.mouse_up(event)
         elif event.type == pg.MOUSEMOTION:
-            self.mouse_move(event)
+            return self.mouse_move(event)
         elif event.type == pg.KEYDOWN:
-            self.key_down(event)
+            return self.key_down(event)
         elif event.type == pg.KEYUP:
-            self.key_up(event)
+            return self.key_up(event)
 
     def mouse_down(self, event: pg.event.Event):
         pass
@@ -152,8 +162,9 @@ class Label(Widget):
     def __init__(self, text: str, rect, font=None, *, text_color=(0, 0, 0),
                  bg_color=None, border_width=0, border_radius=0,
                  border_color=(0, 0, 0), hover_color=None, click_color=None,
-                 select_color=None, disabled_color=None, selected=False,
-                 visible=True, enabled=True, data=None, on_click=None):
+                 select_color=None, disabled_color=None, align='center',
+                 selected=False, visible=True, enabled=True, data=None,
+                 on_click=None):
         self.text = text
         self.font: pg.font.Font = font or SysFont(LATIN_FONT, 24)
         if len(rect) == 2:
@@ -170,6 +181,7 @@ class Label(Widget):
         self.click_color = click_color
         self.select_color = select_color
         self.disabled_color = disabled_color
+        self.align = align
         self.selected = selected
         self.visible = visible
         self.enabled = enabled
@@ -191,7 +203,7 @@ class Label(Widget):
     def mouse_move(self, event):
         self.hovering = self.rect.collidepoint(event.pos)
 
-    def toggle_select(self):
+    def toggle_selected(self):
         self.selected = not self.selected
 
     def get_bg_color(self):
@@ -205,7 +217,15 @@ class Label(Widget):
         return self.text
 
     def text_rect(self):
-        return crect(self.rect.center, self.font.size(self.get_text()))
+        size = self.font.size(self.get_text())
+        if self.align == 'center':
+            return crect(self.rect.center, size)
+        elif self.align == 'left':
+            return mkrect(size, midleft=self.rect.midleft)
+        elif self.align == 'right':
+            return mkrect(size, midright=self.rect.midright)
+        else:
+            raise ValueError
 
     def draw(self, screen):
         if not self.visible:
@@ -215,8 +235,7 @@ class Label(Widget):
             pg.draw.rect(screen, bg_color, self.rect, 0,
                          self.border_radius)
         text_img = self.font.render(self.get_text(), True, self.text_color)
-        text_rect = text_img.get_rect(center=self.rect.center)
-        screen.blit(text_img, text_rect)
+        screen.blit(text_img, self.text_rect())
         if self.border_width:
             pg.draw.rect(screen, self.border_color, self.rect,
                          self.border_width, self.border_radius)
@@ -251,7 +270,7 @@ class TextBox(Label):
 
     def draw(self, screen):
         super().draw(screen)
-        if pg.time.get_ticks() % 1000 > 500:
+        if pg.time.get_ticks() % 1000 < 500:
             bar_img = self.font.render('|', True, self.text_color)
             text_rect = self.text_rect()
             bar_rect = bar_img.get_rect(midleft=text_rect.midright)
@@ -292,14 +311,14 @@ class Scene(Widget):
 class StartScene(Scene):
     def __init__(self, game):
         super().__init__(game)
-        self.mode = Mode.KANA_TO_LATIN
-        self.charset = Charset.HIRAGANA
+        self.mode: Mode = Mode.KANA_TO_LATIN
+        self.charset: Charset = Charset.HIRAGANA
         self.init_ui()
 
     def init_ui(self):
         main_label = Label('Kana/仮名', (WIDTH//2, HEIGHT//2-110),
                            SysFont(JAP_FONT, 60))
-        style = {
+        bstyle = {
             'font': SysFont(LATIN_FONT, 24),
             'bg_color': (192, 192, 255),
             'select_color': (0, 192, 255),
@@ -307,52 +326,57 @@ class StartScene(Scene):
         }
         mode_button1 = Button(
             'Kana→Latin', crect((WIDTH//2 - 150, HEIGHT//2 - 15), (130, 50)),
-            on_click=self.handle_set_mode, data=Mode.KANA_TO_LATIN, **style)
+            on_click=self.handle_mode, data=Mode.KANA_TO_LATIN, selected=True,
+            **bstyle)
         mode_button2 = Button(
             'Latin→Kana', crect((WIDTH//2, HEIGHT//2 - 15), (130, 50)),
-            on_click=self.handle_set_mode, data=Mode.LATIN_TO_KANA, **style)
+            on_click=self.handle_mode, data=Mode.LATIN_TO_KANA, **bstyle)
         mode_button3 = Button(
-            'Kana→Free', crect((WIDTH//2 + 150, HEIGHT//2 - 15), (130, 50)),
-            on_click=self.handle_set_mode, data=Mode.KANA_TO_LATIN_TEXT, **style)
+            'Kana→Text', crect((WIDTH//2 + 150, HEIGHT//2 - 15), (130, 50)),
+            on_click=self.handle_mode, data=Mode.KANA_TO_LATIN_TEXT, **bstyle)
         self.mode_buttons = [mode_button1, mode_button2, mode_button3]
 
         charset_button1 = Button(
-            'Hiragana', crect((WIDTH//2 - 80, HEIGHT//2 + 55), (130, 50)),
-            on_click=self.handle_set_charset, data=Charset.HIRAGANA, **style)
+            'Hiragana', crect((WIDTH//2 - 150, HEIGHT//2 + 55), (130, 50)),
+            on_click=self.handle_charset, data=Charset.HIRAGANA, selected=True,
+            **bstyle)
         charset_button2 = Button(
-            'Katakana', crect((WIDTH//2 + 80, HEIGHT//2 + 55), (130, 50)),
-            on_click=self.handle_set_charset, data=Charset.KATAKANA, **style)
-        self.charset_buttons = [charset_button1, charset_button2]
+            'Katakana', crect((WIDTH//2, HEIGHT//2 + 55), (130, 50)),
+            on_click=self.handle_charset, data=Charset.KATAKANA, **bstyle)
+        charset_button3 = Button(
+            '+ Dakuten', crect((WIDTH//2 + 150, HEIGHT//2 + 55), (130, 50)),
+            on_click=self.handle_charset, data=Charset.EXT, **bstyle)
+        self.charset_buttons = [charset_button1, charset_button2, charset_button3]
 
         start_button = Button(
             'Start', crect((WIDTH//2, HEIGHT//2 + 150), (150, 80)),
             SysFont(TITLE_FONT, 50), bg_color=(0, 255, 255),
             hover_color=(64, 128, 255), on_click=self.handle_start)
 
-        self.mode_lbl = Label('', (100, 50), visible=False)
-        self.charset_lbl = Label('', (200, 50), visible=False)
+        self.mode_lbl = Label('', (20, 40), align='left', visible=False)
+        self.charset_lbl = Label('', (20, 80), align='left', visible=False)
 
         self.widgets = [
             main_label, *self.mode_buttons, *self.charset_buttons,
             self.mode_lbl, self.charset_lbl, start_button,
         ]
 
-    def handle_set_mode(self, button: Button):
+    def handle_mode(self, button: Button):
         self.mode = button.data
+        for button2 in self.mode_buttons:
+            button2.selected = button2 is button
 
-    def handle_set_charset(self, button: Button):
-        self.charset = button.data
+    def handle_charset(self, button: Button):
+        if (self.charset ^ button.data) & ~Charset.EXT:
+            self.charset ^= button.data
+            button.toggle_selected()
 
     def handle_start(self, button):
         self.game.change_scene(GameScene, self.charset, self.mode)
 
     def update(self):
         self.mode_lbl.text = self.mode.name
-        self.charset_lbl.text = self.charset
-        for button in self.mode_buttons:
-            button.selected = button.data == self.mode
-        for button in self.charset_buttons:
-            button.selected = button.data == self.charset
+        self.charset_lbl.text = self.charset.name
 
     def key_down(self, event: pg.event.Event):
         if event.key == pg.K_ESCAPE:
@@ -367,7 +391,6 @@ class GameScene(Scene):
         self.mode = mode
         self.current_char = ''
         self.choices = []
-        self.running = False
         self.score = 0
         self.successes = 0
         self.failures = 0
@@ -466,9 +489,9 @@ class GameScene(Scene):
 
     def handle_choice(self, button: Button):
         if button.data == self.right_choice:
-            self.handle_right()
+            self.handle_right(button)
         else:
-            self.handle_wrong()
+            self.handle_wrong(button)
 
     def handle_right(self, button=None):
         # print('correct')
@@ -509,6 +532,7 @@ class Game:
         pg.display.set_caption('Kana/仮名')
         self.scene: Scene = None
         self.next_scene: Scene = None
+        self.running = False
         self.change_scene(StartScene)
 
     def main(self):
