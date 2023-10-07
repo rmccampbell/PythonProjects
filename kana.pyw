@@ -112,10 +112,10 @@ def center_rect(center, size):
 
 
 class Label:
-    def __init__(self, text, rect, font=None, text_color=(0, 0, 0), bg_color=None,
-                 border_width=0, border_radius=0, border_color=(0, 0, 0),
-                 hover_color=None, click_color=None, visible=True, enabled=True,
-                 on_click=None):
+    def __init__(self, text, rect, font=None, text_color=(0, 0, 0),
+                 bg_color=None, border_width=0, border_radius=0,
+                 border_color=(0, 0, 0), hover_color=None, click_color=None,
+                 visible=True, enabled=True, on_click=None):
         self.text = text
         self.font: pg.font.Font = font or SysFont(LATIN_FONT, 20)
         if len(rect) == 2:
@@ -167,10 +167,10 @@ class Label:
 
 
 class Button(Label):
-    def __init__(self, text, rect, font, text_color=(0, 0, 0), bg_color=None,
-                 border_width=2, border_radius=5, border_color=(0, 0, 0),
-                 hover_color=None, click_color=None, visible=True, enabled=True,
-                 on_click=None):
+    def __init__(self, text, rect, font=None, text_color=(0, 0, 0),
+                 bg_color=None, border_width=2, border_radius=5,
+                 border_color=(0, 0, 0), hover_color=None, click_color=None,
+                 visible=True, enabled=True, on_click=None):
         super().__init__(text, rect, font, text_color, bg_color, border_width,
                          border_radius, border_color, hover_color, click_color,
                          visible, enabled, on_click)
@@ -235,7 +235,7 @@ class StartScene(Scene):
             SysFont(TITLE_FONT, 50), bg_color=(0, 255, 255),
             hover_color=(64, 128, 255), on_click=self.start)
         self.mode_lbl = Label('', (100, 50), visible=False)
-        self.charset_lbl = Label('<>', (200, 50), visible=False)
+        self.charset_lbl = Label('', (200, 50), visible=False)
         self.labels = [
             main_label, mode_button1, mode_button2, charset_button1,
             charset_button2, self.mode_lbl, self.charset_lbl, start_button
@@ -405,6 +405,7 @@ class Game:
                         self.quit()
                     else:
                         self.change_scene(StartScene(self))
+                    continue
             self.scene.event(event)
 
     def update(self):
