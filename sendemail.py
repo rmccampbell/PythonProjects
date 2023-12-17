@@ -11,12 +11,12 @@ PASSWORD_FILE = os.environ.get('EMAIL_PASSWORD_FILE')
 
 def send_email(to_addr, subject, content, from_addr=None, user=USERNAME,
                password=None, password_file=PASSWORD_FILE, server=SERVER,
-               port=PORT):
+               port=PORT, debug=False):
     from_addr = from_addr or user
     if not from_addr:
         raise ValueError('either from_addr or user must be supplied')
-    if user and not password:
-        password = password_file and open(password_file).read().strip()
+    if user and not password and password_file:
+        password = open(password_file).read().strip()
     if isinstance(to_addr, (list, tuple)):
         to_addr = ', '.join(to_addr)
 
@@ -30,8 +30,13 @@ def send_email(to_addr, subject, content, from_addr=None, user=USERNAME,
     msg['From'] = from_addr
     msg['Subject'] = subject
 
+    if debug:
+        print(f'Connecting to {server}:{port}')
+
     with smtplib.SMTP(server, port) as s:
         if user and password:
+            if debug:
+                print(f'Logging in as {user}')
             s.starttls()
             s.login(user, password)
         s.send_message(msg)
@@ -47,5 +52,6 @@ if __name__ == '__main__':
     p.add_argument('-p', '--password')
     p.add_argument('-s', '--server', default=SERVER)
     p.add_argument('-P', '--port', default=PORT)
+    p.add_argument('-d', '--debug', action='store_true')
     args = p.parse_args()
     send_email(**vars(args))
