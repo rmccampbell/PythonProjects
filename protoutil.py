@@ -1,23 +1,32 @@
 import enum
+import struct
 from itertools import islice
 from collections.abc import Iterable
 from more_itertools import peekable
 
-UINT64_MASK = (1<<64) - 1
+UINT64_MASK = (1 << 64) - 1
+
 
 class WireType(enum.IntEnum):
-    VARINT = 0 # int32, int64, uint32, uint64, sint32, sint64, bool, enum
-    I64    = 1 # fixed64, sfixed64, double
-    LEN    = 2 # string, bytes, embedded messages, packed repeated fields
-    SGROUP = 3 # group start (deprecated)
-    EGROUP = 4 # group end (deprecated)
-    I32    = 5 # fixed32, sfixed32, float
+    VARINT = 0  # int32, int64, uint32, uint64, sint32, sint64, bool, enum
+    I64    = 1  # fixed64, sfixed64, double
+    LEN    = 2  # string, bytes, embedded messages, packed repeated fields
+    SGROUP = 3  # group start (deprecated)
+    EGROUP = 4  # group end (deprecated)
+    I32    = 5  # fixed32, sfixed32, float
+
+
+Value = int | bytes | str | float | list['FieldArgs']
+
+FieldArgs = tuple[int, Value] | tuple[int, Value, WireType]
+
 
 def bslice(bts: Iterable[int], n: int):
     slc = bytes(islice(bts, n))
     if len(slc) != n:
         raise ValueError('not enough bytes')
     return slc
+
 
 def encode_varint(x: int):
     x &= UINT64_MASK
@@ -28,6 +37,7 @@ def encode_varint(x: int):
     b.append(x)
     return bytes(b)
 
+
 def decode_varint(bts: Iterable[int]):
     x = 0
     shift = 0
@@ -37,56 +47,113 @@ def decode_varint(bts: Iterable[int]):
             break
         shift += 7
     else:
-        raise ValueError
+        raise ValueError('not enough bytes for varint')
     return x
+
 
 def sint_to_int(x: int):
     return (x << 1) ^ (x >> 63)
 
+
 def int_to_sint(x: int):
     return (x ^ -(x & 1)) >> 1
+
 
 def encode_sint(x: int):
     return encode_varint(sint_to_int(x))
 
+
 def decode_sint(bts: Iterable[int], off=0):
     return int_to_sint(decode_varint(bts, off))
+
+
+def double_to_int(x):
+    return int.from_bytes(struct.pack('<d', x), 'little')
+
+
+def float_to_int(x):
+    return int.from_bytes(struct.pack('<f', x), 'little')
+
+
+def int_to_double(x):
+    return struct.unpack('<d', x.to_bytes(8, 'little'))[0]
+
+
+def int_to_float(x):
+    return struct.unpack('<f', x.to_bytes(4, 'little'))[0]
+
+
+def encode_double(x):
+    return struct.pack('<d', x)
+
+
+def encode_float(x):
+    return struct.pack('<f', x)
+
+
+def decode_double(bts: Iterable[int]):
+    return struct.unpack('<d', bslice(bts, 8))
+
+
+def decode_float(bts: Iterable[int]):
+    return struct.unpack('<f', bslice(bts, 4))
+
 
 def pack_tag(field_num: int, wire_type: WireType):
     return (field_num << 3) | wire_type
 
+
 def unpack_tag(tag: int):
     return tag >> 3, WireType(tag & 0x7)
+
 
 def encode_tag(field_num: int, wire_type: WireType):
     return encode_varint(pack_tag(field_num, wire_type))
 
+
 def decode_tag(bts: Iterable[int]):
     return unpack_tag(decode_varint(bts))
+
 
 def decode_len_field(bts: Iterable[int]):
     bts = iter(bts)
     n = decode_varint(bts)
     return bslice(bts, n)
 
-def encode_len_field(value: bytes):
-    return encode_varint(value) + value
+
+def encode_len_field(value: bytes | str | list[FieldArgs]):
+    if isinstance(value, str):
+        value = value.encode()
+    elif isinstance(value, list):
+        value = encode_message(value)
+    return encode_varint(len(value)) + value
+
 
 def decode_i64(bts: Iterable[int]):
     return int.from_bytes(bslice(bts, 8), 'little')
 
+
 def decode_i32(bts: Iterable[int]):
     return int.from_bytes(bslice(bts, 4), 'little')
 
-def encode_i64(x: int):
+
+def encode_i64(x: int | float):
+    if isinstance(x, float):
+        x = double_to_int(x)
     return x.to_bytes(8, 'little')
 
-def encode_i32(x: int):
+
+def encode_i32(x: int | float):
+    if isinstance(x, float):
+        x = float_to_int(x)
     return x.to_bytes(4, 'little')
 
-def encode_field(field_num: int, value: int|bytes, wire_type: WireType|None=None):
+
+def encode_field(field_num: int, value: Value, wire_type: WireType | None = None):
     if wire_type is None:
-        wire_type = WireType.VARINT if isinstance(value, int) else WireType.LEN
+        wire_type = (WireType.VARINT if isinstance(value, int)
+                     else WireType.I64 if isinstance(value, float)
+                     else WireType.LEN)
     bts = encode_tag(field_num, wire_type)
     match wire_type:
         case WireType.VARINT:
@@ -100,6 +167,7 @@ def encode_field(field_num: int, value: int|bytes, wire_type: WireType|None=None
         case _:
             raise ValueError
     return bts
+
 
 def decode_field(bts: Iterable[int]):
     bts = iter(bts)
@@ -117,13 +185,18 @@ def decode_field(bts: Iterable[int]):
             raise ValueError
     return field_num, value
 
+
+def encode_message(fields: Iterable[FieldArgs]):
+    bts = bytearray()
+    for field_tup in fields:
+        bts.extend(encode_field(*field_tup))
+    return bytes(bts)
+
+
 def decode_message(bts: Iterable[int]):
     bts = peekable(iter(bts))
     fields = []
     while bts:
-        try:
-            num, val = decode_field(bts)
-        except:
-            break
+        num, val = decode_field(bts)
         fields.append((num, val))
     return fields
