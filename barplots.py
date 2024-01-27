@@ -10,8 +10,11 @@ def barplot(data, labels=None, char='x', colons=True, border=' ', just='left',
         if colons:
             labels = [l + ':' if l else '' for l in labels]
         lw = max(map(len, labels))
+        sep = (' '*lw + border + '\n')*pad
+        past_first = False
         for l, x in zip_longest(labels, data, fillvalue=0):
-            print(just(l or '', lw) + border + char*x + '\n'*pad)
+            print(sep*past_first + just(l or '', lw) + border + char*x)
+            past_first = True
     else:
         for x in data:
             print(char * x + '\n'*pad)
