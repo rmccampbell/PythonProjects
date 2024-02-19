@@ -5,21 +5,12 @@ del print_function, division
 import sys
 _PY3 = sys.version_info[0] >= 3
 
-import importlib, warnings
-
-def _try_import(*mods):
-    for m in mods:
-        try:
-            globals()[m] = importlib.import_module(m)
-        except (ImportError, SyntaxError) as e:
-            warnings.warn('Failed to import %s: %s' % (m, e))
-
 # Builtin imports
 import os, collections, functools, itertools, operator, types, math, cmath, re
 import io, random, inspect, textwrap, dis, timeit, time, datetime, string
 import fractions, decimal, unicodedata, codecs, locale, shutil, numbers
 import subprocess, json, base64, copy, hashlib, contextlib, glob, heapq
-import struct
+import struct, importlib, warnings
 import os.path as osp
 from math import pi, e, sqrt, exp, log, log10, floor, ceil, factorial, \
      sin, cos, tan, asin, acos, atan, atan2
@@ -33,16 +24,30 @@ from fractions import Fraction
 from decimal import Decimal
 import pprint
 
+def _try_import(*mods):
+    for m in mods:
+        try:
+            globals()[m] = importlib.import_module(m)
+        except (ImportError, SyntaxError) as e:
+            warnings.warn('Failed to import %s: %s' % (m, e))
+
+def _try_import_from(mod, names):
+    if isinstance(mod, str):
+        try:
+            mod = importlib.import_module(mod)
+        except (ImportError, SyntaxError) as e:
+            warnings.warn('Failed to import %s: %s' % (mod, e))
+            return
+    for name in names:
+        try:
+            globals()[name] = getattr(mod, name)
+        except AttributeError:
+            pass
+
 if _PY3:
+    _try_import_from(math, 'log2 tau gcd lcm isclose'.split())
     from itertools import zip_longest
-    try: from math import tau
-    except ImportError: pass
-    try: from math import log2
-    except ImportError: pass
-    try: from math import gcd
-    except ImportError: from fractions import gcd
-    try: from importlib import reload
-    except ImportError: from imp import reload
+    from importlib import reload
     import urllib.request
     from urllib.request import urlopen
     import urllib.parse as urlparse
@@ -58,19 +63,22 @@ globals()[__name__] = sys.modules[__name__]
 import functools2
 from functools2 import autocurrying, chunk, comp, ncomp, ident, inv, supply,\
      rpartial, trycall, trywrap, tryiter, iterfunc, unique, is_sorted, ilen,\
-     iindex, flatten, deepcopy, deepmap, first, last, unzip, take, pad, window,\
-     map2
+     iindex, flatten, deepcopy, deepmap, first, last, unzip, take, pad,\
+     window, flatten2, map2
 from functools2 import update_wrapper_signature as _update_wrapper
 if _PY3:
     import classes
-    from classes import DictNS, Symbol, ReprStr, BinInt, HexInt, PrettyODict
+    from classes import DictNS, Symbol, ReprStr, BinInt, HexInt, OctInt, \
+         PrettyODict
 _try_import('misc', 'primes', 'num2words', 'getfiles')
 
 # 3rd Party imports
-_try_import('more_itertools')
+# _try_import('more_itertools')
 
 
 T, F, N = True, False, None
+
+EMOJI = '\U0001F600'
 
 _empty = functools2.Sentinel('<empty>')
 
@@ -170,18 +178,16 @@ def pipe_alias(f, *names, **kwargs): # __depth
 def func(code, name=None, globs=None):
     if globs is None:
         globs = fglobals(1)
-    if name is None:
-        exclude = globs.copy()
+    locs = {}
     if isinstance(code, str):
         code = textwrap.dedent(code)
 
-    exec(code, globs)
+    exec(code, globs, locs)
     if name is not None:
-        return globs[name]
+        return locs[name]
     else:
-        for n, v in sorted(globs.items()):
-            if not n.startswith('_') and (n, v) not in exclude.items():
-                return v
+        for n in sorted(locs.keys()):
+            return locs[n]
         raise ValueError('nothing to return')
 
 
@@ -256,6 +262,9 @@ def each(func, it=None):
 ##    loop(map(func, it))
     for x in it:
         func(x)
+
+def do(*args):
+    return args[-1]
 
 def getl(name, depth=0):
     return flocals(depth + 1)[name]
@@ -394,24 +403,31 @@ def hsplit(string, *inds):
     return list(map('\n'.join,
                     zip(*(sbreak(s, *inds) for s in string.splitlines()))))
 
-def hconcat(*strings):
+def hconcat(*strings, sep=''):
     line_lists = [s.splitlines() for s in strings]
     widths = [max(map(len, lines)) for lines in line_lists]
     return '\n'.join(
-        ''.join(line.ljust(w) for line, w in zip(row, widths))
+        sep.join(line.ljust(w) for line, w in zip(row, widths))
         for row in zip_longest(*line_lists, fillvalue='')
     )
 
 def vstr(s):
     return '\n'.join(s)
 
-def hpad(s, w, left=False):
+def hpad(s, w=None, left=False, pad=' '):
+    lines = s.splitlines()
+    if w is None:
+        w = max(map(len, lines))
     just = str.rjust if left else str.ljust
-    return '\n'.join(just(l, w) for l in s.splitlines())
+    return '\n'.join(just(l, w, pad) for l in lines)
 
-def vpad(s, h, bottom=False):
-    padding = '\n' * (h - s.count('\n') - 1)
+def vpad(s, h, bottom=False, pad=''):
+    padding = (pad + '\n') * (h - s.count('\n') - 1)
     return s + padding if bottom else padding + s
+
+def stranspose(s, pad=' '):
+    lines = hpad(s, pad=pad).splitlines()
+    return '\n'.join(map(''.join, zip(*lines)))
 
 @alias('strbin')
 def str_bin(s, enc='utf-8', sep=' '):
@@ -421,14 +437,13 @@ def str_bin(s, enc='utf-8', sep=' '):
 
 @alias('strhex')
 def str_hex(s, enc=None):
-    import binascii
     if isinstance(s, str):
         if enc is None:
             maxc = s and max(s)
             enc = ('latin-1' if maxc <= '\xff' else
                    'utf-16be' if maxc <= '\uffff' else 'utf-32be')
         s = s.encode(enc)
-    return binascii.hexlify(s).decode('ascii')
+    return s.hex()
 
 def bytes_frombin(s):
     s = ''.join(s.split())
@@ -494,6 +509,16 @@ def hexfmt(n, digs=8, sign=False, prefix=False):
     if sign:
         return '{: {}0{}x}'.format(signed(n, digs*4), pref, prefw+digs+1)
     return '{:{}0{}x}'.format(unsigned(n, digs*4), pref, prefw+digs)
+
+@alias('octf')
+def octfmt(n, digs=3, sign=False, prefix=False):
+    if hasattr(n, 'dtype'):
+        digs = n.dtype.itemsize * 3
+    pref = '#' if prefix else ''
+    prefw = 2 if prefix else 0
+    if sign:
+        return '{: {}0{}o}'.format(signed(n, digs*3), pref, prefw+digs+1)
+    return '{:{}0{}o}'.format(unsigned(n, digs*3), pref, prefw+digs)
 
 def binint(x):
     return int(x, 2)
@@ -807,7 +832,7 @@ def lists(its):
 
 
 for f in (map, zip, range, filter, reversed, enumerate, islice, chunk, window,
-          unique, take):
+          unique, flatten2, map2):
     lwrap_alias(f)
 del f
 
@@ -825,9 +850,8 @@ def unescape(s):
 
 if not _PY3:
     bchr = chr
-elif sys.version_info >= (3, 5):
-    def bchr(i):
-        return b'%c' % i
+elif sys.version_info >= (3, 11):
+    bchr = int.to_bytes
 else:
     def bchr(i):
         return i.to_bytes(1, 'little')
@@ -862,10 +886,15 @@ def cround(z, n=0):
 
 @pipe
 def thresh(n, p=12):
+    if 'numpy' in sys.modules:
+        import numpy as np
+        if isinstance(n, (np.ndarray, np.generic)):
+            return npthresh(n, p)
     if isinstance(n, (list, tuple)):
         return type(n)(thresh(m, p) for m in n)
     if isinstance(n, complex):
-        return cround(n, p) + 0.0
+        n = cround(n, p) + 0.0
+        return n if n.imag else n.real
     return round(n, p) + 0.0
 
 
@@ -955,7 +984,8 @@ vrs = pipe(vars)
 tp = pipe(type)
 enm = pipe(lenumerate)
 mp = lambda f: pipe(lmap, f)
-mp2 = lambda f: pipe(map2, f)
+mp2 = lambda f: pipe(lmap2, f)
+flat = pipe(lflatten2)
 stmp = lambda f: pipe(itertools.starmap, f)
 flt = lambda f=None: pipe(lfilter, f)
 dflt = lambda f=None: pipe(dfilter, cond=f)
@@ -1191,8 +1221,6 @@ def pyside6():
 def mpl(backend=None, interactive=True):
     if isinstance(backend, (bool, int)):
         backend, interactive = None, backend
-    if backend is None and sys.stdout.__class__.__module__ == 'idlelib.run':
-        backend = 'QtAgg'
     import matplotlib
     _print_exec('import matplotlib, matplotlib as mpl\n'
                 + ('mpl.use({!r})\n'.format(backend) if backend else '') +
@@ -1377,8 +1405,10 @@ def sounddevice():
 ################
 
 def qenum_name(x):
+    if hasattr(x, 'name'):  # works for PySide
+        return x.name
     locs = {m: sys.modules[m]
-            for m in ['PyQt4', 'PyQt5', 'PySide2', 'PySide6']
+            for m in ['PyQt4', 'PyQt5', 'PySide2']  # not PySide6
             if m in sys.modules}
     tp = type(x)
     pname = tp.__module__ + '.' + tp.__qualname__.rsplit('.', 1)[0]
@@ -1589,13 +1619,13 @@ def col(i):
     return (slice(None), slc(i))
 
 
-def probs(a, axis=None):
+def probs(a, axis=-1):
     import numpy as np
     a = np.asarray(a)
     return a / a.sum(axis=axis, keepdims=True)
 
 
-def unit(v, axis=None, ord=2):
+def unit(v, axis=-1, ord=2):
     import numpy as np
     v = np.asarray(v)
     return v / np.linalg.norm(v, ord=ord, axis=axis, keepdims=True)
@@ -1604,6 +1634,26 @@ def unit(v, axis=None, ord=2):
 def dot(a, b, axis=-1, keepdims=False):
     import numpy as np
     return np.sum(np.multiply(a, b), axis=axis, keepdims=keepdims)
+
+
+def vlen(v, axis=-1, keepdims=False):
+    import numpy as np
+    return np.linalg.norm(v, axis=axis, keepdims=keepdims)
+
+
+def vlen2(v, axis=-1, keepdims=False):
+    import numpy as np
+    return dot(v, v, axis, keepdims=keepdims)
+
+
+def vpow(v, p, axis=-1):
+    import numpy as np
+    return v * np.linalg.norm(v, axis=axis, keepdims=True) ** (p - 1)
+
+
+def splitxy(a):
+    import numpy as np
+    return np.moveaxis(a, -1, 0)
 
 
 def eq(a, b=None):
@@ -1638,6 +1688,12 @@ def geom_mean2(a, axis=None, keepdims=None):
     if keepdims is None:
         keepdims = np._NoValue
     return np.exp(np.mean(np.log(a), axis=axis, keepdims=keepdims))
+
+
+def npthresh(a, p=12):
+    import numpy as np
+    a = np.asanyarray(a)
+    return np.round(a, p) + a.dtype.type(0)
 
 
 ##def summer(s=0):
@@ -1682,3 +1738,15 @@ def hang_indent(s, indent=4, width=80):
     n = len(indent)
     lines = textwrap.wrap(s[n:], width=width-n)
     return s[:n] + ('\n' + indent).join(lines)
+
+
+def array3d_repr(arr):
+    s = repr(arr)
+    return re.sub(r'\n\n', '\n', re.sub(r'(?<=[^\]]\],)\s+(?=\[)', ' ', s))
+
+def array3d_str(arr):
+    s = str(arr)
+    return re.sub(r'\n\n', '\n', re.sub(r'(?<=[^\]]\])\s+(?=\[)', ' ', s))
+
+def print_array3d(arr):
+    print(array3d_repr(arr))

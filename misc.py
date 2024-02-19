@@ -1,6 +1,21 @@
 # -*- coding: utf-8 -*-
 import math, cmath, re, struct, functools, operator, string, itertools, io
-import codecs, unicodedata
+import random, codecs, unicodedata
+from fractions import Fraction
+try:
+    import primes
+except ImportError:
+    primes = None
+
+
+class Sentinel(object):
+    def __init__(self, repr=None):
+        self._repr = repr
+    def __repr__(self):
+        return self._repr or super().__repr__()
+
+_empty = Sentinel('<empty>')
+
 
 def tobase(n, b):
     if b <= 1:
@@ -55,7 +70,7 @@ def float_tobase(num, b, p=10, pad0=False):
     for i in range(e + p + 1):
         if i > e and not (num or pad0):
             break
-        dig, num = divmod(num, 1)
+        num, dig = math.modf(num)
         num *= b
         ss.append('0123456789abcdefghijklmnopqrstuvwxyz'[int(dig)])
         if i == e:
@@ -73,21 +88,6 @@ def float_frombase(s, b):
         exp = point + 1 - len(s)
         s = s[:point] + s[point + 1:]
     return float(frombase(s, b) * b**exp)
-
-
-def int_to_bits(num):
-    bits = []
-    while num > 0:
-        bits.append(num & 1)
-        num >>= 1
-    bits.reverse()
-    return bits
-
-def bits_to_int(bits):
-    num = 0
-    for bit in bits:
-        num = (num << 1) | bool(bit)
-    return num
 
 
 def nthbit(x, n):
@@ -136,6 +136,12 @@ def bitcount32(n):
     n = (n & 0x00ff00ff) + (n >> 8 & 0x00ff00ff)
     return (n & 0x0000ffff) + (n >> 16)
 
+def trailing_zeros(n):
+    return (n ^ (n-1)).bit_length() - 1
+
+def trailing_ones(n):
+    return trailing_zeros(~n)
+
 def parity(n):
     i = 0
     while n:
@@ -162,11 +168,23 @@ def byteswap32(n):
     return (n & 255) << 24 | (n & 65280) << 8 | n >> 8 & 65280 | n >> 24
 
 
-def splitwords(n, inb=8, outb=4):
-    return [(n >> 8*outb*i) & ((1 << 8*outb) - 1) for i in range(inb//outb)]
+def splitwords(n, inb=64, outb=32):
+    return [(n >> outb*i) & ((1 << outb) - 1) for i in range(inb//outb)]
 
 def split64_32(n):
     return n & 0xffffffff, n >> 32
+
+def split32_16(n):
+    return n & 0xffff, n >> 16
+
+def split16_8(n):
+    return n & 0xff, n >> 8
+
+def joinwords(words, b=32):
+    n = 0
+    for i, word in enumerate(words):
+        n |= word << b*i
+    return n
 
 
 def float_bits(num):
@@ -276,7 +294,8 @@ def divmod_ceil(x, y):
 
 def divmod_round(x, y):
     q, r = divmod(x, y)
-    if 2*r > y or 2*r == y and q & 1:
+    r2 = 2*r
+    if r2 > y or r2 == y and q & 1:
         q += 1
         r -= y
     return q, r
@@ -537,7 +556,69 @@ def smoothstep(x):
 def smootherstep(x):
     import numpy as np
     x = np.clip(x, 0, 1)
-    return x**3 * (x * (x * 6 - 15) + 10);
+    return x**3 * (x * (x * 6 - 15) + 10)
+
+
+def tuple_set(tup, index, value):
+    tup = list(tup)
+    tup[index] = value
+    return tuple(tup)
+
+class _axis_index:
+    def __init__(self, arr, axis):
+        self.arr = arr
+        self.axis = axis
+    def __getitem__(self, ind):
+        return axis_index(self.arr, self.axis, ind)
+    def __setitem__(self, ind, val):
+        axis_index(self.arr, self.axis, ind)[:] = val
+
+def axis_index(arr, axis, ind=_empty):
+    if ind is _empty:
+        return _axis_index(arr, axis)
+    return arr[tuple_set((slice(None),)*arr.ndim, axis, ind)]
+
+def shape_slice(shape):
+    return tuple(map(slice, shape))
+
+def packwords(arr, wordbits=4, dtype=None, axis=-1, endian='little'):
+    import numpy as np
+    arr = np.asarray(arr, dtype)
+    wordbits = np.asarray(wordbits)
+    if wordbits.ndim == 0:
+        nwords = arr.dtype.itemsize*8 // wordbits
+        wordbits = np.full(nwords, wordbits)
+    shape = list(arr.shape)
+    shape[axis] = -(-shape[axis] // len(wordbits))  # ceiling division
+    out = np.zeros(shape, dtype)
+    if endian == 'little':
+        shifts = np.cumsum(np.append(0, wordbits[:-1]))
+    else:
+        shifts = np.cumsum(np.append(0, wordbits[:0:-1]))[::-1]
+    masks = (1 << wordbits) - 1
+    for i, (shift, mask) in enumerate(zip(shifts, masks)):
+        words_i = axis_index(arr, axis)[i::len(wordbits)]
+        out[shape_slice(words_i.shape)] |= (words_i & mask) << shift
+    return out
+
+def unpackwords(arr, wordbits=4, dtype=None, axis=-1, endian='little'):
+    import numpy as np
+    arr = np.asarray(arr)
+    wordbits = np.asarray(wordbits)
+    if wordbits.ndim == 0:
+        nwords = arr.dtype.itemsize*8 // wordbits
+        wordbits = np.full(nwords, wordbits)
+    shape = list(arr.shape)
+    shape[axis] *= len(wordbits)
+    out = np.zeros(shape, dtype or arr.dtype)
+    if endian == 'little':
+        shifts = np.cumsum(np.append(0, wordbits[:-1]))
+    else:
+        shifts = np.cumsum(np.append(0, wordbits[:0:-1]))[::-1]
+    masks = (1 << wordbits) - 1
+    for i, (shift, mask) in enumerate(zip(shifts, masks)):
+        axis_index(out, axis)[i::len(wordbits)] = (arr >> shift) & mask
+    return out
 
 
 _ibm437_visible_table = {
@@ -574,6 +655,29 @@ def codec_error_fallback_cp1252(e):
 
 codec_error_fallback_cp1252.register = lambda: codecs.register_error(
     'fallback_cp1252', codec_error_fallback_cp1252)
+
+def codec_error_fallback_utf8(e):
+    if isinstance(e, UnicodeEncodeError):
+        return e.object[e.start:e.end].encode('utf-8'), e.end
+    return e.object[e.start:e.end].decode('utf-8'), e.end
+
+codec_error_fallback_utf8.register = lambda: codecs.register_error(
+    'fallback_utf8', codec_error_fallback_utf8)
+
+
+def codec_error_fallback_latin1_utf8(e):
+    if isinstance(e, UnicodeEncodeError):
+        return e.object[e.start:e.end].encode('latin1', 'fallback_utf8'), e.end
+    return e.object[e.start:e.end].decode('latin1'), e.end
+
+codec_error_fallback_latin1_utf8.register = lambda: codecs.register_error(
+    'fallback_latin1_utf8', codec_error_fallback_latin1_utf8)
+
+def register_fallback_codecs():
+    codec_error_fallback_latin1.register()
+    codec_error_fallback_cp1252.register()
+    codec_error_fallback_utf8.register()
+    codec_error_fallback_latin1_utf8.register()
 
 
 def split_unicode_surrogates(s):
@@ -676,12 +780,118 @@ def segment_intersect(ab, cd):
     return None
 
 
-def mod_inv(e, n):
-    r0, r1 = e, n
-    s0, s1 = 1, 0
-    t0, t1 = 0, 1
-    while r1:
-        r0, (q, r1) = r1, divmod(r0, r1)
-        s0, s1 = s1, s0 - q*s1
-        t0, t1 = t1, t0 - q*t1
-    return s0 % n
+def count(start=0, stop=None, step=1):
+    if stop is None:
+        return itertools.count(start, step)
+    return range(start, stop, step)
+
+
+### Set theory
+
+def nat_to_int(i):
+    return (-1)**i*((i+1)//2)
+
+def nat_to_tuple(n, i):
+    l = [0]*n
+    for j in range(i.bit_length()):
+        if i>>j & 1:
+            l[j%n] |= 1<<(j//n)
+    return tuple(l)
+
+##def nat_to_tuple(n, i):
+##    return tuple(sum((i>>j&1)<<(j//n) for j in range(k, i.bit_length(), n))
+##                 for k in range(n))
+
+def enum_tuples(n, m=None):
+    for i in count(0, m):
+        yield nat_to_tuple(n, i)
+
+def enum_tuples2(n, m=None, lim=None):
+    x = 0
+    i = 0
+    while x != lim and i != m:
+        for tup in itertools.product(range(x+1), repeat=n):
+            if i == m:
+                break
+            if max(tup) == x:
+                yield tup
+                i += 1
+        x += 1
+
+def nat_to_set(i):
+    return [j for j in range(i.bit_length()) if i>>j & 1]
+
+def enum_sets(n=None, m=None):
+    for i in count(0, m):
+        if n is not None and i.bit_length() == n + 1:
+            break
+        yield nat_to_set(i)
+
+def enum_strings(alphabet, n=None, m=None):
+    j = 0
+    for i in count(0, n):
+        for s in itertools.product(alphabet, repeat=i):
+            if j == m:
+                break
+            yield s
+            j += 1
+        if j == m:
+            break
+
+# def nat_to_multiset(i):
+#     return primes.xpfactor(i + 1)
+
+# def nat_to_multiset(i):
+#     s = nat_to_set(i)
+#     l = []
+#     for a in s:
+#         b, n = nat_to_tuple(2, a)
+#         l.extend([b]*(n+1))
+#     return l
+
+# def enum_multisets(m=None):
+#     for i in count(0, m):
+#         yield nat_to_multiset(i)
+
+# def enum_multisets(m=None):
+#     for i in count(0, m):
+#         a, b = nat_to_tuple(2, i)
+#         s = nat_to_set(a)
+#         b += len(s)
+#         for ss in itertools.product(s, repeat=b):
+#             yield ss
+
+
+def continued_fraction(cf):
+    res = cf[-1] if cf else 0
+    for x in cf[-2::-1]:
+        res = x + Fraction(1, res)
+    return res
+
+def _set_to_cf(s):
+    if len(s) == 0: return [0]
+    prev = 0
+    res = []
+    for x in s:
+        res.append(x - prev)
+        prev = x
+    res[-1] += 1
+    return res
+
+def nat_to_rational(i):
+    return continued_fraction(_set_to_cf(nat_to_set(i)))
+
+def nat_to_rational2(i):
+    if i == 0: return 0
+    q = 1
+    for (p, c) in primes.pfactor_i(i):
+        q *= Fraction(p) ** nat_to_int(c)
+    return q
+
+def enum_rationals(n=None):
+    for i in count(0, n):
+        yield nat_to_rational(i)
+
+def enum_rationals2(n=None):
+    for i in count(0, n):
+        yield nat_to_rational2(i)

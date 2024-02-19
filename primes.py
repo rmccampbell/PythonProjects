@@ -1,38 +1,36 @@
-from itertools import islice
-from math import sqrt, log
+import random
+from itertools import islice, repeat
+from math import isqrt, log
 
-__all__ = ['pfactor', 'factor', 'isprime', 'primes', 'nprimes', 'nthprime',
-           'pfactori', 'factori', 'primesi', 'nprimesi']
-
-# def pfactori(n):
-#     for i in range(2, int(sqrt(abs(n)))+1):
-#         q, r = divmod(n, i)
-#         if r == 0:
-#             yield i
-#             for f in pfactori(q):
-#                 yield f
-#             return
-#     if abs(n) > 1:
-#         yield n
-
-def pfactori(n):
+def pfactor_i(n):
     n = abs(n)
     if n <= 1:
         return
-    while n % 2 == 0:
-        yield 2
-        n //= 2
-    i = 3
+    def _reduce(n, i, c=0):
+        while (m := n // i) * i == n:
+            c += 1
+            n = m
+        return n, c
+    n, c = _reduce(n, 2)
+    if c: yield (2, c)
+    n, c = _reduce(n, 3)
+    if c: yield (3, c)
+    i = 5
     while i*i <= n:
-        while n % i == 0:
-            yield i
-            n //= i
-        i += 2
+        n, c = _reduce(n, i)
+        if c: yield (i, c)
+        n, c = _reduce(n, i+2)
+        if c: yield (i+2, c)
+        i += 6
     if n > 1:
-        yield n
+        yield (n, 1)
 
-def factori(n):
-    for i in range(1, int(sqrt(abs(n)))+1):
+def xpfactor_i(n):
+    for (p, c) in pfactor_i(n):
+        yield from repeat(p, c)
+
+def factor_i(n):
+    for i in range(1, isqrt(abs(n))+1):
         q, r = divmod(n, i)
         if r == 0:
             yield i, q
@@ -40,12 +38,12 @@ def factori(n):
 def isprime(n):
     if n < 2 or (n > 2 and n % 2 == 0):
         return False
-    for i in range(3, int(sqrt(n))+1, 2):
+    for i in range(3, isqrt(n)+1, 2):
         if n % i == 0:
             return False
     return True
 
-def primesi(n):
+def primes_i(n):
     sieve = [True] * n
     for p in range(2, n):
         if sieve[p]:
@@ -53,20 +51,44 @@ def primesi(n):
             for i in range(p*p, n, p):
                 sieve[i] = False
 
-def nprimesi(n):
+def nprimes_i(n):
     b = int(n * (log(n) + log(log(n)))) if n > 9 else 24
-    return islice(primesi(b), n)
+    return islice(primes_i(b), n)
 
 def nthprime(n):
-    return next(islice(nprimesi(n+1), n, None))
+    return next(islice(nprimes_i(n+1), n, None))
 
 
-# Just for fun: a primality test based on regex
-def isprime_re(n):
-    import re
-    return not re.match(r'^1?$|^(11+?)\1+$', '1'*n)
+def fermat_test(n, k=20):
+    for i in range(k):
+        a = random.randrange(2, n-1)
+        if pow(a, n-1, n) != 1:
+            return False
+    return True
+
+def miller_rabin_test(n, k=20):
+    m = n - 1
+    s = (m ^ (m-1)).bit_length() - 1
+    d = m >> s
+    for i in range(k):
+        a = random.randrange(2, m)
+        x = pow(a, d, n)
+        for j in range(s):
+            y = pow(x, 2, n)
+            if y == 1 and x != 1 and x != m:
+                return False
+            x = y
+        if x != 1:
+            return False
+    return True
+
+def rand_prime(bits, k=20):
+    while True:
+        p = random.getrandbits(bits)
+        if miller_rabin_test(p, k):
+            return p
 
 
-for f in ('pfactor', 'factor', 'primes', 'nprimes'):
-    exec('def {0}(n): return list({0}i(n))'.format(f))
+for f in ('pfactor', 'xpfactor', 'factor', 'primes', 'nprimes'):
+    exec('def {0}(n): return list({0}_i(n))'.format(f))
 del f

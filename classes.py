@@ -620,6 +620,7 @@ class overloading:
         return self
 
     def __call__(self, *args, **kwargs):
+        err = None
         for func in self.funcs:
             try:
                 return func(*args, **kwargs)
@@ -1299,7 +1300,7 @@ class Scanner:
         while c.isspace():
             c = self.file.read(1)
         if not c:
-            raise ValueError('end of input')
+            raise EOFError('end of input')
         if allowed and c not in allowed:
             raise ValueError(' or '.join(map(repr, allowed)) + ' expected')
         return c
@@ -1339,9 +1340,16 @@ class CInStream:
         if isinstance(file, str):
             file = open(file)
         self.scan = Scanner(file)
+        self._eof = False
+
+    def __bool__(self):
+        return not self._eof
 
     def __rshift__(self, name):
-        sys._getframe(1).f_locals[name] = self.scan.next_token()
+        try:
+            sys._getframe(1).f_locals[name] = self.scan.next_token()
+        except EOFError:
+            self._eof = True
         return self
 
 
@@ -1400,36 +1408,42 @@ class IdWrapper:
         return repr(self._obj)
 
 
-class IdDict(cabc.MutableMapping, dict):
+class IdDict(cabc.MutableMapping):
     def __init__(self, *args, **kwargs):
+        self._dict = {}
         self.update(*args, **kwargs)
     def __setitem__(self, key, value):
-        dict.__setitem__(self, IdWrapper(key), value)
+        self._dict[IdWrapper(key)] = value
     def __getitem__(self, key):
-        return dict.__getitem__(self, IdWrapper(key))
+        return self._dict[IdWrapper(key)]
     def __delitem__(self, key):
-        dict.__delitem__(self, IdWrapper(key))
+        del self._dict[IdWrapper(key)]
     def __len__(self):
-        return dict.__len__(self)
+        return len(self._dict)
     def __iter__(self):
-        return (k._obj for k in dict.__iter__(self))
+        return (k._obj for k in self._dict)
+    def __repr__(self):
+        return repr(self._dict)
     def copy(self):
         return IdDict(self)
 
 
-class IdSet(cabc.MutableSet, set):
+class IdSet(cabc.MutableSet):
     def __init__(self, it=()):
+        self._set = set()
         self |= it
     def add(self, obj):
-        set.add(self, IdWrapper(obj))
+        self._set.add(IdWrapper(obj))
     def discard(self, obj):
-        set.discard(self, IdWrapper(obj))
+        self._set.discard(IdWrapper(obj))
     def __contains__(self, obj):
-        return set.__contains__(self, IdWrapper(obj))
+        return IdWrapper(obj) in self._set
     def __len__(self):
-        return set.__len__(self)
+        return len(self._set)
     def __iter__(self):
-        return (o._obj for o in set.__iter__(self))
+        return (o._obj for o in self._set)
+    def __repr__(self):
+        return repr(self._set)
     def copy(self):
         return IdSet(self)
     union = cabc.Set.__or__
@@ -1759,7 +1773,7 @@ class CircleArray(cabc.Sequence):
     def extend(self, values):
         for v in values:
             self.append(v)
-    def extendleft(self, val):
+    def extendleft(self, values):
         for v in values:
             self.appendleft(v)
     def pop(self):
@@ -1804,31 +1818,35 @@ class ReprStr(str):
     def __repr__(self):
         return str(self)
 
-class HexInt(int):
-    def __new__(cls, x=0, width=0, base=16):
+class _BaseInt(int):
+    def __new__(cls, x, width, base):
         if isinstance(x, str):
             self = super().__new__(cls, x, base)
         else:
             self = super().__new__(cls, x)
         self.width = width
         return self
-    def __repr__(self):
-        return '{:#0{}x}'.format(self, self.width + 2)
-    def __str__(self):
-        return repr(self)
+    @classmethod
+    def W(cls, width):
+        return functools.partial(cls, width=width)
 
-class BinInt(int):
+class BinInt(_BaseInt):
     def __new__(cls, x=0, width=0, base=2):
-        if isinstance(x, str):
-            self = super().__new__(cls, x, base)
-        else:
-            self = super().__new__(cls, x)
-        self.width = width
-        return self
+        return super().__new__(cls, x, width, base)
     def __repr__(self):
         return '{:#0{}b}'.format(self, self.width + 2)
-    def __str__(self):
-        return repr(self)
+
+class HexInt(_BaseInt):
+    def __new__(cls, x=0, width=0, base=16):
+        return super().__new__(cls, x, width, base)
+    def __repr__(self):
+        return '{:#0{}x}'.format(self, self.width + 2)
+
+class OctInt(_BaseInt):
+    def __new__(cls, x=0, width=0, base=8):
+        return super().__new__(cls, x, width, base)
+    def __repr__(self):
+        return '{:#0{}o}'.format(self, self.width + 2)
 
 
 
@@ -1929,8 +1947,9 @@ class view:
         istart, istop, istep = slc.indices(self.len)
         start = self.start + self.step*istart
         stop = self.start + self.step*istop
-        return slice(start if start >= 0 else ~sys.maxsize,
-                     stop if stop >= 0 else ~sys.maxsize, self.step*istep)
+        return slice(start if start >= 0 else start - len(self.seq),
+                     stop if stop >= 0 else stop - len(self.seq),
+                     self.step*istep)
     def _get_ind(self, i):
         if i < 0:
             i += self.len
@@ -1999,7 +2018,7 @@ class Indexer:
     def __delitem__(self, key):
         if self.fdel is None:
             raise TypeError('cannot delete item')
-        self.fdel(key, value)
+        self.fdel(key)
 
 
 class IndexerDescriptor:
@@ -2016,9 +2035,9 @@ class IndexerDescriptor:
         if instance is None:
             return self
         indexer = Indexer(
-            self.fget and self.fget.__get__(instance, owner),
-            self.fset and self.fset.__get__(instance, owner),
-            self.fdel and self.fdel.__get__(instance, owner),
+            self.fget.__get__(instance, owner),
+            self.fset.__get__(instance, owner),
+            self.fdel.__get__(instance, owner),
             self.__doc__)
         indexer.__name__ = self.__name__
         indexer.__qualname__ = self.__qualname__
@@ -2058,9 +2077,12 @@ def tuple_struct(*types):
                 yield getattr(self, f)
 
         def __getitem__(self, ind):
+            if isinstance(ind, slice):
+                fields = self._fields_[ind]
+                return tuple(getattr(self, f[0]) for f in fields)
             return getattr(self, self._fields_[ind][0])
 
-    TupleStruct.__name__ = 'tuple_' + '_'.join(t.__name__ for t in types)
+    TupleStruct.__name__ = 'tuple_' + '__'.join(t.__name__ for t in types)
     TupleStruct.__qualname__ = TupleStruct.__name__
     return TupleStruct
 
@@ -2080,3 +2102,40 @@ class c_uint80(ctypes.Structure):
 
     def __index__(self):
         return self.value
+
+
+class BitField:
+    def __init__(self, varname, offset, size):
+        self.varname = varname
+        self.offset = offset
+        self.size = size
+        self.mask = ((1 << size) - 1) << offset
+
+    def __get__(self, instance, owner=None):
+        if instance is None:
+            return self
+        return (getattr(instance, self.varname) & self.mask) >> self.offset
+
+    def __set__(self, instance, value):
+        value = (value << self.offset) & self.mask
+        varval = getattr(instance, self.varname) & ~self.mask
+        setattr(instance, self.varname, varval | value)
+
+
+class LazyProp:
+    def __init__(self, func, field=None):
+        self.func = func
+        self.field = field
+
+    def __set_name__(self, owner, name):
+        self.field = self.field or name
+
+    def __get__(self, instance, owner=None):
+        if instance is None:
+            return self
+        try:
+            return instance.__dict__[self.field]
+        except KeyError:
+            val = self.func(instance)
+            setattr(instance, self.field, val)
+            return val

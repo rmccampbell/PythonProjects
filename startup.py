@@ -2,9 +2,10 @@ import sys, os
 
 from utils import *
 
-if 'colorama' in sys.modules: # and 'WT_SESSION' in os.environ:
-    import colorama
-    colorama.deinit()
+# if 'colorama' in sys.modules: # and 'WT_SESSION' in os.environ:
+#     import colorama
+#     colorama.deinit()
+#     del colorama
 
 # Fix slow long lines in IDLE
 # if sys.stdout.__class__.__module__.split('.')[0] == 'idlelib':

@@ -1,5 +1,5 @@
 import functools, itertools, collections, inspect, random, operator
-import threading, time
+import threading, time, math
 from functools import partial, total_ordering
 from collections import deque
 from itertools import islice, groupby, chain, combinations
@@ -407,9 +407,9 @@ def binsearch2(seq, obj, first=0, last=None):
     if obj == seq[mid]:
         return mid
     elif obj < seq[mid]:
-        return bin_search2(seq, obj, first, mid)
+        return binsearch2(seq, obj, first, mid)
     else:
-        return bin_search2(seq, obj, mid + 1, last)
+        return binsearch2(seq, obj, mid + 1, last)
 
 def insertsort(l):
     for i in range(1, len(l)):
@@ -713,83 +713,11 @@ def cmp(x, y):
 def key_to_cmp(func):
     return lambda x, y: cmp(func(x), func(y))
 
+
 def count(start=0, stop=None, step=1):
     if stop is None:
         return itertools.count(start, step)
     return range(start, stop, step)
-
-def dovetail_i(n, i):
-    l = [0]*n
-    for j in range(i.bit_length()):
-        if i>>j & 1:
-            l[j%n] |= 1<<(j//n)
-    return tuple(l)
-
-def dovetail(n, m=None):
-    for i in count(0, m):
-        yield dovetail_i(n, i)
-
-def dovetail2(n, m=None, lim=None):
-    x = 0
-    i = 0
-    while x != lim and i != m:
-        for tup in itertools.product(range(x+1), repeat=n):
-            if i == m:
-                break
-            if max(tup) == x:
-                yield tup
-                i += 1
-        x += 1
-
-def subset_i(i):
-    l = []
-    for j in range(i.bit_length()):
-        if i>>j & 1:
-            l.append(j)
-    return l
-
-def subsets(n=None, m=None):
-    for i in count(0, m):
-        if n is not None and i.bit_length() == n + 1:
-            break
-        yield subset_i(i)
-
-def strings(alphabet, n=None, m=None):
-    j = 0
-    for i in count(0, n):
-        for s in itertools.product(alphabet, repeat=i):
-            if j == m:
-                break
-            yield s
-            j += 1
-        if j == m:
-            break
-
-##def multiset_i(i):
-##    return primes.pfactor(i + 1)
-##
-##def multisets(m=None):
-##    i = 0
-##    while m is None or i < m:
-##        yield multiset_i(i)
-##        i += 1
-
-##def multisets(m=None):
-##    for i in count(0, m):
-##        a, b = dovetail_i(2, i)
-##        s = subset_i(a)
-##        b += len(s)
-##        for ss in itertools.product(s, repeat=b):
-##            yield ss
-
-##def multiset_i(i):
-##    s = subset_i(i)
-##    l = []
-##    for a in s:
-##        b, n = dovetail_i(2, a)
-##        l.extend([b]*(n+1))
-##    return l
-##
 
 
 def powerset(iterable):
@@ -807,6 +735,9 @@ def unzip(it, n=None):
     tees = itertools.tee(it, n)
     return tuple([map(operator.itemgetter(i), tee)
                   for i, tee in enumerate(tees)])
+
+def flatten2(it):
+    return (y for x in it for y in x)
 
 def map2(func, seq):
     return (tuple(func(x) for x in y) for y in seq)

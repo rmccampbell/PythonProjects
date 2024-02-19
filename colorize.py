@@ -6,13 +6,24 @@ import colors
 
 RESET = '\x1b[0m'
 
-def dash_none(x):
-    return x if x != '-' else None
+def parse_color(x):
+    if x == '-':
+        return None
+    if x.isdigit():
+        return int(x)
+    return x
 
 if __name__ == '__main__':
+    if sys.platform == 'win32':
+        try:
+            import colorama
+            colorama.just_fix_windows_console()
+        except ImportError:
+            pass
+
     p = argparse.ArgumentParser()
-    p.add_argument('fgcolor', nargs='?', type=dash_none)
-    p.add_argument('bgcolor', nargs='?', type=dash_none)
+    p.add_argument('fgcolor', nargs='?', type=parse_color)
+    p.add_argument('bgcolor', nargs='?', type=parse_color)
     p.add_argument('-m', '--message')
     for char, flag, style in [
         ('b', 'bold', 'bold'),           ('f', 'faint', 'faint'),
