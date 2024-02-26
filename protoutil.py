@@ -24,7 +24,7 @@ FieldArgs = tuple[int, Value] | tuple[int, Value, WireType]
 def bslice(bts: Iterable[int], n: int):
     slc = bytes(islice(bts, n))
     if len(slc) != n:
-        raise ValueError('not enough bytes')
+        raise ValueError(f'not enough bytes: {len(slc)} < {n}')
     return slc
 
 
@@ -154,7 +154,7 @@ def encode_field(field_num: int, value: Value, wire_type: WireType | None = None
         wire_type = (WireType.VARINT if isinstance(value, int)
                      else WireType.I64 if isinstance(value, float)
                      else WireType.LEN)
-    bts = encode_tag(field_num, wire_type)
+    bts = bytearray(encode_tag(field_num, wire_type))
     match wire_type:
         case WireType.VARINT:
             bts += encode_varint(value)
@@ -164,12 +164,15 @@ def encode_field(field_num: int, value: Value, wire_type: WireType | None = None
             bts += encode_i64(value)
         case WireType.I32:
             bts += encode_i32(value)
+        case WireType.SGROUP:
+            bts += encode_message(value)
+            bts += encode_tag(field_num, WireType.EGROUP)
         case _:
-            raise ValueError
-    return bts
+            raise ValueError(f'invalid wire type: {wire_type}')
+    return bytes(bts)
 
 
-def decode_field(bts: Iterable[int]):
+def decode_field(bts: Iterable[int], with_wire_type=False):
     bts = iter(bts)
     field_num, wire_type = decode_tag(bts)
     match wire_type:
@@ -181,8 +184,14 @@ def decode_field(bts: Iterable[int]):
             value = decode_i64(bts)
         case WireType.I32:
             value = decode_i32(bts)
+        case WireType.SGROUP:
+            value = decode_message(bts, group=field_num)
+        case WireType.EGROUP:
+            value = None
         case _:
-            raise ValueError
+            raise ValueError(f'invalid wire type: {wire_type}')
+    if with_wire_type:
+        return field_num, value, wire_type
     return field_num, value
 
 
@@ -193,10 +202,16 @@ def encode_message(fields: Iterable[FieldArgs]):
     return bytes(bts)
 
 
-def decode_message(bts: Iterable[int]):
+def decode_message(bts: Iterable[int], with_wire_types=False, group=None):
     bts = peekable(iter(bts))
     fields = []
     while bts:
-        num, val = decode_field(bts)
-        fields.append((num, val))
+        num, val, wtype = decode_field(bts, with_wire_type=True)
+        if wtype == WireType.EGROUP:
+            if num != group:
+                raise ValueError(f'invalid end group: {num}')
+            return fields
+        fields.append((num, val) + ((wtype,) if with_wire_types else ()))
+    if group:
+        raise ValueError(f'missing end group: {group}')
     return fields
