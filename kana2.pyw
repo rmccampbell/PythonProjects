@@ -181,6 +181,7 @@ class Label(Widget):
         self.click_color = click_color
         self.select_color = select_color
         self.disabled_color = disabled_color
+        assert align in {'center', 'left', 'right'}
         self.align = align
         self.selected = selected
         self.visible = visible
@@ -225,7 +226,7 @@ class Label(Widget):
         elif self.align == 'right':
             return mkrect(size, midright=self.rect.midright)
         else:
-            raise ValueError
+            raise ValueError(self.align)
 
     def draw(self, screen):
         if not self.visible:
