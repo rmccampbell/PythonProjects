@@ -1064,7 +1064,7 @@ class Tree:
         return repr(self)
 
 ##    def print_tree(self, prefix='', last=True):
-##        print(prefix + '\---')
+##        print(prefix + r'\---')
 ##        prefix += '    ' if last else '|   '
 ##        for i, node in enumerate(self.children):
 ##            if isinstance(node, Tree):
@@ -1074,9 +1074,9 @@ class Tree:
 
     def print_tree(self, prefix='', last=True):
         if len(self) and not isinstance(self.children[0], Tree):
-            print(prefix + '\---' + str(self.children[0]))
+            print(prefix + r'\---' + str(self.children[0]))
         else:
-            print(prefix + '\---')
+            print(prefix + r'\---')
         prefix += '    ' if last else '|   '
         for i, node in enumerate(self.children):
             if isinstance(node, Tree):
@@ -1116,7 +1116,7 @@ class DataTree(Tree):
         return repr(self)
 
     def print_tree(self, prefix='', last=True):
-        print(prefix + '\---' + str(self.data))
+        print(prefix + r'\---' + str(self.data))
         prefix += '    ' if last else '|   '
         for i, node in enumerate(self.children):
             if isinstance(node, Tree):

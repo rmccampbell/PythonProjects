@@ -867,7 +867,7 @@ def bprint(bts):
     try:
         sys.stdout.buffer.write(bts + os.linesep.encode())
     except AttributeError:
-        print(bts.decode(sys.stdout.encoding, 'ignore'))
+        print(bts.decode(sys.stdout.encoding, 'surrogateescape'))
 
 @pipe
 @autocurrying
