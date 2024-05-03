@@ -2,4 +2,4 @@
 import sys
 
 for n in sys.argv[1:] or sys.stdin:
-	sys.stdout.buffer.write(bytes([int(n)]))
+    sys.stdout.buffer.write(bytes([int(n, 0)]))
