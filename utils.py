@@ -10,19 +10,19 @@ import os, collections, functools, itertools, operator, types, math, cmath, re
 import io, random, inspect, textwrap, dis, timeit, time, datetime, string
 import fractions, decimal, unicodedata, codecs, locale, shutil, numbers
 import subprocess, json, base64, copy, hashlib, contextlib, glob, heapq
-import struct, importlib, warnings
+import struct, importlib, warnings, pprint
 import os.path as osp
-from math import pi, e, sqrt, exp, log, log10, floor, ceil, factorial, \
-     sin, cos, tan, asin, acos, atan, atan2
-inf = float('inf')
-nan = float('nan')
-deg = pi/180
+import collections.abc as cabc
 from functools import partial, reduce
 from itertools import islice, chain, starmap, count
 from collections import OrderedDict, Counter
 from fractions import Fraction
 from decimal import Decimal
-import pprint
+from math import pi, e, sqrt, exp, log, log10, floor, ceil, factorial, \
+     sin, cos, tan, asin, acos, atan, atan2
+inf = float('inf')
+nan = float('nan')
+deg = pi/180
 
 def _try_import(*mods):
     for m in mods:
