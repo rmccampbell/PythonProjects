@@ -3,6 +3,7 @@ import struct
 from itertools import islice
 from collections.abc import Iterable
 from more_itertools import peekable
+from typing import TypeAlias
 
 UINT64_MASK = (1 << 64) - 1
 
@@ -16,9 +17,9 @@ class WireType(enum.IntEnum):
     I32    = 5  # fixed32, sfixed32, float
 
 
-Value = int | bytes | str | float | list['FieldArgs']
+Value: TypeAlias = int | bytes | str | float | list['FieldArgs']
 
-FieldArgs = tuple[int, Value] | tuple[int, Value, WireType]
+FieldArgs: TypeAlias = tuple[int, Value] | tuple[int, Value, WireType]
 
 
 def bslice(bts: Iterable[int], n: int):
