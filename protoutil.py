@@ -1,7 +1,7 @@
 import enum
 import struct
 from itertools import islice
-from collections.abc import Iterable
+from collections.abc import Iterable, Sequence
 from more_itertools import peekable
 from typing import TypeAlias
 
@@ -23,7 +23,7 @@ FieldArgs: TypeAlias = tuple[int, Value] | tuple[int, Value, WireType]
 
 
 def bslice(bts: Iterable[int], n: int):
-    slc = bytes(islice(bts, n))
+    slc = bytes(bts[:n] if isinstance(bts, Sequence) else islice(bts, n))
     if len(slc) != n:
         raise ValueError(f'not enough bytes: {len(slc)} < {n}')
     return slc
