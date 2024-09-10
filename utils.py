@@ -24,23 +24,32 @@ inf = float('inf')
 nan = float('nan')
 deg = pi/180
 
+K, M, G = [1024 ** (i+1) for i in range(3)]
+Ki, Mi, Gi, Ti, Pi, Ei = [1024 ** (i+1) for i in range(6)]
+
+def _try_import_module(mod):
+    try:
+        return importlib.import_module(mod)
+    except (ImportError, SyntaxError) as e:
+        warnings.warn('Failed to import %s: %s' % (mod, e))
+        return None
+
 def _try_import(*mods):
     for m in mods:
-        try:
-            globals()[m] = importlib.import_module(m)
-        except (ImportError, SyntaxError) as e:
-            warnings.warn('Failed to import %s: %s' % (m, e))
+        mod = _try_import_module(m)
+        if mod: globals()[m] = mod
 
 def _try_import_from(mod, names):
     if isinstance(mod, str):
-        try:
-            mod = importlib.import_module(mod)
-        except (ImportError, SyntaxError) as e:
-            warnings.warn('Failed to import %s: %s' % (mod, e))
-            return
+        mod = _try_import_module(mod)
+        if not mod: return
     for name in names:
+        if isinstance(name, tuple):
+            name, asname = name
+        else:
+            asname = name
         try:
-            globals()[name] = getattr(mod, name)
+            globals()[asname] = getattr(mod, name)
         except AttributeError:
             pass
 
@@ -71,6 +80,8 @@ if _PY3:
     from classes import DictNS, Symbol, ReprStr, BinInt, HexInt, OctInt, \
          PrettyODict
 _try_import('misc', 'primes', 'num2words', 'getfiles')
+_try_import_from('num2words', [('num2words', 'n2w'),
+                               ('words2num', 'w2n')])
 
 # 3rd Party imports
 # _try_import('more_itertools')
@@ -456,6 +467,9 @@ def str_frombin(s, enc='utf-8'):
 
 def str_fromhex(s, enc='utf-8'):
     return bytes.fromhex(s).decode(enc)
+
+def mask(n):
+    return (1 << n) - 1
 
 def unsigned(x, n=8):
     return int(x) & (1<<n)-1
