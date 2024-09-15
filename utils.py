@@ -78,7 +78,7 @@ from functools2 import update_wrapper_signature as _update_wrapper
 if _PY3:
     import classes
     from classes import DictNS, Symbol, ReprStr, BinInt, HexInt, OctInt, \
-         PrettyODict
+         PrettyODict, OrderedSet
 _try_import('misc', 'primes', 'num2words', 'getfiles')
 _try_import_from('num2words', [('num2words', 'n2w'),
                                ('words2num', 'w2n')])
@@ -202,7 +202,7 @@ def func(code, name=None, globs=None):
         raise ValueError('nothing to return')
 
 
-@pipe_alias('i', 'im', _depth=1)
+@pipe_alias('i', 'impt', _depth=1)
 def autoimport(string, _depth=0):
     if not isinstance(string, str): return string
     globs = fglobals(_depth+1)
@@ -338,6 +338,9 @@ def prevchr(c, off=1):
     chrf = bchr if isinstance(c, bytes) else chr
     return chrf(ord(c) - off)
 
+def stroff(s, off):
+    return ''.join(nextchr(c, off) for c in s)
+
 def letters(num=26):
     return ''.join(islice(itertools.cycle(string.ascii_lowercase), num))
 
@@ -380,12 +383,14 @@ def sbreak(s, *inds):
     prev = 0
     for ind in inds:
         yield s[prev:ind]
-        prev = ind
+        prev = ind if ind is not None else len(s)
     yield s[prev:]
 
 def ssep(s, inds, sep=' '):
     if isinstance(s, bytes) and isinstance(sep, str):
         sep = sep.encode()
+    if not isinstance(inds, cabc.Iterable):
+        inds = (inds,)
     return sep.join(sbreak(s, *inds))
 
 def sinsert(s, ind, s2):
@@ -447,20 +452,38 @@ def str_bin(s, enc='utf-8', sep=' '):
     return sep.join(map('{:08b}'.format, s))
 
 @alias('strhex')
-def str_hex(s, enc=None):
+def str_hex(s, enc='utf-8', sep=''):
     if isinstance(s, str):
-        if enc is None:
-            maxc = s and max(s)
-            enc = ('latin-1' if maxc <= '\xff' else
-                   'utf-16be' if maxc <= '\uffff' else 'utf-32be')
         s = s.encode(enc)
-    return s.hex()
+    h = s.hex()
+    if sep:
+        enc = codecs.lookup(enc).name
+        digs = 8 if 'utf-32' in enc else 4 if 'utf-16' in enc else 2
+        return sgroup(h, digs, sep)
+    return h
+
+def str_hexl1(s, sep=''):
+    return str_hex(s, 'latin-1', sep)
+
+def str_hex16(s, sep=''):
+    return str_hex(s, 'utf-16be', sep)
+
+def str_hex32(s, sep=''):
+    return str_hex(s, 'utf-32be', sep)
+
+def str_hex_auto(s, sep=''):
+    if isinstance(s, str):
+        maxc = s and max(s)
+        enc = ('latin-1' if maxc <= '\xff' else
+               'utf-16be' if maxc <= '\uffff' else 'utf-32be')
+    return str_hex(s, enc, sep)
 
 def bytes_frombin(s):
     s = ''.join(s.split())
-    n = (len(s) + 7) // 8
-    return int(s.ljust(8*n, '0'), 2).to_bytes(n, 'big')
-##    return bytes(int(bits, 2) for bits in schunk(''.join(s.split()), 8))
+    assert re.fullmatch(r'[01]*', s), 'invalid digit in binary string'
+    assert len(s) % 8 == 0, 'binary string length not multiple of 8'
+    return int(s, 2).to_bytes(len(s)//8, 'big') if s else b''
+    # return bytes(int(bits, 2) for bits in schunk(''.join(s.split()), 8))
 
 def str_frombin(s, enc='utf-8'):
     return bytes_frombin(s).decode(enc)
@@ -580,14 +603,17 @@ def float_bin(num, p=23):
 
 def float_frombin(s):
     s = s.strip()
-    m = re.fullmatch(r'((?:0b)?[01]+(?:\.[01]*)?|\.[01]+)(?:p([+-]?\d+))?', s)
-    if not m:
+    pattern = r'([+-]?)((?:0b)?(?:[01]+(?:\.[01]*)?|\.[01]+))(?:p([+-]?\d+))?'
+    match = re.fullmatch(pattern, s)
+    if not match:
         raise ValueError('invalid format')
-    s, e = m.groups()
+    s, m, e = match.groups()
+    sgn = -1. if s == '-' else 1.
     exp = int(e) if e else 0
-    if '.' in s:
-        exp -= len(s) - s.index('.') - 1
-    return float(int(s.replace('.', '', 1), 2) * 2**exp)
+    if '.' in m:
+        exp -= len(m) - m.index('.') - 1
+    mant = float(int(m.replace('.', '', 1), 2))
+    return math.ldexp(sgn * mant, exp)
 
 
 @pipe
@@ -666,6 +692,14 @@ def print2d(arr, sep='', pad=2, just='left'):
     for r in arr:
         print(sep.join(just(s, w) for s, w in zip(r, widths)).rstrip())
 
+def fmt_timedelta(td):
+    return ('-' if td < datetime.timedelta(0) else '') + str(abs(td))
+
+@pipe_alias('ptd')
+@alias('ptimedelta')
+def print_timedelta(td):
+    print(fmt_timedelta(td))
+
 
 @pipe
 def odict(obj=(), **kwargs):
@@ -684,8 +718,9 @@ def _is_ordereddict(d):
     return False
 
 @pipe_alias('pd')
+@pipe_alias('pds', sort=True)
 @alias('printd')
-def printdict(dct, sort=True):
+def printdict(dct, sort=False):
     if not hasattr(dct, 'keys'):
         dct = dict(dct)
     if not dct: return
@@ -774,14 +809,21 @@ def dvsearch(dct, s, case=False):
     flags = 0 if case else re.IGNORECASE
     return {k: v for k, v in dct.items() if re.search(s, str(v), flags)}
 
+_ordereddict = OrderedDict if sys.version_info < (3, 7) else dict
+
 @pipe
 def dsort(dct, key=None):
-    return OrderedDict(sorted(dct.items(), key=key))
+    return _ordereddict(sorted(dct.items(), key=key))
+
+@pipe
+def dksort(dct, key=None):
+    key = key or ident
+    return _ordereddict(sorted(dct.items(), key=lambda i: key(i[0])))
 
 @pipe
 def dvsort(dct, key=None):
     key = key or ident
-    return OrderedDict(sorted(dct.items(), key=lambda i: key(i[1])))
+    return _ordereddict(sorted(dct.items(), key=lambda i: key(i[1])))
 
 @pipe
 def dhead(dct=None, n=10):
@@ -881,7 +923,7 @@ def bprint(bts):
     try:
         sys.stdout.buffer.write(bts + os.linesep.encode())
     except AttributeError:
-        print(bts.decode(sys.stdout.encoding, 'surrogateescape'))
+        print(bts.decode(sys.stdout.encoding, 'replace'))
 
 @pipe
 @autocurrying
@@ -979,6 +1021,7 @@ s = pipe(str)
 lns = pipe(str.splitlines)
 j = pipe(lambda x: ''.join(map(str, x)))
 srt = pipe(sorted)
+srtk = lambda key, reverse=False: pipe(sorted, key=key, reverse=reverse)
 p = cat = pipe(print)
 pp = pipe(pprint.pp if sys.version_info >= (3, 8) else pprint.pprint)
 w = pipe(print, end='')
@@ -1002,6 +1045,8 @@ mp2 = lambda f: pipe(lmap2, f)
 flat = pipe(lflatten2)
 stmp = lambda f: pipe(itertools.starmap, f)
 flt = lambda f=None: pipe(lfilter, f)
+sflt = lambda f=None: pipe(sfilter, f)
+smp = lambda f=None: pipe(smap, f)
 dflt = lambda f=None: pipe(dfilter, cond=f)
 dkflt = lambda f=None: pipe(dkfilter, cond=f)
 dvflt = lambda f=None, typ=None: pipe(dvfilter, cond=f, typ=typ)
@@ -1193,10 +1238,14 @@ class lazy_loader(object):
 @lazy_loader
 def np():
     import numpy
-    _print_exec('import numpy, numpy as np\n'
-                'import numpy.linalg as LA\n'
-                'from numpy import array as A\n'
-                'np.set_printoptions(suppress=True)')
+    _print_exec(
+'''import numpy, numpy as np
+import numpy.linalg as LA
+from numpy import array as A
+from numpy import int8 as i8, int16 as i16, int32 as i32, int64 as i64
+from numpy import uint8 as u8, uint16 as u16, uint32 as u32, uint64 as u64
+from numpy import float16 as f16, float32 as f32, float64 as f64, bool_ as B
+np.set_printoptions(suppress=True)''')
     return numpy
 
 def qt4():
@@ -1321,6 +1370,18 @@ def PIL():
 @lazy_loader
 def Image():
     return PIL().Image
+
+@lazy_loader
+def iio():
+    import imageio.v3 as iio
+    _print_exec('import imageio, imageio.v3 as iio')
+    return iio
+
+@lazy_loader
+def imageio():
+    import imageio
+    _print_exec('import imageio, imageio.v3 as iio')
+    return imageio
 
 @lazy_loader
 def ctypes():
@@ -1568,8 +1629,10 @@ def thousands(n, sep='_'):
 @alias('pu')
 @alias('punicode')
 @pipe
-def prunicode(s):
+def prunicode(s, printc=False):
     for c in s:
+        if printc:
+            print(c, end=' ')
         try:
             print(unicodedata.name(c))
         except ValueError:
@@ -1625,6 +1688,9 @@ def atleast_nd(a, nd, newaxes=0):
 
 def slc(i):
     return slice(i, i+1 or None)
+
+def sslc(i, sz):
+    return slice(i, i+sz)
 
 def row(i):
     return slc(i)
@@ -1710,6 +1776,36 @@ def npthresh(a, p=12):
     return np.round(a, p) + a.dtype.type(0)
 
 
+def array3d_repr(arr):
+    s = repr(arr)
+    return re.sub(r'\n\n', '\n', re.sub(r'(?<=[^\]]\],)\s+(?=\[)', ' ', s))
+
+def array3d_str(arr):
+    s = str(arr)
+    return re.sub(r'\n\n', '\n', re.sub(r'(?<=[^\]]\])\s+(?=\[)', ' ', s))
+
+def print_array3d(arr):
+    print(array3d_repr(arr))
+
+
+def bin_array(arr, width=0):
+    import numpy as np
+    return np.vectorize(BinInt.W(width), [np.object_])(arr)
+
+def hex_array(arr, width=0):
+    import numpy as np
+    return np.vectorize(HexInt.W(width), [np.object_])(arr)
+
+def oct_array(arr, width=0):
+    import numpy as np
+    return np.vectorize(OctInt.W(width), [np.object_])(arr)
+
+
+def with_time(arr, dt):
+    import numpy as np
+    return (np.arange(len(arr))*dt, arr)
+
+
 ##def summer(s=0):
 ##    def summer(x):
 ##        nonlocal s
@@ -1752,15 +1848,3 @@ def hang_indent(s, indent=4, width=80):
     n = len(indent)
     lines = textwrap.wrap(s[n:], width=width-n)
     return s[:n] + ('\n' + indent).join(lines)
-
-
-def array3d_repr(arr):
-    s = repr(arr)
-    return re.sub(r'\n\n', '\n', re.sub(r'(?<=[^\]]\],)\s+(?=\[)', ' ', s))
-
-def array3d_str(arr):
-    s = str(arr)
-    return re.sub(r'\n\n', '\n', re.sub(r'(?<=[^\]]\])\s+(?=\[)', ' ', s))
-
-def print_array3d(arr):
-    print(array3d_repr(arr))
