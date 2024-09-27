@@ -23,7 +23,7 @@ NCHOICES = 5
 NTRIES = 4
 
 JAP_FONT = ['MS Gothic', 'notosanscjkjp']
-LATIN_FONT = ['arialnarrow', 'Arial']
+LATIN_FONT = ['Arial Narrow', 'Arial']
 TITLE_FONT = 'Verdana'
 
 class Mode(enum.Enum):
@@ -96,6 +96,7 @@ ALL_CHARS = HIRAGANA_ALL_CHARS + KATAKANA_ALL_CHARS
 CHARSETS = {
     Charset.HIRAGANA: HIRAGANA_CHARS,
     Charset.KATAKANA: KATAKANA_CHARS,
+    Charset.HIRAGANA | Charset.KATAKANA: HIRAGANA_CHARS + KATAKANA_CHARS,
     Charset.HIRAGANA | Charset.EXT: HIRAGANA_ALL_CHARS,
     Charset.KATAKANA | Charset.EXT: KATAKANA_ALL_CHARS,
     Charset.HIRAGANA | Charset.KATAKANA | Charset.EXT: ALL_CHARS,
@@ -130,7 +131,7 @@ class Widget:
     def draw(self, screen: pg.Surface):
         pass
 
-    def event(self, event: pg.event.Event):
+    def event(self, event: pg.event.Event) -> bool | None:
         if event.type == pg.MOUSEBUTTONDOWN:
             return self.mouse_down(event)
         elif event.type == pg.MOUSEBUTTONUP:
@@ -142,19 +143,19 @@ class Widget:
         elif event.type == pg.KEYUP:
             return self.key_up(event)
 
-    def mouse_down(self, event: pg.event.Event):
+    def mouse_down(self, event: pg.event.Event) -> bool | None:
         pass
 
-    def mouse_up(self, event: pg.event.Event):
+    def mouse_up(self, event: pg.event.Event) -> bool | None:
         pass
 
-    def mouse_move(self, event: pg.event.Event):
+    def mouse_move(self, event: pg.event.Event) -> bool | None:
         pass
 
-    def key_down(self, event: pg.event.Event):
+    def key_down(self, event: pg.event.Event) -> bool | None:
         pass
 
-    def key_up(self, event: pg.event.Event):
+    def key_up(self, event: pg.event.Event) -> bool | None:
         pass
 
 
@@ -194,6 +195,7 @@ class Label(Widget):
     def mouse_down(self, event):
         if self.enabled and self.rect.collidepoint(event.pos):
             self.clicking = True
+            return True
 
     def mouse_up(self, event):
         if self.enabled and self.clicking and self.rect.collidepoint(event.pos):
@@ -213,6 +215,9 @@ class Label(Widget):
                 else self.hover_color if self.hovering and self.hover_color
                 else self.select_color if self.selected and self.select_color
                 else self.bg_color)
+
+    def get_text_color(self):
+        return self.text_color
 
     def get_text(self):
         return self.text
@@ -235,7 +240,8 @@ class Label(Widget):
         if bg_color:
             pg.draw.rect(screen, bg_color, self.rect, 0,
                          self.border_radius)
-        text_img = self.font.render(self.get_text(), True, self.text_color)
+        text_img = self.font.render(
+            self.get_text(), True, self.get_text_color())
         screen.blit(text_img, self.text_rect())
         if self.border_width:
             pg.draw.rect(screen, self.border_color, self.rect,
@@ -254,27 +260,47 @@ class TextBox(Label):
                  border_width=2, **kwargs):
         super().__init__(text, rect, font, border_width=border_width, **kwargs)
         self.on_enter = on_enter
+        self.cursor = 0
 
     def clear(self):
         self.text = ''
+        self.cursor = 0
 
     def key_down(self, event):
         if not self.enabled:
-            return
+            return False
         if event.key == pg.K_RETURN:
             if self.on_enter:
                 self.on_enter(self)
         elif event.key == pg.K_BACKSPACE:
-            self.text = self.text[:-1]
+            if self.cursor > 0:
+                self.text = self.text[:self.cursor-1] + self.text[self.cursor:]
+                self.cursor -= 1
+        elif event.key == pg.K_DELETE:
+            self.text = self.text[:self.cursor] + self.text[self.cursor+1:]
+        elif event.key == pg.K_LEFT:
+            self.cursor = max(self.cursor - 1, 0)
+        elif event.key == pg.K_RIGHT:
+            self.cursor = min(self.cursor + 1, len(self.text))
+        elif event.key == pg.K_HOME:
+            self.cursor = 0
+        elif event.key == pg.K_END:
+            self.cursor = len(self.text)
         elif event.unicode and event.unicode.isprintable():
-            self.text += event.unicode
+            self.text = (self.text[:self.cursor] + event.unicode +
+                         self.text[self.cursor:])
+            self.cursor += len(event.unicode)
+        else:
+            return False
+        return True
 
     def draw(self, screen):
         super().draw(screen)
         if pg.time.get_ticks() % 1000 < 500:
-            bar_img = self.font.render('|', True, self.text_color)
-            text_rect = self.text_rect()
-            bar_rect = bar_img.get_rect(midleft=text_rect.midright)
+            bar_img = self.font.render('|', True, self.get_text_color())
+            rect = self.text_rect()
+            xpos = rect.left + self.font.size(self.text[:self.cursor])[0]
+            bar_rect = bar_img.get_rect(y=rect.y, centerx=xpos)
             screen.blit(bar_img, bar_rect)
 
 
@@ -287,12 +313,17 @@ class Scene(Widget):
     def event(self, event: pg.event.Event):
         for w in self.widgets:
             if w.event(event):
-                return
-        super().event(event)
+                return True
+        return super().event(event)
 
     def add(self, widget: Widget):
         self.widgets.append(widget)
         return widget
+
+    def add_all(self, *widgets: Widget):
+        for widget in widgets:
+            self.widgets.append(widget)
+        return widgets
 
     def update(self):
         pass
@@ -317,7 +348,8 @@ class StartScene(Scene):
         self.init_ui()
 
     def init_ui(self):
-        main_label = Label('Kana/仮名', (WIDTH//2, HEIGHT//2-110),
+        # main_label = Label('Kana/仮名', (WIDTH//2, HEIGHT//2-110),
+        main_label = Label('Ｋａｎａ／仮名', (WIDTH//2, HEIGHT//2-110),
                            SysFont(JAP_FONT, 60))
         bstyle = {
             'font': SysFont(LATIN_FONT, 24),
@@ -357,10 +389,10 @@ class StartScene(Scene):
         self.mode_lbl = Label('', (20, 40), align='left', visible=False)
         self.charset_lbl = Label('', (20, 80), align='left', visible=False)
 
-        self.widgets = [
+        self.add_all(
             main_label, *self.mode_buttons, *self.charset_buttons,
             self.mode_lbl, self.charset_lbl, start_button,
-        ]
+        )
 
     def handle_mode(self, button: Button):
         self.mode = button.data
@@ -445,10 +477,10 @@ class GameScene(Scene):
         self.failures_lbl = Label(str(self.failures), (170, 50),
                                   latin_font_48, text_color=FAILURESCOLOR)
 
-        self.widgets = [
+        self.add_all(
             self.char_lbl, *answer_widgets, self.wrong_lbl,
             self.score_lbl, self.successes_lbl, self.failures_lbl
-        ]
+        )
 
     def next_round(self):
         self.current_char = char = random.choice(self.charset)
@@ -479,6 +511,8 @@ class GameScene(Scene):
         self.cur_failures = 0
 
     def handle_text_enter(self, textbox: TextBox):
+        if not textbox.text:
+            return
         if textbox.text == self.right_choice:
             self.handle_right()
         else:
@@ -521,6 +555,11 @@ class GameScene(Scene):
         self.failures_lbl.text = str(self.failures)
 
     def key_down(self, event: pg.event.Event):
+        if self.mode != Mode.KANA_TO_LATIN_TEXT:
+            num_keys = range(pg.K_1, pg.K_1 + NCHOICES)
+            if event.key in num_keys:
+                ind = num_keys.index(event.key)
+                self.handle_choice(self.choice_buttons[ind])
         if event.key == pg.K_ESCAPE:
             self.game.change_scene(StartScene)
 
