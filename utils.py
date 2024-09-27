@@ -465,10 +465,10 @@ def str_hex(s, enc='utf-8', sep=''):
 def str_hexl1(s, sep=''):
     return str_hex(s, 'latin-1', sep)
 
-def str_hex16(s, sep=''):
+def str_hex16(s, sep=' '):
     return str_hex(s, 'utf-16be', sep)
 
-def str_hex32(s, sep=''):
+def str_hex32(s, sep=' '):
     return str_hex(s, 'utf-32be', sep)
 
 def str_hex_auto(s, sep=''):
