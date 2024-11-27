@@ -828,12 +828,13 @@ def enum_sets(n=None, m=None):
         yield nat_to_set(i)
 
 def enum_strings(alphabet, n=None, m=None):
+    join = ''.join if isinstance(alphabet, str) else lambda x: x
     j = 0
     for i in count(0, n):
         for s in itertools.product(alphabet, repeat=i):
             if j == m:
                 break
-            yield s
+            yield join(s)
             j += 1
         if j == m:
             break

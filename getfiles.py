@@ -101,6 +101,8 @@ def getfiles(paths=None, mode='r', encoding=None, errors=ERRORS, default='-',
 
 def expandpaths(paths, recursive=True):
     """Return a list of paths expanded from glob patterns."""
+    if isinstance(paths, PATHTYPES):
+        paths = [paths]
     if sys.version_info >= (3, 5):
         return [file for path in paths for file in
                 glob.glob(path, recursive=recursive) or (path,)]

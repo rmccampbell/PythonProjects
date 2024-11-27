@@ -317,14 +317,14 @@ def randints(size=10, max=10):
 def randbytes(n):
     return random.getrandbits(8 * n).to_bytes(n, 'little')
 
-def crange(start, stop, inclusive=True, nonchars=True):
+def crange(start=0, stop=sys.maxunicode, inclusive=True, nonchars=True):
     start = start if isinstance(start, int) else ord(start)
     stop = stop if isinstance(stop, int) else ord(stop)
     if inclusive: stop += 1
     return ''.join([c for c in map(chr, range(start, stop))
                     if nonchars or unicodedata.category(c) != 'Cn'])
 
-def brange(start, stop, inclusive=True):
+def brange(start=0, stop=255, inclusive=True):
     start = start if isinstance(start, int) else ord(start)
     stop = stop if isinstance(stop, int) else ord(stop)
     if inclusive: stop += 1
