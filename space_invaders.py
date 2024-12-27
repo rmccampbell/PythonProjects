@@ -3,7 +3,6 @@
 import os.path as osp
 import random
 import pygame as pg
-from typing import Optional
 
 WIDTH = 1280
 HEIGHT = 960
@@ -27,11 +26,11 @@ def compute_bbox(points: list[tuple[float, float]]):
 
 class Entity:
     def __init__(self, game: 'Game', pos: tuple[float, float],
-                 image: Optional[pg.Surface] = None,
-                 poly: Optional[list[tuple[float, float]]] = None,
-                 color: Optional[tuple[int, int, int]] = None,
+                 image: pg.Surface | None = None,
+                 poly: list[tuple[float, float]] | None = None,
+                 color: tuple[int, int, int] | None = None,
                  linewidth=0,
-                 bbox: Optional[pg.Rect] = None):
+                 bbox: pg.Rect | None = None):
         self.game = game
         self.x, self.y = pos
         self.image = image
@@ -67,7 +66,7 @@ class Entity:
         elif self.poly:
             points = [(x + self.x, y + self.y) for x, y in self.poly]
             pg.draw.polygon(screen, self.color, points, self.linewidth)
-        # pg.draw.rect(screen, (255,255,255), self.get_rect(), 1)
+        # pg.draw.rect(screen, (255, 255, 255), self.get_bbox(), 1)
 
     def update(self):
         pass
@@ -131,9 +130,9 @@ class Game:
         self.is_game_over = False
         self.enemy_timer = 0
         self.score = 0
-        self.start()
+        self.restart()
 
-    def start(self):
+    def restart(self):
         self.player = Player(self, (WIDTH//2, HEIGHT-80))
         self.entities = [self.player]
         self.is_game_over = False
@@ -179,14 +178,14 @@ class Game:
     def events(self):
         for event in pg.event.get():
             if event.type == pg.QUIT:
-                self.running = False
+                self.quit()
             if event.type == pg.KEYDOWN:
                 if (event.key == pg.K_ESCAPE or
                         event.key == pg.K_F4 and event.mod & pg.KMOD_ALT):
-                    self.running = False
+                    self.quit()
                 elif self.is_game_over:
                     if event.key in (pg.K_RETURN, pg.K_SPACE):
-                        self.start()
+                        self.restart()
                 elif event.key == pg.K_SPACE:
                     self.shoot()
 
@@ -214,6 +213,9 @@ class Game:
 
     def game_over(self):
         self.is_game_over = True
+
+    def quit(self):
+        self.running = False
 
 def main():
     Game().run()
