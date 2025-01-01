@@ -1,10 +1,10 @@
-#!/usr/bin/env python3
+#!/usr/bin/python3
 import sys
 import math
 import argparse
 import numpy as np
 import pygame as pg
-# import pygame.gfxdraw
+from scipy.ndimage import zoom
 
 # TODO: Add drawable barriers
 
@@ -76,8 +76,15 @@ def splash(z, v, down, px, py):
 def add_ball(balls, px, py):
     balls.append(np.array([px / PIX, py / PIX], float))
 
-def noise(width, height):
-    return np.random.normal(0, .5, (width, height))
+def noise(width, height, octs=6):
+    p = 2**(octs-1)
+    w = math.ceil(width / p) * p
+    h = math.ceil(height / p) * p
+    fbm = sum(zoom(np.random.normal(0, 2**i, (w//2**i, h//2**i)), 2**i)
+              for i in range(octs)) / p
+    i, j = np.indices((width, height))
+    dist = np.minimum(np.minimum(i, width-i-1), np.minimum(j, height-j-1))
+    return fbm[:width, :height] * np.minimum(dist/20, 1)
 
 def clear(z, v, balls):
     v[:] = 0
@@ -86,7 +93,6 @@ def clear(z, v, balls):
 
 def main(width=WIDTH, height=HEIGHT, clamp=CLAMP, wrap=WRAP,
          damp_edge=DAMP_EDGE):
-    wrap = '-w' in sys.argv[1:] or WRAP
     z = np.zeros((width, height))
     v = np.zeros((width, height))
 
