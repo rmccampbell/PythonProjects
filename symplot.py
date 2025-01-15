@@ -2,15 +2,16 @@
 import sys, sympy, re, argparse
 
 def symplot(*exprs, xlim=(-10, 10), ylim=(-10, 10), implicit=False):
+    x, y = sympy.symbols('x y')
     if implicit:
         if len(exprs) > 1:
             raise ValueError("can't plot multiple implicit equations")
         expr = exprs[0]
         if '=' in expr:
             expr = 'Eq({}, {})'.format(*re.split('==?', expr, 1))
-        sympy.plot_implicit(sympy.sympify(expr), ('x', *xlim), ('y', *ylim))
+        sympy.plot_implicit(sympy.sympify(expr), (x, *xlim), (y, *ylim))
     else:
-        sympy.plot(*exprs, ('x', *xlim))
+        sympy.plot(*map(sympy.sympify, exprs), (x, *xlim))
 
 if __name__ == '__main__':
     p = argparse.ArgumentParser()

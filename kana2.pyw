@@ -36,6 +36,11 @@ class Charset(enum.Flag):
     KATAKANA = 2
     EXT = 4
 
+class Align(enum.Enum):
+    LEFT = 1
+    CENTER = 2
+    RIGHT = 3
+
 #region data
 
 def nospace(s):
@@ -126,6 +131,17 @@ def crect(center, size):
     r.center = center
     return r
 
+def aligned_rect(anchor, size, align: Align):
+    if align == Align.CENTER:
+        anchor = anchor if len(anchor) == 2 else pg.Rect(anchor).center
+        return crect(anchor, size)
+    elif align == Align.LEFT:
+        anchor = anchor if len(anchor) == 2 else pg.Rect(anchor).midleft
+        return mkrect(size, midleft=anchor)
+    elif align == Align.RIGHT:
+        anchor = anchor if len(anchor) == 2 else pg.Rect(anchor).midright
+        return mkrect(size, midright=anchor)
+
 
 class Widget:
     def draw(self, screen: pg.Surface):
@@ -163,14 +179,14 @@ class Label(Widget):
     def __init__(self, text: str, rect, font=None, *, text_color=(0, 0, 0),
                  bg_color=None, border_width=0, border_radius=0,
                  border_color=(0, 0, 0), hover_color=None, click_color=None,
-                 select_color=None, disabled_color=None, align='center',
+                 select_color=None, disabled_color=None, align=Align.CENTER,
                  selected=False, visible=True, enabled=True, data=None,
                  on_click=None):
         self.text = text
         self.font: pg.font.Font = font or SysFont(LATIN_FONT, 24)
         if len(rect) == 2:
             size = self.font.size(text)
-            self.rect = crect(rect, size)
+            self.rect = aligned_rect(rect, size, align)
         else:
             self.rect = pg.Rect(rect)
         self.text_color = text_color
@@ -182,7 +198,6 @@ class Label(Widget):
         self.click_color = click_color
         self.select_color = select_color
         self.disabled_color = disabled_color
-        assert align in {'center', 'left', 'right'}
         self.align = align
         self.selected = selected
         self.visible = visible
@@ -224,14 +239,7 @@ class Label(Widget):
 
     def text_rect(self):
         size = self.font.size(self.get_text())
-        if self.align == 'center':
-            return crect(self.rect.center, size)
-        elif self.align == 'left':
-            return mkrect(size, midleft=self.rect.midleft)
-        elif self.align == 'right':
-            return mkrect(size, midright=self.rect.midright)
-        else:
-            raise ValueError(self.align)
+        return aligned_rect(self.rect, size, self.align)
 
     def draw(self, screen):
         if not self.visible:
@@ -386,8 +394,8 @@ class StartScene(Scene):
             SysFont(TITLE_FONT, 50), bg_color=(0, 255, 255),
             hover_color=(64, 128, 255), on_click=self.handle_start)
 
-        self.mode_lbl = Label('', (20, 40), align='left', visible=False)
-        self.charset_lbl = Label('', (20, 80), align='left', visible=False)
+        self.mode_lbl = Label('', (20, 30), align=Align.LEFT, visible=False)
+        self.charset_lbl = Label('', (20, 70), align=Align.LEFT, visible=False)
 
         self.add_all(
             main_label, *self.mode_buttons, *self.charset_buttons,

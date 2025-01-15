@@ -59,7 +59,10 @@ if __name__ == '__main__':
     p.add_argument('-d', '--double-height', action='store_true',
                    help='use dec double-height characters')
     args = p.parse_args()
-    charset = ''.join(charsets[s.lower()] for s in args.charset.split('+'))
+    if args.charset and set(args.charset).issubset(charsets['all']):
+        charset = args.charset
+    else:
+        charset = ''.join(charsets[s.lower()] for s in args.charset.split('+'))
     try:
         while True:
             c = random.choice(charset)
@@ -71,6 +74,6 @@ if __name__ == '__main__':
             if input().lower() == name:
                 print('Correct!')
             else:
-                print('Incorrect:', name)
+                print('\aIncorrect:', name)
     except (KeyboardInterrupt, EOFError):
         pass
