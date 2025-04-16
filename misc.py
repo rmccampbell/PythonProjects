@@ -522,6 +522,9 @@ def geom_cdf(p, k):
     # return 1 - (1 - p)**k
     return -math.expm1(k*math.log1p(-p))
 
+def birthday_prob(n, d):
+    return -math.expm1(-n*(n-1)/(2*d))
+
 
 def gauss_kernel_1d(k, sigma=None):
     import numpy as np

@@ -17,7 +17,11 @@ class WireType(enum.IntEnum):
     I32    = 5  # fixed32, sfixed32, float
 
 
-Value: TypeAlias = int | bytes | str | float | list['FieldArgs']
+MessageLike: TypeAlias = list['FieldArgs'] | dict[int, 'FieldValueArgs']
+
+Value: TypeAlias = int | bytes | str | float | MessageLike
+
+FieldValueArgs: TypeAlias = Value | tuple[Value, WireType]
 
 FieldArgs: TypeAlias = tuple[int, Value] | tuple[int, Value, WireType]
 
@@ -122,10 +126,10 @@ def decode_len_field(bts: Iterable[int]):
     return bslice(bts, n)
 
 
-def encode_len_field(value: bytes | str | list[FieldArgs]):
+def encode_len_field(value: bytes | str | MessageLike):
     if isinstance(value, str):
         value = value.encode()
-    elif isinstance(value, list):
+    elif isinstance(value, (list, dict)):
         value = encode_message(value)
     return encode_varint(len(value)) + value
 
@@ -196,10 +200,14 @@ def decode_field(bts: Iterable[int], with_wire_type=False):
     return field_num, value
 
 
-def encode_message(fields: Iterable[FieldArgs]):
+def encode_message(fields: MessageLike):
     bts = bytearray()
-    for field_tup in fields:
-        bts.extend(encode_field(*field_tup))
+    if isinstance(fields, dict):
+        fields = fields.items()
+    for num, *args in fields:
+        if len(args) == 1 and isinstance(args[0], tuple):
+            args = args[0]
+        bts.extend(encode_field(num, *args))
     return bytes(bts)
 
 

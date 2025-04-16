@@ -26,6 +26,7 @@ deg = pi/180
 
 K, M, G = [1024 ** (i+1) for i in range(3)]
 Ki, Mi, Gi, Ti, Pi, Ei = [1024 ** (i+1) for i in range(6)]
+milli, micro, nano, pico = [1000**-i for i in range(1, 4+1)]
 
 def _try_import_module(mod):
     try:
@@ -440,6 +441,13 @@ def hpad(s, w=None, left=False, pad=' '):
 def vpad(s, h, bottom=False, pad=''):
     padding = (pad + '\n') * (h - s.count('\n') - 1)
     return s + padding if bottom else padding + s
+
+def wc_pad(s, w, pad=' '):
+    import wcwidth
+    swidth = wcwidth.wcswidth(s)
+    pwidth = wcwidth.wcswidth(pad)
+    n = max(w - swidth, 0) // pwidth
+    return s + n*pad
 
 def stranspose(s, pad=' '):
     lines = hpad(s, pad=pad).splitlines()

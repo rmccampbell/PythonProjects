@@ -354,7 +354,7 @@ def iflatten(it, types=None, exclude=None):
     exclude = exclude or (_flatten_exclude if types is None else ())
     types = types or Iterable
     return (b for a in it for b in
-            (iflatten(a, types)
+            (iflatten(a, types, exclude)
              if isinstance(a, types) and not isinstance(a, exclude)
              else (a,)))
 
@@ -362,7 +362,7 @@ def flatten(lst, types=(list, tuple), exclude=None):
     exclude = exclude or (_flatten_exclude if types is None else ())
     types = types or Iterable
     return [b for a in lst for b in
-            (flatten(a, types)
+            (flatten(a, types, exclude)
              if isinstance(a, types) and not isinstance(a, exclude)
              else (a,))]
 
