@@ -1827,7 +1827,7 @@ class _BaseInt(int):
         self.width = width
         return self
     @classmethod
-    def W(cls, width):
+    def w(cls, width):
         return functools.partial(cls, width=width)
 
 class BinInt(_BaseInt):
@@ -2139,3 +2139,31 @@ class LazyProp:
             val = self.func(instance)
             setattr(instance, self.field, val)
             return val
+
+
+def with_generator(gen_func):
+    class WithGenerator:
+        def __init__(self, gen):
+            self.gen = gen
+
+        def __iter__(self):
+            return self
+
+        def __next__(self):
+            return self.gen.__next__()
+
+        def __getattr__(self, attr):
+            return getattr(self.gen, attr)
+
+        def close(self):
+            self.gen.close()
+
+        def __enter__(self):
+            return self.gen
+
+        def __exit__(self, *exc):
+            self.close()
+
+    return functools.update_wrapper(
+        lambda *args, **kwargs: WithGenerator(gen_func(*args, **kwargs)),
+        gen_func)

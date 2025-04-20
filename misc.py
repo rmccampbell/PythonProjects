@@ -93,14 +93,14 @@ def float_frombase(s, b):
 def nthbit(x, n):
     return x >> n & 1
 
-def revbits(x, n=8):
-    y = 0
-    for i in range(n):
-        y = y << 1 | x & 1
-        x >>= 1
-    return y
+# def revbits(x, n=8):
+#     y = 0
+#     for i in range(n):
+#         y = y << 1 | x & 1
+#         x >>= 1
+#     return y
 
-def revbits2(x, n=8):
+def revbits(x, n=8):
     table = (0, 8, 4, 12, 2, 10, 6, 14, 1, 9, 5, 13, 3, 11, 7, 15)
     y = 0
     m, r = divmod(n, 4)
@@ -110,6 +110,12 @@ def revbits2(x, n=8):
     if r:
         y = y << r | table[x & 0xf] >> 4-r
     return y
+
+def revbits16(x):
+    x = (x & 0x55555555) << 1 | x >> 1 & 0x55555555
+    x = (x & 0x33333333) << 2 | x >> 2 & 0x33333333
+    x = (x & 0x0f0f0f0f) << 4 | x >> 4 & 0x0f0f0f0f
+    return (x & 0x00ff00ff) << 8 | x >> 8
 
 def revbits32(x):
     x = (x & 0x55555555) << 1 | x >> 1 & 0x55555555
@@ -899,3 +905,170 @@ def enum_rationals(n=None):
 def enum_rationals2(n=None):
     for i in count(0, n):
         yield nat_to_rational2(i)
+
+
+def sint(x):
+    s = math.copysign(1, x)
+    x = abs(x) % 1
+    if x > .5:
+        s *= -1
+        x = 1 - x
+    if x > .25:
+        x = .5 - x
+    if x > .125:
+        return s * math.cos(math.tau*(.25 - x))
+    return s * math.sin(math.tau*x)
+
+def cost(x):
+    s = 1
+    x = abs(x) % 1
+    if x > .5:
+        x = 1 - x
+    if x > .25:
+        s = -1
+        x = .5 - x
+    if x >= .125:
+        return s * math.sin(math.tau*(.25 - x))
+    return s * math.cos(math.tau*x)
+
+def tant(x):
+    s, c = sint(x), cost(x)
+    return s / c if c else s * math.inf
+
+
+# def spiral_array(n, dtype=int, outward=False, out=None):
+#     import numpy as np
+#     a = out if out is not None else np.zeros((n, n), dtype)
+#     assert a.shape[-2:] == (n, n)
+#     j = 0
+#     for i in range(n//2):
+#         m = n - 2*i - 1
+#         a[..., i, i:-i-1] = np.arange(j, j+m, dtype=dtype)
+#         a[..., i:-i-1, -i-1] = np.arange(j+m, j+2*m, dtype=dtype)
+#         a[..., -i-1, -i-1:i:-1] = np.arange(j+2*m, j+3*m, dtype=dtype)
+#         a[..., -i-1:i:-1, i] = np.arange(j+3*m, j+4*m, dtype=dtype)
+#         j += 4*m
+#     if n % 2 == 1:
+#         a[..., n//2, n//2] = j
+#     if outward:
+#         np.negative(a, a)
+#         a += n**2 - 1
+#     return a
+
+def spiral_array(n, m=None, dtype=int, outward=False, out=None):
+    import numpy as np
+    m = m if m is not None else n
+    a = out if out is not None else np.zeros((n, m), dtype)
+    assert a.shape[-2:] == (n, m)
+    k = min(m, n) // 2
+    j = 0
+    for i in range(k):
+        dn = n - 2*i - 1
+        dm = m - 2*i - 1
+        a[..., i, i:-i-1] = np.arange(j, j+dm, dtype=dtype)
+        a[..., i:-i-1, -i-1] = np.arange(j+dm, j+dm+dn, dtype=dtype)
+        a[..., -i-1, -i-1:i:-1] = np.arange(j+dm+dn, j+2*dm+dn, dtype=dtype)
+        a[..., -i-1:i:-1, i] = np.arange(j+2*dm+dn, j+2*(dm+dn), dtype=dtype)
+        j += 2*(dm+dn)
+    if min(m, n) % 2 == 1:
+        d = abs(m - n) + 1
+        r = np.arange(j, j+d)
+        if n <= m:
+            a[..., k, k:k+d] = r
+        else:
+            a[..., k:k+d, k] = r
+    if outward:
+        np.negative(a, a)
+        a += n*m - 1
+    return a
+
+
+def hamming_encode(data, n):
+    npar = max(n - 1, 0).bit_length()
+    n = 1 << npar
+    ndata = n - npar - 1
+    data &= (1 << ndata) - 1
+    data <<= 3
+    for i in range(2, npar):
+        pow2 = 1 << i
+        mask = (1 << pow2) - 1
+        data = data & mask | (data & ~mask) << 1
+    mask = (1 << n) - 1
+    for i in reversed(range(npar)):
+        pow2 = 1 << i
+        mask ^= mask >> pow2
+        data |= ((data & mask).bit_count() & 1) << pow2
+    data |= data.bit_count() & 1
+    return data
+
+def hamming_check(data, n):
+    npar = max(n - 1, 0).bit_length()
+    n = 1 << npar
+    mask = (1 << n) - 1
+    data &= mask
+    par = data.bit_count() & 1
+    pos = 0
+    for i in reversed(range(npar)):
+        pow2 = 1 << i
+        mask ^= mask >> pow2
+        pi = (data & mask).bit_count() & 1
+        pos |= pi << i
+    return -1 if pos and (par == 0) else pos
+
+def hamming_decode(data, n):
+    npar = max(n - 1, 0).bit_length()
+    n = 1 << npar
+    data &= (1 << n) - 1
+    pos = hamming_check(data, n)
+    if pos < 0:
+        raise ValueError('message has 2 or more errors')
+    if pos:
+        data ^= 1 << pos
+    for i in reversed(range(2, npar)):
+        pow2 = 1 << i
+        mask = (1 << pow2) - 1
+        data = data & mask | (data & ~mask << 1) >> 1
+    data >>= 3
+    return data
+
+def hamming16_11_encode(data):
+    data &= (1 << 11) - 1
+    data <<= 3
+    data = data & 0x0f | (data & 0xfff0) << 1
+    data = data & 0xff | (data & 0xff00) << 1
+    data |= ((data & 0xaaaa).bit_count() & 1) << 1
+    data |= ((data & 0xcccc).bit_count() & 1) << 2
+    data |= ((data & 0xf0f0).bit_count() & 1) << 4
+    data |= ((data & 0xff00).bit_count() & 1) << 8
+    data |= data.bit_count() & 1
+    return data
+
+def hamming16_11_check(data):
+    data &= (1 << 16) - 1
+    par = data.bit_count() & 1
+    p1 = (data & 0xaaaa).bit_count() & 1
+    p2 = (data & 0xcccc).bit_count() & 1
+    p4 = (data & 0xf0f0).bit_count() & 1
+    p8 = (data & 0xff00).bit_count() & 1
+    pos = p1 | p2<<1 | p4<<2 | p8<<3
+    return -1 if pos and (par == 0) else pos
+
+def hamming16_11_decode(data):
+    data &= (1 << 16) - 1
+    pos = hamming16_11_check(data)
+    if pos < 0:
+        raise ValueError('message has 2 or more errors')
+    if pos:
+        data ^= 1 << pos
+    data = data & 0xff | (data & 0xfe00) >> 1
+    data = data & 0x0f | (data & 0xffe0) >> 1
+    data >>= 3
+    return data
+
+
+def mixed_num(f):
+    f = Fraction(f)
+    af = abs(f)
+    if af > 1 and f.denominator > 1:
+        return f'{int(f)} {af % 1}'
+    return str(f)

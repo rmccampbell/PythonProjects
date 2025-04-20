@@ -5,10 +5,10 @@ from collections import deque
 from itertools import islice, groupby, chain, combinations
 try:
     from itertools import zip_longest
-    from collections.abc import Iterable
+    from collections.abc import Iterable, Mapping
 except ImportError:
     from itertools import izip_longest as zip_longest
-    from collections import Iterable
+    from collections import Iterable, Mapping
 
 class Sentinel(object):
     def __init__(self, repr=None):
@@ -147,6 +147,12 @@ def iterfunc(func, init, cond=None, stop=_empty):
         yield init
         init = func(init)
 
+def while_yield(init, cond, yld, update):
+    x = init
+    while cond(x):
+        yield yld(x)
+        x = update(x)
+
 def accumulate(func, seq, init=_empty, include_init=False):
     res = []
     x = init
@@ -173,6 +179,16 @@ def trywrap(func, default=None, exc=Exception):
             return func(*args, **kwargs)
         except exc:
             return default
+    return f
+
+
+def map_exception(func, src_exc, dst_exc):
+    @wraps_signature(func)
+    def f(*args, **kwargs):
+        try:
+            return func(*args, **kwargs)
+        except src_exc as e:
+            raise dst_exc(str(e)) from e
     return f
 
 
@@ -348,7 +364,7 @@ def window(seq, size=2, step=1, fill=_empty, partial=True):
         for i in range(missing_elts):
             window.popleft()
 
-_flatten_exclude = (str, bytes, bytearray, dict)
+_flatten_exclude = (str, bytes, bytearray, dict, Mapping)
 
 def iflatten(it, types=None, exclude=None):
     exclude = exclude or (_flatten_exclude if types is None else ())
@@ -366,23 +382,30 @@ def flatten(lst, types=(list, tuple), exclude=None):
              if isinstance(a, types) and not isinstance(a, exclude)
              else (a,))]
 
-_copyable = (list, tuple, set, frozenset, dict, str, bytes, bytearray)
+_from_iter_types = (list, tuple, set, frozenset, dict, bytes, bytearray)
 
-def deepcopy(lst, types=(list, tuple), factory_func=None):
-    return deepmap(ident, lst, types, factory_func)
+def deepcopy(obj, types=(list, tuple), type_to_factory=None):
+    return deepmap(ident, obj, types, type_to_factory)
 
-def deepmap(func, lst, types=(list, tuple), factory_func=None):
+def deepmap(func, obj, types=(list, tuple), type_to_factory=None):
     types = types or NonStrIter
-    if not isinstance(lst, types):
-        return func(lst)
-    factory = (factory_func(type(lst)) if factory_func
-               else type(lst) if isinstance(lst, _copyable)
-               else dict if isinstance(lst, collections.abc.Mapping)
-               else list)
-    if isinstance(lst, collections.abc.Mapping):
-        return factory((k, deepmap(func, v, types, factory_func))
-                       for k, v in lst.items())
-    return factory(deepmap(func, o, types, factory_func) for o in lst)
+    typ = type(obj)
+    if not issubclass(typ, types):
+        return func(obj)
+    if isinstance(type_to_factory, dict):
+        type_to_factory = type_to_factory.get
+    factory = type_to_factory(typ) if type_to_factory else None
+    if factory is None:
+        factory = (typ if issubclass(typ, _from_iter_types)
+                   else dict if issubclass(typ, Mapping)
+                   else ''.join if issubclass(typ, str)
+                   else list)
+    if issubclass(typ, Mapping):
+        return factory((k, deepmap(func, v, types, type_to_factory))
+                       for k, v in obj.items())
+    elif issubclass(typ, str):
+        return factory(map(func, obj))
+    return factory(deepmap(func, o, types, type_to_factory) for o in obj)
 
 
 def binsearch(seq, obj):
@@ -661,19 +684,21 @@ def nones_first(x):
 
 class reverse_order:
     def __init__(self, obj):
-        self._obj = obj
+        self.value = obj
+    def __repr__(self):
+        return f'reverse_order({self.value})'
     def __eq__(self, other):
-        return self._obj == other._obj
+        return self.value == other.value
     def __ne__(self, other):
-        return self._obj != other._obj
+        return self.value != other.value
     def __lt__(self, other):
-        return self._obj > other._obj
+        return self.value > other.value
     def __gt__(self, other):
-        return self._obj < other._obj
+        return self.value < other.value
     def __le__(self, other):
-        return self._obj >= other._obj
+        return self.value >= other.value
     def __ge__(self, other):
-        return self._obj <= other._obj
+        return self.value <= other.value
 
 def reverse_key(key):
     return lambda obj: reverse_order(key(obj))

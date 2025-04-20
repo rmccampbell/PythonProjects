@@ -12,7 +12,6 @@ import fractions, decimal, unicodedata, codecs, locale, shutil, numbers
 import subprocess, json, base64, copy, hashlib, contextlib, glob, heapq
 import struct, importlib, warnings, pprint
 import os.path as osp
-import collections.abc as cabc
 from functools import partial, reduce
 from itertools import islice, chain, starmap, count
 from collections import OrderedDict, Counter
@@ -28,16 +27,17 @@ K, M, G = [1024 ** (i+1) for i in range(3)]
 Ki, Mi, Gi, Ti, Pi, Ei = [1024 ** (i+1) for i in range(6)]
 milli, micro, nano, pico = [1000**-i for i in range(1, 4+1)]
 
-def _try_import_module(mod):
+def _try_import_module(mod, warn=True):
     try:
         return importlib.import_module(mod)
     except (ImportError, SyntaxError) as e:
-        warnings.warn('Failed to import %s: %s' % (mod, e))
+        if warn:
+            warnings.warn('Failed to import %s: %s' % (mod, e))
         return None
 
-def _try_import(*mods):
+def _try_import(*mods, warn=True):
     for m in mods:
-        mod = _try_import_module(m)
+        mod = _try_import_module(m, warn)
         if mod: globals()[m] = mod
 
 def _try_import_from(mod, names):
@@ -61,10 +61,14 @@ if _PY3:
     import urllib.request
     from urllib.request import urlopen
     import urllib.parse as urlparse
-    _try_import('enum', 'pathlib', 'typing', 'dataclasses')
+    import collections.abc as cabc
+    _try_import('enum', 'pathlib', 'typing', 'dataclasses', 'zoneinfo',
+                warn=False)
 else:
+    from itertools import izip_longest as zip_longest
     from urllib2 import urlopen
     import urlparse
+    import collections as cabc
 
 # Allow this module to be symlinked to different names
 globals()[__name__] = sys.modules[__name__]
@@ -83,6 +87,7 @@ if _PY3:
 _try_import('misc', 'primes', 'num2words', 'getfiles')
 _try_import_from('num2words', [('num2words', 'n2w'),
                                ('words2num', 'w2n')])
+_try_import_from('misc', ['human_readable', 'parse_human', 'parse_time'])
 
 # 3rd Party imports
 # _try_import('more_itertools')
@@ -95,8 +100,7 @@ EMOJI = '\U0001F600'
 _empty = functools2.Sentinel('<empty>')
 
 
-def alias(obj, *names, **kwargs): # _depth=0
-    _depth=kwargs.get('_depth', 0)
+def alias(obj, *names, _depth=0):
     if isinstance(obj, str):
         names = (obj,) + names
         return lambda obj: alias(obj, *names, _depth=_depth+1)
@@ -178,8 +182,7 @@ class pipe(object):
     def __getattr__(self, name):
         return getattr(self.callable, name)
 
-def pipe_alias(f, *names, **kwargs): # __depth
-    __depth = kwargs.pop('__depth', 0)
+def pipe_alias(f, *names, __depth=0, **kwargs):
     if isinstance(f, str):
         return rpartial(pipe_alias, f, *names, __depth=__depth+1, **kwargs)
     alias(pipe(f, **kwargs), *names, _depth=__depth+1)
@@ -362,7 +365,7 @@ def shuffled(it):
 
 
 def randstream(vals):
-    if not isinstance(vals, collections.abc.Sequence):
+    if not isinstance(vals, cabc.Sequence):
         vals = list(vals)
     while True:
         yield random.choice(vals)
@@ -503,11 +506,11 @@ def mask(n):
     return (1 << n) - 1
 
 def unsigned(x, n=8):
-    return int(x) & (1<<n)-1
+    return operator.index(x) & (1<<n)-1
 
 def signed(x, n=8):
     sb = 1<<(n-1)
-    return (int(x) & (1<<n)-1 ^ sb) - sb
+    return (operator.index(x) & (1<<n)-1 ^ sb) - sb
 
 _signed = signed
 def tobytes(n, length=None, byteorder=sys.byteorder, signed=False):
@@ -728,7 +731,7 @@ def _is_ordereddict(d):
 @pipe_alias('pd')
 @pipe_alias('pds', sort=True)
 @alias('printd')
-def printdict(dct, sort=False):
+def printdict(dct, sort=False, maxkw=40):
     if not hasattr(dct, 'keys'):
         dct = dict(dct)
     if not dct: return
@@ -736,13 +739,14 @@ def printdict(dct, sort=False):
     if sort and not _is_ordereddict(dct):
         try: items = sorted(items)
         except TypeError: pass
-    ksize = max(len(str(k)) for k in dct.keys())
+    kwidth = max(len(str(k)) for k in dct.keys())
+    kwidth = min(kwidth, maxkw)
     for k, v in items:
         rep = repr(v)
         if '\n' in rep:
             firstline, rest = rep.split('\n', 1)
-            rep = firstline + '\n' + textwrap.indent(rest, ' '*(ksize + 3))
-        print(str(k).ljust(ksize) + ' = ' + rep)
+            rep = firstline + '\n' + textwrap.indent(rest, ' '*(kwidth + 3))
+        print(str(k).ljust(kwidth) + ' = ' + rep)
 
 
 @pipe
@@ -802,10 +806,34 @@ def ddiff(dct, exclude):
     exclude = set(exclude)
     return {k: v for k, v in dct.items() if k not in exclude}
 
-def dunion(dct1, dct2):
-    dct = dct1.copy()
-    dct.update(dct2)
-    return dct
+def dunion(*dcts):
+    res = {}
+    for d in dcts:
+        res.update(d)
+    return res
+
+def dunionall(*dcts, unique=False):
+    res = {}
+    tp, append = (set, set.add) if unique else (list, list.append)
+    for d in dcts:
+        for k, v in d.items():
+            append(res.setdefault(k, tp()), v)
+    return res
+
+def multidict(items, unique=False):
+    res = {}
+    tp, append = (set, set.add) if unique else (list, list.append)
+    for k, v in items:
+        append(res.setdefault(k, tp()), v)
+    return res
+
+def multidict_union(*dcts, unique=False):
+    res = {}
+    tp, extend = (set, set.update) if unique else (list, list.extend)
+    for d in dcts:
+        for k, v in d.items():
+            extend(res.setdefault(k, tp()), v)
+    return res
 
 def dsearch(dct, s, case=False):
     if isinstance(dct, types.ModuleType): dct = vars(dct)
@@ -874,6 +902,9 @@ def dzmap(func, seq):
     return {k: func(k) for k in seq}
 #    return dict(zip(seq, map(func, seq)))
 
+def applyseq(funcs, *seqs):
+    return [f(*xs) for f, xs in zip(funcs, zip(*seqs))]
+
 @lwrap_alias
 def rzip(*seqs):
     return zip(*map(reversed, seqs))
@@ -890,19 +921,26 @@ def tfilter(typ, seq):
 def tfilternot(typ, seq):
     return (x for x in seq if not isinstance(x, typ))
 
+@lwrap_alias
+@alias('range1')
+def irange(start, stop=None, step=1):
+    if stop == None:
+        start, stop = step, start
+    return range(start, stop + sign(step), step)
+
 
 def lists(its):
     return [list(it) for it in its]
 
 
-for f in (map, zip, range, filter, reversed, enumerate, islice, chunk, window,
-          unique, flatten2, map2):
+for f in (map, zip, range, filter, reversed, enumerate, zip_longest, islice,
+          chunk, window, unique, flatten2, map2):
     lwrap_alias(f)
 del f
 
 
 def xord(c):
-    return hex(ord(c))
+    return HexInt(ord(c))
 
 def escape(s):
     if isinstance(s, bytes):
@@ -943,7 +981,8 @@ def lcm(x, y):
     return abs(x * y) // gcd(x, y)
 
 def sign(x):
-    return x and (x // abs(x) if isinstance(x, int) else x / abs(x))
+    return x and (x // abs(x) if isinstance(x, numbers.Integral)
+                  else x / abs(x))
 
 def cround(z, n=0):
     return complex(round(z.real, n), round(z.imag, n))
@@ -1026,6 +1065,7 @@ except NameError:
 l = pipe(list)
 ln = pipe(len)
 s = pipe(str)
+bts = pipe(bytes)
 lns = pipe(str.splitlines)
 j = pipe(lambda x: ''.join(map(str, x)))
 srt = pipe(sorted)
@@ -1108,9 +1148,7 @@ def reloads(*mods):
 
 @pipe_alias('reloadall', 'ra', rel=True, _depth=1)
 @pipe_alias('ia', _depth=1)
-def importall(*mods, **kwargs): # rel=False, _depth=0
-    rel=kwargs.get('rel', False)
-    _depth=kwargs.get('_depth', 0)
+def importall(*mods, rel=False, _depth=0):
     mods = mods or (utils,)
     globs = fglobals(_depth + 1)
     # _depth + 2 because of comprehension
@@ -1124,9 +1162,7 @@ def importall(*mods, **kwargs): # rel=False, _depth=0
 
 @pipe_alias('reloadclass', 'rc', rel=True, _depth=1)
 @pipe_alias('ic', _depth=1)
-def importclass(*objs, **kwargs): # rel=False, _depth=0
-    rel=kwargs.get('rel', False)
-    _depth=kwargs.get('_depth', 0)
+def importclass(*objs, rel=False, _depth=0):
     robjs = []
     globs = fglobals(_depth + 1)
     cache = set()
@@ -1144,8 +1180,7 @@ def importclass(*objs, **kwargs): # rel=False, _depth=0
 # reloadclass = rc = pipe(importclass, rel=True, _depth=1)
 
 @pipe_alias('ifr', _depth=1)
-def importfrom(*mods, **kwargs):
-    _depth=kwargs.get('_depth', 0)
+def importfrom(*mods, _depth=0):
     globs = fglobals(_depth + 1)
     # _depth + 2 because of comprehension
     mods = tuple([autoimport(m, _depth + 2) for m in mods])
@@ -1450,8 +1485,12 @@ def OpenGL():
     _print_exec('import OpenGL\n'
                 'from OpenGL import GL, GLU, GLUT\n'
                 'from OpenGL.GL import shaders\n'
-                'from OpenGL.arrays.vbo import VBO\n'
-                'import glm')
+                'from OpenGL.arrays.vbo import VBO')
+    try:
+        import glm
+        _print_exec('import glm')
+    except ImportError:
+        pass
     return OpenGL
 
 @lazy_loader
@@ -1590,17 +1629,6 @@ def setdefaults(dct, defaults):
         dct.setdefault(k, v)
 
 
-def applyseq(funcs, *seqs):
-    return [f(*xs) for f, xs in zip(funcs, zip(*seqs))]
-
-
-def multidict(items):
-    d = {}
-    for k, v in items:
-        d.setdefault(k, []).append(v)
-    return d
-
-
 def step(it):
     try:
         for x in it:
@@ -1645,10 +1673,6 @@ def prunicode(s, printc=False):
             print(unicodedata.name(c))
         except ValueError:
             print(c.encode('unicode_escape').decode())
-
-
-def irange(start, stop):
-    return range(start, stop + 1)
 
 
 def nospace(s):
@@ -1798,15 +1822,15 @@ def print_array3d(arr):
 
 def bin_array(arr, width=0):
     import numpy as np
-    return np.vectorize(BinInt.W(width), [np.object_])(arr)
+    return np.vectorize(BinInt.w(width), [np.object_])(arr)
 
 def hex_array(arr, width=0):
     import numpy as np
-    return np.vectorize(HexInt.W(width), [np.object_])(arr)
+    return np.vectorize(HexInt.w(width), [np.object_])(arr)
 
 def oct_array(arr, width=0):
     import numpy as np
-    return np.vectorize(OctInt.W(width), [np.object_])(arr)
+    return np.vectorize(OctInt.w(width), [np.object_])(arr)
 
 
 def with_time(arr, dt):
