@@ -13,8 +13,8 @@ FPS = 60
 FRAMECOLOR = (127, 127, 127)
 BGCOLOR = (255, 255, 255)
 
-SWIDTH = 280
-SHEIGHT = 400
+SWIDTH = 560
+SHEIGHT = 800
 WIDTH = 10
 HEIGHT = 20
 
@@ -22,38 +22,38 @@ TYPES = [
     None,
     dict( # I
         color = Color('cyan'),
-        blocks = [(0, -2), (0, -1), (0, 0), (0, 1)],
-        yoff = 1
+        blocks = [(-1, 0), (0, 0), (1, 0), (2, 0)],
+        pivot = (0.5, -0.5),
     ),
     dict( # O
         color = Color('yellow'),
-        blocks = [(0, 0), (1, 0), (0, 1), (1, 1)],
-        yoff = 1
+        blocks = [(0, -1), (1, -1), (0, 0), (1, 0)],
+        pivot = (0.5, -0.5),
     ),
     dict( # T
         color = Color('purple'),
         blocks = [(0, -1), (-1, 0), (0, 0), (1, 0)],
-        yoff = 0
+        pivot = (0, 0),
     ),
     dict( # S
         color = Color('green'),
         blocks = [(0, -1), (1, -1), (-1, 0), (0, 0)],
-        yoff = 0
+        pivot = (0, 0),
     ),
     dict( # Z
         color = Color('red'),
         blocks = [(-1, -1), (0, -1), (0, 0), (1, 0)],
-        yoff = 0
+        pivot = (0, 0),
     ),
     dict( # J
         color = Color('blue'),
-        blocks = [(0, -1), (0, 0), (-1, 1), (0, 1)],
-        yoff = 1
+        blocks = [(-1, -1), (-1, 0), (0, 0), (1, 0)],
+        pivot = (0, 0),
     ),
     dict( # L
         color = Color('orange'),
-        blocks = [(0, -1), (0, 0), (0, 1), (1, 1)],
-        yoff = 1
+        blocks = [(1, -1), (-1, 0), (0, 0), (1, 0)],
+        pivot = (0, 0),
     ),
 ]
 
@@ -63,12 +63,15 @@ class Shape:
         self.game = game
         self.color = TYPES[type]['color']
         self.blocks = TYPES[type]['blocks'][:]
-        yoff = TYPES[type]['yoff']
-        self.x, self.y = 4, -yoff - 1
+        self.pivot = TYPES[type]['pivot']
+        self.x, self.y = 4, -1
 
     def rotate(self, dir=1):
+        px, py = self.pivot
         for i, (x, y) in enumerate(self.blocks):
-            self.blocks[i] = -dir * y, dir * x
+            x2 = int((y - py) * -dir + px)
+            y2 = int((x - px) * dir + py)
+            self.blocks[i] = (x2, y2)
         if self.check_collisions():
             self.rotate(-dir)
 
@@ -122,9 +125,9 @@ class Shape:
             x += self.x
             y += self.y
             pygame.draw.rect(screen, self.color,
-                             ((x + 2) * 20, y * 20, 20, 20))
+                             ((x + 2) * 40, y * 40, 40, 40))
             pygame.draw.rect(screen, (0, 0, 0),
-                             ((x + 2) * 20, y * 20, 20, 20), 1)
+                             ((x + 2) * 40, y * 40, 40, 40), 2)
 
 
 class Game:
@@ -134,18 +137,18 @@ class Game:
         self.screen = pygame.display.set_mode((SWIDTH, SHEIGHT))
         fonts = pygame.font.get_fonts()
         if os.path.exists(FONTFILE):
-            typ, font, s1, s2, s3 = pygame.font.Font, FONTFILE, 28, 34, 56
+            typ, font, s1, s2, s3 = pygame.font.Font, FONTFILE, 56, 68, 112
         elif 'bauhaus93' in fonts:
-            typ, font, s1, s2, s3 = pygame.font.SysFont, 'bauhaus93', 28, 34, 56
+            typ, font, s1, s2, s3 = pygame.font.SysFont, 'bauhaus93', 56, 68, 112
         else:
-            typ, font, s1, s2, s3 = pygame.font.SysFont, 'impact', 36, 44, 72
+            typ, font, s1, s2, s3 = pygame.font.SysFont, 'impact', 72, 88, 144
         self.font = typ(font, s1)
         self.font2 = typ(font, s2)
         self.font3 = typ(font, s3)
 
     def start(self):
         self.is_over = False
-        pygame.key.set_repeat(175, 40)
+        pygame.key.set_repeat(400, 50)
         self.board = [[0] * WIDTH for i in range(HEIGHT)]
         self.rounds = 0
         self.next_round()
@@ -190,7 +193,7 @@ class Game:
         pygame.key.set_repeat()
         self.is_over = True
         self.screen.fill(FRAMECOLOR)
-        self.screen.fill(BGCOLOR, (40, 0, WIDTH * 20, HEIGHT * 20))
+        self.screen.fill(BGCOLOR, (80, 0, WIDTH * 40, HEIGHT * 40))
         colors = map(Color,
                      ['red', 'orange', 'yellow', 'green', 'cyan', 'purple'])
         letters = [self.font3.render(l, True, c)
@@ -198,7 +201,7 @@ class Game:
         w = sum(i.get_width() for i in letters)
         h = letters[0].get_height()
         x = SWIDTH//2 - w//2
-        y = SHEIGHT//2 - h//2 - 20
+        y = SHEIGHT//2 - h//2 - 40
         for i in letters:
             self.screen.blit(i, (x, y))
             x += i.get_width()
@@ -214,16 +217,16 @@ class Game:
         hscore = max(self.rounds, hscore)
         open(HSFILE, 'w').write(str(hscore))
 
-        fade = pygame.Surface((SWIDTH - 80, SHEIGHT))
+        fade = pygame.Surface((SWIDTH - 160, SHEIGHT))
         fade.fill((255, 255, 255))
         fade.set_alpha(210)
-        self.screen.blit(fade, (40, 0))
+        self.screen.blit(fade, (80, 0))
 
         colors = ['red', 'orange', 'green', 'blue', 'purple']
         c1, c2, c3 = map(Color, random.sample(colors, 3))
         msg = self.font2.render('Game Over', True, c1)
         self.screen.blit(msg, ((SWIDTH - msg.get_width()) // 2,
-                               (SHEIGHT - msg.get_height()) // 2 - 50))
+                               (SHEIGHT - msg.get_height()) // 2 - 100))
         scoretxt = self.font.render('Score: %s' % self.rounds, True, c2)
         self.screen.blit(scoretxt,
                          ((SWIDTH - scoretxt.get_width()) // 2,
@@ -231,19 +234,19 @@ class Game:
         hscoretxt = self.font.render('Highscore: %s' % hscore, True, c3)
         self.screen.blit(hscoretxt,
                          ((SWIDTH - hscoretxt.get_width()) // 2,
-                          (SHEIGHT - hscoretxt.get_height()) // 2 + 40))
+                          (SHEIGHT - hscoretxt.get_height()) // 2 + 80))
         pygame.display.flip()
 
     def draw(self):
         self.screen.fill(FRAMECOLOR)
-        self.screen.fill(BGCOLOR, (40, 0, WIDTH * 20, HEIGHT * 20))
+        self.screen.fill(BGCOLOR, (80, 0, WIDTH * 40, HEIGHT * 40))
         for y, r in enumerate(self.board):
             for x, type in enumerate(r):
                 if type:
                     pygame.draw.rect(self.screen, TYPES[type]['color'],
-                                     ((x + 2) * 20, y * 20, 20, 20))
+                                     ((x + 2) * 40, y * 40, 40, 40))
                     pygame.draw.rect(self.screen, (0, 0, 0),
-                                     ((x + 2) * 20, y * 20, 20, 20), 1)
+                                     ((x + 2) * 40, y * 40, 40, 40), 2)
 
         if self.shape:
             self.shape.draw(self.screen)
