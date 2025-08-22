@@ -25,6 +25,7 @@ if __name__ == '__main__':
     p.add_argument('fgcolor', nargs='?', type=parse_color)
     p.add_argument('bgcolor', nargs='?', type=parse_color)
     p.add_argument('-m', '--message')
+    p.add_argument('-n', '--no-newline', action='store_true')
     for char, flag, style in [
         ('b', 'bold', 'bold'),           ('f', 'faint', 'faint'),
         ('i', 'italic', 'italic'),       ('u', 'underline', 'underline'),
@@ -40,7 +41,9 @@ if __name__ == '__main__':
     style = '+'.join(args.styles or [])
 
     if args.message:
-        print(colors.color(args.message, args.fgcolor, args.bgcolor, style))
+        end = '' if args.no_newline else '\n'
+        print(colors.color(args.message, args.fgcolor, args.bgcolor, style),
+              end=end)
     else:
         escapes = colors.color('', args.fgcolor, args.bgcolor, style)
         sys.stdout.write(escapes[:-len(RESET)])
