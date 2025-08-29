@@ -1,9 +1,12 @@
 #!/usr/bin/env python3
 import sys, os, struct, enum, time, re, math, collections, warnings
+import collections.abc as cabc
 import numpy as np
 
+# Standard MIDI file spec: https://midi.org/standard-midi-files
+
 #######################
-# Midi File Constants #
+# MIDI File Constants #
 #######################
 
 STATUS_MASK = 0xf0
@@ -20,17 +23,17 @@ class HexInt(int):
 class MidiStatus(HexInt, enum.Enum):
     NoteOff    = 0x80
     NoteOn     = 0x90
-    KeyPress   = 0xA0
-    CtrlChange = 0xB0
-    ProgChange = 0xC0
-    ChannPress = 0xD0
-    PitchBend  = 0xE0
+    KeyPress   = 0xa0
+    CtrlChange = 0xb0
+    ProgChange = 0xc0
+    ChannPress = 0xd0
+    PitchBend  = 0xe0
 
-    SysEx      = 0xF0
-    SysExEsc   = 0xF7
-    Meta       = 0xFF
+    SysEx      = 0xf0
+    SysExEsc   = 0xf7
+    Meta       = 0xff
 
-    NonMidi    = 0xF0
+    NonMidi    = 0xf0
 
 NoteOff = MidiStatus.NoteOff
 NoteOn = MidiStatus.NoteOn
@@ -46,29 +49,48 @@ NonMidi = MidiStatus.NonMidi
 
 MIDI_EVENTS = {s for s in MidiStatus if s < NonMidi}
 
-class MetaEvent(HexInt, enum.Enum):
-    SeqNumber = 0x00
-    TextEvent = 0x01
-    Copyright = 0x02
-    TrackName = 0x03
-    InstrName = 0x04
-    Lyric     = 0x05
-    Marker    = 0x06
-    CuePoint  = 0x07
-    ProgName  = 0x08
-    DevName   = 0x09
-    ChannPref = 0x20
-    MIDIPort  = 0x21
-    EndOfTrk  = 0x2f
-    SetTempo  = 0x51
-    SMPTEOff  = 0x54
-    TimeSig   = 0x58
-    KeySig    = 0x59
-    SecSpecif = 0x7f
-
 N_DATA_BYTES = {
     NoteOff: 2, NoteOn: 2, KeyPress: 2, CtrlChange: 2, ProgChange: 1,
     ChannPress: 1, PitchBend: 2,
+}
+
+class MetaEvent(HexInt, enum.Enum):
+    SeqNumber   = 0x00
+    TextEvent   = 0x01
+    Copyright   = 0x02
+    TrackName   = 0x03
+    InstrName   = 0x04
+    Lyric       = 0x05
+    Marker      = 0x06
+    CuePoint    = 0x07
+    ProgramName = 0x08
+    DeviceName  = 0x09
+    ChannPrefix = 0x20
+    MIDIPort    = 0x21
+    EndOfTrack  = 0x2f
+    SetTempo    = 0x51
+    SMPTEOff    = 0x54
+    TimeSig     = 0x58
+    KeySig      = 0x59
+    SecSpecific = 0x7f
+
+META_INT_EVENTS = {
+    MetaEvent.SeqNumber,
+    MetaEvent.ChannPrefix,
+    MetaEvent.MIDIPort,
+    MetaEvent.SetTempo
+}
+
+META_TEXT_EVENTS = {
+    MetaEvent.TextEvent,
+    MetaEvent.Copyright,
+    MetaEvent.TrackName,
+    MetaEvent.InstrName,
+    MetaEvent.Lyric,
+    MetaEvent.Marker,
+    MetaEvent.CuePoint,
+    MetaEvent.ProgramName,
+    MetaEvent.DeviceName,
 }
 
 
@@ -76,7 +98,7 @@ DEFAULT_TEMPO = 500_000
 
 
 ############################
-# Midi File Classes/Parser #
+# MIDI File Classes/Parser #
 ############################
 
 class MidiStatusByte(int):
@@ -159,9 +181,9 @@ class MidiFile:
             if evt[0] == Meta and evt[1] == MetaEvent.SetTempo:
                 tempo = evt[2]
                 sec_per_tick = self.tick_duration(tempo)
-            if (evt[0] in (SysEx, SysExEsc) and sysex or
-                    evt[0] == Meta and meta or
-                    evt[0] < NonMidi):
+            if (is_midi(evt)
+                    or sysex and is_sysex(evt)
+                    or meta and is_meta(evt)):
                 midievents.append((evt, ts))
         return midievents
 
@@ -173,7 +195,8 @@ class MidiFile:
             buffer = file.read()
 
         self.tracks = []
-        self.format = self.division = ntracks = None
+        ntracks = 0
+        header_found = False
 
         if len(buffer) == 0:
             raise ValueError('failed to parse midi file: file is empty')
@@ -185,13 +208,14 @@ class MidiFile:
             typ, length = chunk_head_fmt.unpack_from(buffer, i)
             i += chunk_head_fmt.size
             if typ == b'MThd':
-                if self.format is not None:
+                if header_found:
                     raise ValueError('failed to parse midi file: multiple header chunks found')
+                header_found = True
                 fmt, ntracks, div = header_data_fmt.unpack_from(buffer, i)
                 if div & 0x8000:
                     div = SmpteDivision(-(div >> 8), div & 0xff)
                 self.format, self.division = fmt, div
-            elif self.format is None:
+            elif not header_found:
                 raise ValueError('failed to parse midi file: no header chunk found')
             elif typ == b'MTrk':
                 self.tracks.append(parse_track_data(buffer, i, length))
@@ -236,7 +260,8 @@ def parse_track_data(buffer, offset=0, length=None):
         else:
             # Running status
             if not status & 0x80:
-                assert running_status, 'invalid running status'
+                if running_status is None:
+                    raise ValueError('invalid running status')
                 status = running_status
                 i -= 1
             running_status = status
@@ -258,22 +283,23 @@ def parse_vlq(data, offset=0):
     return n, i
 
 def metaevent_data(typ, data):
-    if typ in {MetaEvent.SeqNumber, MetaEvent.ChannPref,
-               MetaEvent.MIDIPort, MetaEvent.SetTempo}:
+    if typ in META_INT_EVENTS:
         data = int.from_bytes(data, 'big')
+    elif typ in META_TEXT_EVENTS:
+        data = try_decode(data.rstrip(b'\0'))
     elif typ == MetaEvent.SMPTEOff:
         data = tuple(data)
     elif typ == MetaEvent.TimeSig:
-        data = data[0], 2**data[1], data[2], data[3]
+        data = (data[0], 2**data[1], data[2], data[3])
     elif typ == MetaEvent.KeySig:
         data = struct.unpack('bB', data)
-    elif typ == MetaEvent.EndOfTrk:
+    elif typ == MetaEvent.EndOfTrack:
         data = None
     return data
 
 
 ########################
-# Midi Event Utilities #
+# MIDI Event Utilities #
 ########################
 
 def get_status(evt):
@@ -281,6 +307,15 @@ def get_status(evt):
 
 def get_channel(evt):
     return evt[0] & CHANNEL_MASK
+
+def is_midi(evt):
+    return evt[0] < NonMidi
+
+def is_meta(evt):
+    return evt[0] == Meta
+
+def is_sysex(evt):
+    return evt[0] in (SysEx, SysExEsc)
 
 def is_note_on(evt):
     return get_status(evt) == NoteOn and evt[2] > 0
@@ -300,24 +335,30 @@ def slice(events, start, end=None):
     return [(evt, ts-start) for evt, ts in events if start <= ts <= end]
 
 
-def filter_events(events, type=None, channel=None, *, note_on=False,
-                  note_off=False):
-    if type is not None and not isinstance(type, (list, tuple, set)):
+def filter_events(events, type=None, channel=None, *, exclude=None,
+                  note_on=False, note_off=False):
+    if type is not None and not isinstance(type, cabc.Container):
         type = (type,)
-    if type is None and (note_on or note_off):
+    elif type is None and (note_on or note_off):
         type = ()
-    if channel is not None and not isinstance(channel, (list, tuple, set)):
+    if exclude is not None and not isinstance(exclude, cabc.Container):
+        exclude = (exclude,)
+    if channel is not None and not isinstance(channel, cabc.Container):
         channel = (channel,)
     ret = []
     for evt, dt in events:
         if (type is None
-             or evt[0] in type
-             or (evt[0] < NonMidi and get_status(evt) in type)
-             or (evt[0] == Meta and evt[1] in type)
-             or (note_on and is_note_on(evt))
-             or (note_off and is_note_off(evt))):
+                or evt[0] in type
+                or (is_midi(evt) and get_status(evt) in type)
+                or (is_meta(evt) and evt[1] in type)
+                or (note_on and is_note_on(evt))
+                or (note_off and is_note_off(evt))):
+            if (exclude is not None
+                    and (evt[0] in exclude
+                         or is_meta(evt) and evt[1] in exclude)):
+                continue
             if (channel is None
-                 or (evt[0] < NonMidi and get_channel(evt) in channel)):
+                    or (is_midi(evt) and get_channel(evt) in channel)):
                 ret.append((evt, dt))
     return ret
 
@@ -358,7 +399,7 @@ def get_notes_mido(midofile=None, off=False, ticks=False):
 
 
 #########################
-# Midi Player Utilities #
+# MIDI Player Utilities #
 #########################
 
 NOTE_MAP = {
@@ -391,7 +432,7 @@ def note_frequency(note):
 
 def frequency_to_note(freq):
     if isinstance(freq, np.ndarray):
-        return (np.round(np.log(freq / 440.0) * 12) + 69).astype(int)
+        return (np.round(np.log2(freq / 440.0) * 12) + 69).astype(int)
     return round(math.log2(freq / 440.0) * 12) + 69
 
 
@@ -445,55 +486,61 @@ def pitch_bend_float(lowb, highb):
 
 
 INSTRUMENT_NAMES = [
-# Piano
-'Acoustic Grand Piano', 'Bright Acoustic Piano', 'Electric Grand Piano',
-'Honky-tonk Piano', 'Electric Piano 1', 'Electric Piano 2', 'Harpsichord',
-'Clavinet',
-# Chromatic Percussion
-'Celesta', 'Glockenspiel', 'Music Box', 'Vibraphone', 'Marimba', 'Xylophone',
-'Tubular Bells', 'Dulcimer',
-# Organ
-'Drawbar Organ', 'Percussive Organ', 'Rock Organ', 'Church Organ', 'Reed Organ',
-'Accordion', 'Harmonica', 'Tango Accordion',
-# Guitar
-'Acoustic Guitar (nylon)', 'Acoustic Guitar (steel)', 'Electric Guitar (jazz)',
-'Electric Guitar (clean)', 'Electric Guitar (muted)', 'Overdriven Guitar',
-'Distortion Guitar', 'Guitar harmonics',
-# Bass
-'Acoustic Bass', 'Electric Bass (finger)', 'Electric Bass (pick)',
-'Fretless Bass', 'Slap Bass 1', 'Slap Bass 2', 'Synth Bass 1', 'Synth Bass 2',
-# Strings
-'Violin', 'Viola', 'Cello', 'Contrabass', 'Tremolo Strings',
-'Pizzicato Strings', 'Orchestral Harp', 'Timpani',
-# Ensemble
-'String Ensemble 1', 'String Ensemble 2', 'Synth Strings 1', 'Synth Strings 2',
-'Choir Aahs', 'Voice Oohs', 'Synth Voice', 'Orchestra Hit',
-# Brass
-'Trumpet', 'Trombone', 'Tuba', 'Muted Trumpet', 'French Horn', 'Brass Section',
-'Synth Brass 1', 'Synth Brass 2',
-# Reed
-'Soprano Sax', 'Alto Sax', 'Tenor Sax', 'Baritone Sax', 'Oboe', 'English Horn',
-'Bassoon', 'Clarinet',
-# Pipe
-'Piccolo', 'Flute', 'Recorder', 'Pan Flute', 'Blown Bottle', 'Shakuhachi',
-'Whistle', 'Ocarina',
-# Synth Lead
-'Lead 1 (square)', 'Lead 2 (sawtooth)', 'Lead 3 (calliope)', 'Lead 4 (chiff)',
-'Lead 5 (charang)', 'Lead 6 (voice)', 'Lead 7 (fifths)', 'Lead 8 (bass + lead)',
-# Synth Pad
-'Pad 1 (new age)', 'Pad 2 (warm)', 'Pad 3 (polysynth)', 'Pad 4 (choir)',
-'Pad 5 (bowed)', 'Pad 6 (metallic)', 'Pad 7 (halo)', 'Pad 8 (sweep)',
-# Synth Effects
-'FX 1 (rain)', 'FX 2 (soundtrack)', 'FX 3 (crystal)', 'FX 4 (atmosphere)',
-'FX 5 (brightness)', 'FX 6 (goblins)', 'FX 7 (echoes)', 'FX 8 (sci-fi)',
-# Ethnic
-'Sitar', 'Banjo', 'Shamisen', 'Koto', 'Kalimba', 'Bag pipe', 'Fiddle', 'Shanai',
-# Percussive
-'Tinkle Bell', 'Agogo', 'Steel Drums', 'Woodblock', 'Taiko Drum', 'Melodic Tom',
-'Synth Drum', 'Reverse Cymbal',
-# Sound Effects
-'Guitar Fret Noise', 'Breath Noise', 'Seashore', 'Bird Tweet', 'Telephone Ring',
-'Helicopter', 'Applause', 'Gunshot']
+    # Piano
+    'Acoustic Grand Piano', 'Bright Acoustic Piano', 'Electric Grand Piano',
+    'Honky-tonk Piano', 'Electric Piano 1', 'Electric Piano 2', 'Harpsichord',
+    'Clavinet',
+    # Chromatic Percussion
+    'Celesta', 'Glockenspiel', 'Music Box', 'Vibraphone', 'Marimba',
+    'Xylophone', 'Tubular Bells', 'Dulcimer',
+    # Organ
+    'Drawbar Organ', 'Percussive Organ', 'Rock Organ', 'Church Organ',
+    'Reed Organ', 'Accordion', 'Harmonica', 'Tango Accordion',
+    # Guitar
+    'Acoustic Guitar (nylon)', 'Acoustic Guitar (steel)',
+    'Electric Guitar (jazz)', 'Electric Guitar (clean)',
+    'Electric Guitar (muted)', 'Overdriven Guitar', 'Distortion Guitar',
+    'Guitar harmonics',
+    # Bass
+    'Acoustic Bass', 'Electric Bass (finger)', 'Electric Bass (pick)',
+    'Fretless Bass', 'Slap Bass 1', 'Slap Bass 2', 'Synth Bass 1',
+    'Synth Bass 2',
+    # Strings
+    'Violin', 'Viola', 'Cello', 'Contrabass', 'Tremolo Strings',
+    'Pizzicato Strings', 'Orchestral Harp', 'Timpani',
+    # Ensemble
+    'String Ensemble 1', 'String Ensemble 2', 'Synth Strings 1',
+    'Synth Strings 2', 'Choir Aahs', 'Voice Oohs', 'Synth Voice',
+    'Orchestra Hit',
+    # Brass
+    'Trumpet', 'Trombone', 'Tuba', 'Muted Trumpet', 'French Horn',
+    'Brass Section', 'Synth Brass 1', 'Synth Brass 2',
+    # Reed
+    'Soprano Sax', 'Alto Sax', 'Tenor Sax', 'Baritone Sax', 'Oboe',
+    'English Horn', 'Bassoon', 'Clarinet',
+    # Pipe
+    'Piccolo', 'Flute', 'Recorder', 'Pan Flute', 'Blown Bottle', 'Shakuhachi',
+    'Whistle', 'Ocarina',
+    # Synth Lead
+    'Lead 1 (square)', 'Lead 2 (sawtooth)', 'Lead 3 (calliope)',
+    'Lead 4 (chiff)', 'Lead 5 (charang)', 'Lead 6 (voice)', 'Lead 7 (fifths)',
+    'Lead 8 (bass + lead)',
+    # Synth Pad
+    'Pad 1 (new age)', 'Pad 2 (warm)', 'Pad 3 (polysynth)', 'Pad 4 (choir)',
+    'Pad 5 (bowed)', 'Pad 6 (metallic)', 'Pad 7 (halo)', 'Pad 8 (sweep)',
+    # Synth Effects
+    'FX 1 (rain)', 'FX 2 (soundtrack)', 'FX 3 (crystal)', 'FX 4 (atmosphere)',
+    'FX 5 (brightness)', 'FX 6 (goblins)', 'FX 7 (echoes)', 'FX 8 (sci-fi)',
+    # Ethnic
+    'Sitar', 'Banjo', 'Shamisen', 'Koto', 'Kalimba', 'Bag pipe', 'Fiddle',
+    'Shanai',
+    # Percussive
+    'Tinkle Bell', 'Agogo', 'Steel Drums', 'Woodblock', 'Taiko Drum',
+    'Melodic Tom', 'Synth Drum', 'Reverse Cymbal',
+    # Sound Effects
+    'Guitar Fret Noise', 'Breath Noise', 'Seashore', 'Bird Tweet',
+    'Telephone Ring', 'Helicopter', 'Applause', 'Gunshot',
+]
 
 INSTRUMENTS = {k.lower(): i for i, k in enumerate(INSTRUMENT_NAMES)}
 
@@ -503,7 +550,7 @@ NON_PERC_CHANNELS = set(range(16)) - {PERCUSSION_CHANNEL}
 
 
 ###############
-# Midi Player #
+# MIDI Player #
 ###############
 
 class MidiPlayer:
@@ -576,7 +623,8 @@ class MidiPlayer:
                         continue
                     # Print before waiting to hide delay
                     if print_progress and last_ts != ts and last_ts >= start:
-                        print(f'\r{fmt_time(last_ts)}/{fmt_time(tottime)}', end='', flush=True)
+                        print(f'\r{fmt_time(last_ts)}/{fmt_time(tottime)}',
+                              end='', flush=True)
                     elif print_events:
                         print(evt)
                     self.wait(ts + t0 - self.time())
@@ -584,10 +632,10 @@ class MidiPlayer:
                         self.send_sysex(b'\xf0' + evt[1])
                     elif sysex and evt[0] == SysExEsc:
                         self.send_sysex(evt[1])
-                    elif evt[0] < NonMidi:
+                    elif is_midi(evt):
                         if is_note_on(evt):
                             if volume != 1:
-                                evt = (evt[0], evt[1], min(int(evt[2]*volume), 127))
+                                evt = (*evt[:2], min(int(evt[2]*volume), 127))
                             notes_on.add((get_channel(evt), evt[1]))
                         elif is_note_off(evt):
                             notes_on.discard((get_channel(evt), evt[1]))
@@ -649,7 +697,7 @@ class MidiPlayer:
 
 
 #################
-# Midi Backends #
+# MIDI Backends #
 #################
 
 _backend = None
@@ -658,8 +706,8 @@ DEFAULT_BACKEND = 'rtmidi'
 
 def set_backend(backend):
     global _backend
-    if backend:
-        assert backend in _PLAYER_CLASSES
+    if backend and backend not in _PLAYER_CLASSES:
+        raise ValueError(f'unknown backend: {backend}')
     _backend = backend
 
 def get_backend():
@@ -673,7 +721,7 @@ def get_backend():
                 warnings.warn("Couldn't load rtmidi backend. Falling back to pygame.")
                 _backend = 'pygame'
         elif _backend != 'pygame':
-            raise ValueError(f'Unknown backend: {_backend}')
+            raise ValueError(f'unknown backend: {_backend}')
     return _backend
 
 def get_player_class():
@@ -813,13 +861,19 @@ def dump_info(mf: MidiFile):
     tempo_fmt += '…' * (len(tempos_bpm) > 3)
     nnotes = len(filter_events(events, note_on=True))
     format_fmt = f'format: {mf.format}, ' if mf.format != 1 else ''
-    print(f'# Tracks: {len(mf.tracks)}, {format_fmt}duration: {time}, division: {mf.division}, '
-          f'tempo: {tempo_fmt} bpm, notes: {nnotes}, events: {len(events)}')
+    print(f'# Tracks: {len(mf.tracks)}, {format_fmt}duration: {time}, '
+          f'division: {mf.division}, tempo: {tempo_fmt} bpm, notes: {nnotes}, '
+          f'events: {len(events)}')
+
+    info_types = {MetaEvent.TextEvent: 'Text',
+                  MetaEvent.Copyright: 'Copyright'}
+    for evt, dt in filter_events(mf.tracks[0], info_types):
+        print(f'{info_types[evt[1]]}: {evt[2].rstrip()}')
 
     for i, track in enumerate(mf.tracks):
         name = ''
         if name_evts := filter_events(track, MetaEvent.TrackName):
-            name = try_decode(name_evts[0][0][2].rstrip(b'\0'))
+            name = name_evts[0][0][2]
         notes = filter_events(track, note_on=True)
         channels = {get_channel(e) for e, _ in notes}
         instrs = []
@@ -832,7 +886,8 @@ def dump_info(mf: MidiFile):
 
         name_fmt = name and f' ({name})'
         instr_fmt = instr_lbl and f'{instr_lbl}, '
-        print(f'Track {i+1}{name_fmt}: {instr_fmt}{nnotes} notes, {len(track)} events')
+        print(f'Track {i+1}{name_fmt}: {instr_fmt}{nnotes} notes, '
+              f'{len(track)} events')
 
 
 def main():
@@ -842,8 +897,10 @@ def main():
     p.add_argument('-v', '--volume', type=float, default=1.0)
     p.add_argument('-t', '--tempo-scale', type=float, default=1.0)
     p.add_argument('-s', '--start', type=parse_time, default=0)
-    p.add_argument('-p', '--progress', action='store_true', default=True, help='(default)')
-    p.add_argument('-P', '--no-progress', dest='progress', action='store_false')
+    p.add_argument('-p', '--progress', action='store_true', default=True,
+                   help='(default)')
+    p.add_argument('-P', '--no-progress', dest='progress',
+                   action='store_false')
     p.add_argument('-E', '--print-events', action='store_true')
     p.add_argument('-S', '--sysex', action='store_true')
     p.add_argument('-L', '--loop', action='store_true')
