@@ -2,7 +2,7 @@
 
 import sys, os
 
-PROMPT = '>'
+PROMPT = '$ '
 
 if __name__ == '__main__':
     running = True
@@ -67,7 +67,7 @@ if __name__ == '__main__':
                     elif stdout:
                         fd = os.open(stdout, os.O_WRONLY | os.O_CREAT | os.O_TRUNC)
                         os.dup2(fd, 1)
-                    os.execv(file, args)
+                    os.execvp(file, args)
                 files.append(file)
                 pids.append(pid)
                 if read_pipe:

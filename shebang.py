@@ -3,7 +3,7 @@ import sys, os, re, argparse, glob
 
 pattern = re.compile(r'(#!.*python)(\d(?:\.\d){,2})?')
 
-def shebang(fname, num='', text=None, add=False, change=False, remove=False,
+def shebang(fname, num='3', text=None, add=False, change=False, remove=False,
             altext=False, silent=False, directory=False):
     """Change, add, or remove a shebang line of a python script."""
     if not (altext or fname.endswith(('.py', '.pyw'))):
@@ -34,10 +34,13 @@ def shebang(fname, num='', text=None, add=False, change=False, remove=False,
                 else:
                     newline = pattern.sub(r'\g<1>' + num, firstline)
                 newcode = newline + rest
-            else:
+            elif add:
                 if not silent:
                     print('Shebang already in file:', fname, file=sys.stderr)
                     print(firstline, end='', file=sys.stderr)
+                return
+            else:
+                print(firstline, end='')
                 return
         else:
             if add and not remove:
@@ -52,8 +55,8 @@ def shebang(fname, num='', text=None, add=False, change=False, remove=False,
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
-    parser.add_argument('-n', '--num',
-                        help='Python version number (Default is empty).')
+    parser.add_argument('-n', '--num', default='3',
+                        help='Python version number (default: %(default)s).')
     parser.add_argument('-t', '--text', help='Custom shebang text.')
     parser.add_argument('-a', '--add', action='store_true',
                         help='Insert shebang line if not present.')
