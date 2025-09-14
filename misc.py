@@ -334,7 +334,7 @@ def frac2dec(f, prec=None):
 
 def human_readable(n, prec=1, strip=True, decimal=False, ones='B'):
     base = 1000 if decimal else 1024
-    power = min(max(int(math.log(abs(n), base)), 0), 6) if n > 0 else 0
+    power = min(max(int(math.log(abs(n), base)), 0), 6) if n else 0
     num = '{:.{}f}'.format(n / base**power, prec)
     if strip and '.' in num:
         num = num.rstrip('0').rstrip('.')
