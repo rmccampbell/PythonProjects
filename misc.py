@@ -332,20 +332,21 @@ def frac2dec(f, prec=None):
         return Decimal(f.numerator) / Decimal(f.denominator)
 
 
-def human_readable(n, prec=1, strip=True):
-    n = int(n)
-    power = min(max((n.bit_length() - 1) // 10, 0), 6)
-    num = '{:.{}f}'.format(n * 1024**-power, prec)
+def human_readable(n, prec=1, strip=True, decimal=False, ones='B'):
+    base = 1000 if decimal else 1024
+    power = min(max(int(math.log(abs(n), base)), 0), 6) if n > 0 else 0
+    num = '{:.{}f}'.format(n / base**power, prec)
     if strip and '.' in num:
         num = num.rstrip('0').rstrip('.')
-    return num + 'BKMGTPE'[power]
+    return num + [ones, *'KMGTPE'][power]
 
 
-def parse_human(s):
+def parse_human(s, decimal=False):
+    base = 1000 if decimal else 1024
     s = s.strip().upper()
-    m = re.fullmatch(r'(.*?)([KMGTPE])?B?', s)
+    m = re.fullmatch(r'(.*?)\s*([KMGTPE])?B?', s)
     power = ' KMGTPE'.index(m.group(2) or ' ')
-    return int(float(m.group(1)) * 1024**power)
+    return round(float(m.group(1)) * base**power)
 
 
 def download_size(url, readable=False):

@@ -1,21 +1,20 @@
 #!/usr/bin/env python3
 import sys, os, re, math, argparse
 
-def human_readable(n, prec=1, strip=True, decimal=False):
+def human_readable(n, prec=1, strip=True, decimal=False, ones='B'):
     base = 1000 if decimal else 1024
-    # power = min(max((int(n).bit_length() - 1) // 10, 0), 6)
-    power = min(max(int(math.log(n, base)), 0), 6)
+    power = min(max(int(math.log(abs(n), base)), 0), 6) if n else 0
     num = '{:.{}f}'.format(n / base**power, prec)
     if strip and '.' in num:
         num = num.rstrip('0').rstrip('.')
-    return num + 'BKMGTPE'[power]
+    return num + [ones, *'KMGTPE'][power]
 
 def parse_human(s, decimal=False):
     base = 1000 if decimal else 1024
     s = s.strip().upper()
     m = re.fullmatch(r'(.*?)\s*([KMGTPE])?B?', s)
     power = ' KMGTPE'.index(m.group(2) or ' ')
-    return int(float(m.group(1)) * base**power)
+    return round(float(m.group(1)) * base**power)
 
 if __name__ == '__main__':
     p = argparse.ArgumentParser()
