@@ -71,7 +71,9 @@ if __name__ == '__main__':
             else:
                 print(c)
             name = kana_name(c)
-            if input().lower() == name:
+            while not (answer := input().lower().strip()):
+                pass
+            if answer == name:
                 print('Correct!')
             else:
                 print('\aIncorrect:', name)
