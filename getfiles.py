@@ -11,7 +11,7 @@ PATHTYPES = (str, bytes)
 if sys.version_info >= (3,6):
     PATHTYPES += (os.PathLike,)
 
-def printerr(msg='{prog}: {error}', file=None, *args, **kwargs):
+def printerr(msg='{prog}: {error}', *args, file=None, **kwargs):
 ##    import traceback
 ##    traceback.print_exc()
     etype, error, tb = sys.exc_info()
@@ -27,15 +27,17 @@ def safeclose(file):
         if file.closed:
             return
         try:
-            if file.fileno() > 2:
-                file.close()
-            elif hasattr(file, '_changed_encoding') and file.buffer:
-                file.detach()
-        except io.UnsupportedOperation:
-            pass  # fileno doesn't work on idle std streams
+            isstdio = (file in (sys.stdin, sys.stdout, sys.stderr) or
+                       file.fileno() <= 2)
+        except (AttributeError, OSError):
+            isstdio = False
+        if not isstdio:
+            file.close()
+        elif hasattr(file, '_changed_encoding') and file.buffer:
+            file.detach()
 
 @contextlib.contextmanager
-def maybeclose(file, close=True):
+def maybeclose(file, close):
     try:
         yield file
     finally:
@@ -45,7 +47,7 @@ def maybeclose(file, close=True):
 @contextlib.contextmanager
 def maybeopen(file, *args, **kwargs):
     if isinstance(file, PATHTYPES):
-        with extopen(file, *args, **kwargs) as file:
+        with safeclose(extopen(file, *args, **kwargs)) as file:
             yield file
     else:
         yield file
@@ -58,36 +60,40 @@ def maybe_stdopen(file, *args, **kwargs):
     else:
         yield file
 
-def iterchunks(file, blocksize=8192):
-    s = file.read(blocksize)
+def iterchunks(file, blocksize=8192, read1=False):
+    read = file.read1 if read1 else file.read
+    s = read(blocksize)
     while s:
         yield s
-        s = file.read(blocksize)
+        s = read(blocksize)
 
 def iterchars(file):
     return iterchunks(file, 1)
 
-def iterlines(file, newlines=False):
-    return iter(file) if newlines else (l.rstrip('\r\n') for l in file)
+def iterlines(file, keepends=False):
+    return iter(file) if keepends else (l.rstrip('\r\n') for l in file)
 
-chunk = iterchunks
+chunks = iterchunks
 chars = iterchars
 lines = iterlines
 
 def getfiles(paths=None, mode='r', encoding=None, errors=ERRORS, default='-',
-             stdio=True, guess=False, recursive=True, close=True):
+             stdio=True, guess=False, recursive=True, close=True,
+             catch_errors=True):
     """Return an iterator yielding file objects matching glob patterns."""
     if not stdio and default == '-':
         default = None
     if paths is None:
         paths = sys.argv[1:]
-    if not paths and default:
+    if not paths and default is not None:
         paths = [default]
+    if isinstance(paths, PATHTYPES):
+        paths = [paths]
     for path in paths:
         if not isinstance(path, PATHTYPES):
             yield path
             continue
-        for file in expandpaths([path], recursive):
+        for file in expandpaths(path, recursive=recursive):
             try:
                 f = extopen(file, mode, encoding=encoding, errors=errors,
                             stdio=stdio, guess=guess)
@@ -97,12 +103,15 @@ def getfiles(paths=None, mode='r', encoding=None, errors=ERRORS, default='-',
                 else:
                     yield f
             except IOError:
-                printerr()
+                if catch_errors:
+                    printerr()
+                else:
+                    raise
 
-def expandpaths(paths, recursive=True):
+def expandpaths(*paths, recursive=True):
     """Return a list of paths expanded from glob patterns."""
-    if isinstance(paths, PATHTYPES):
-        paths = [paths]
+    if len(paths) == 1 and not isinstance(paths[0], PATHTYPES):
+        paths = paths[0]
     if sys.version_info >= (3, 5):
         return [file for path in paths for file in
                 glob.glob(path, recursive=recursive) or (path,)]
@@ -126,7 +135,7 @@ def stdopen(file, mode='r', encoding=None, errors=ERRORS, guess=False):
         mode2 = mode.strip('btU')
         if mode2 == 'r':
             file = sys.stdin
-        elif mode2 in ('w', 'a'):
+        elif mode2 in ('w', 'a', 'x'):
             file = sys.stdout
         else:
             raise ValueError("mode '{}' not allowed for '-'".format(mode))

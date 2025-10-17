@@ -43,21 +43,21 @@ def frombase(s, b):
         raise ValueError('invalid number format for base {}'.format(b))
 
 
-##def float_tobase(num, b, p=10, pad0=False):
-##    p = max(p, 0)
-##    ss = ['-'] if num < 0 else []
-##    num = abs(num)
-##    for i in range(int(math.log(max(num, 1), b)), -p-1, -1):
-##        if i < 0 and not (num or pad0):
-##            break
-##        dig = int(num * b**-i)
-##        if dig >= b:
-##            dig -= 1
-##        num -= dig * b**i
-##        ss.append('0123456789abcdefghijklmnopqrstuvwxyz'[dig])
-##        if i == 0:
-##            ss.append('.')
-##    return ''.join(ss)
+# def float_tobase(num, b, p=10, pad0=False):
+#     p = max(p, 0)
+#     ss = ['-'] if num < 0 else []
+#     num = abs(num)
+#     for i in range(int(math.log(max(num, 1), b)), -p-1, -1):
+#         if i < 0 and not (num or pad0):
+#             break
+#         dig = int(num * b**-i)
+#         if dig >= b:
+#             dig -= 1
+#         num -= dig * b**i
+#         ss.append('0123456789abcdefghijklmnopqrstuvwxyz'[dig])
+#         if i == 0:
+#             ss.append('.')
+#     return ''.join(ss)
 
 def float_tobase(num, b, p=10, pad0=False):
     if b <= 1:
@@ -88,6 +88,21 @@ def float_frombase(s, b):
         exp = point + 1 - len(s)
         s = s[:point] + s[point + 1:]
     return float(frombase(s, b) * b**exp)
+
+def to_balanced_ternary(n):
+    digs = '01T'
+    res = []
+    while n:
+        n, r = divmod(n, 3)
+        if r == 2:
+            n += 1
+        res.append(digs[r])
+    return ''.join(res[::-1])
+
+def from_balanced_ternary(s):
+    digs = {'T': -1, '0': 0, '1': 1}
+    return functools.reduce(lambda n, c: n*3 + digs[c.upper()], s, 0)
+    # return sum(digs[c.upper()]*3**i for i, c in enumerate(s[::-1]))
 
 
 def nthbit(x, n):
@@ -808,9 +823,9 @@ def nat_to_tuple(n, i):
             l[j%n] |= 1<<(j//n)
     return tuple(l)
 
-##def nat_to_tuple(n, i):
-##    return tuple(sum((i>>j&1)<<(j//n) for j in range(k, i.bit_length(), n))
-##                 for k in range(n))
+# def nat_to_tuple(n, i):
+#     return tuple(sum((i>>j&1)<<(j//n) for j in range(k, i.bit_length(), n))
+#                  for k in range(n))
 
 def enum_tuples(n, m=None):
     for i in count(0, m):

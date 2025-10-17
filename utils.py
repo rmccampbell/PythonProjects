@@ -109,6 +109,11 @@ def alias(obj, *names, _depth=0):
         globs[name] = obj
     return obj
 
+def bind_alias(name, *args, **kwargs):
+    def _bind_alias(f):
+        alias(partial(f, *args, **kwargs), name, _depth=1)
+        return f
+    return _bind_alias
 
 def lwrap(f, name=None):
     def f2(*args, **kwargs):
@@ -126,6 +131,7 @@ def lwrap_alias(f=None, name=None):
     if name is None:
         name = 'l' + f.__name__
     f2 = lwrap(f, name)
+    # Note: partial above doesn't add a stack frame
     fglobals(1)[name] = f2
     return f
 
@@ -171,7 +177,7 @@ class pipe(object):
             res = self.callable(other)
         return res
 
-    __lshift__ = __ror__
+    __lshift__ = __rrshift__ = __ror__
 
     def __call__(self, *args, **kwargs):
         res = self.callable(*args, **kwargs)
@@ -661,6 +667,10 @@ def printr(o):
     print(o)
     return o
 
+@pipe_alias('rp')
+def printrepr(o):
+    print(repr(o))
+
 @pipe_alias('pa')
 @pipe_alias('par', rep=True)
 @pipe_alias('pj', 'wa', sep='')
@@ -674,8 +684,9 @@ _justs = {'left': str.ljust, 'right': str.rjust, 'center': str.center,
 
 @pipe_alias('pc')
 @pipe_alias('pcr', rows=True)
-def printcols(seq, rows=False, sep='', pad=2, just='left', swidth=None,
-              ncols=None):
+@bind_alias('printrows', rows=True)
+def printcols(seq, ncols=None, rows=False, sep='', pad=2, just='left',
+              swidth=None):
     if not swidth:
         swidth, _ = shutil.get_terminal_size()
     just = _justs[just]
@@ -1391,8 +1402,8 @@ def scipy():
     import scipy
     _print_exec(
         'import scipy, scipy as sp\n'
-        'import scipy.misc, scipy.special, scipy.ndimage, scipy.sparse, '
-        'scipy.integrate, scipy.signal, scipy.constants, scipy.io.wavfile\n'
+        'import scipy, scipy.special, scipy.ndimage, scipy.sparse, '
+        'scipy.integrate, scipy.signal, scipy.constants, scipy.datasets\n'
         'from scipy import stats')
     return scipy
 
