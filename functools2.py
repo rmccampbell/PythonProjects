@@ -23,7 +23,7 @@ class NonStrIter(Iterable):
     @classmethod
     def __subclasshook__(cls, C):
         if cls is NonStrIter:
-            return (any("__iter__" in B.__dict__ for B in C.__mro__) and
+            return (any('__iter__' in B.__dict__ for B in C.__mro__) and
                     not issubclass(C, (str, bytes, bytearray)))
         return NotImplemented
 
@@ -54,6 +54,23 @@ if hasattr(inspect, 'signature'):
 else:
     update_wrapper_signature, wraps_signature = \
         functools.update_wrapper, functools.wraps
+
+
+def rename(obj, name=None, qualname=None):
+    """Changes the name and/or qualname of the passed-in function or class."""
+    if name is None and qualname in (None, True, False):
+        return obj
+    if name is not None:
+        obj.__name__ = name
+    if hasattr(obj, '__qualname__'):
+        if qualname is None:
+            obj.__qualname__ = name
+        elif qualname is True:
+            pref = obj.__qualname__.rpartition('.')[0]
+            obj.__qualname__ = pref + '.' + name if pref else name
+        elif qualname is not False:
+            obj.__qualname__ = qualname
+    return obj
 
 
 def wrap(func, signature=True):
@@ -87,14 +104,35 @@ def inv(pred):
 def rpartial(func_, *args, **kwargs):
     """Bind arguments to the right side of the function."""
     args1, kwargs1 = args, kwargs
-    def rpartial(*args, **kwargs):
-        kwargs2 = kwargs1.copy()
-        kwargs2.update(kwargs)
+    def bound(*args, **kwargs):
+        kwargs2 = dict(kwargs1, **kwargs)
         return func_(*args + args1, **kwargs2)
-    rpartial.func = func_
-    rpartial.args = args
-    rpartial.kwargs = kwargs
-    return rpartial
+    bound.func = func_
+    bound.args = args
+    bound.kwargs = kwargs
+    return bound
+
+
+def partial_skip(func_, skip_, *args, **kwargs):
+    """Bind arguments to a function after some number of skipped arguments."""
+    args1, kwargs1 = args, kwargs
+    def bound(*args, **kwargs):
+        if len(args) < skip_:
+            raise TypeError('missing {} unbound positional arguments'.format(
+                skip_ - len(args)))
+        args2 = args[:skip_] + args1 + args[skip_:]
+        kwargs2 = dict(kwargs1, **kwargs)
+        return func_(*args2, **kwargs2)
+    bound.func = func_
+    bound.args = args
+    bound.kwargs = kwargs
+    return bound
+
+def partial1(func_, *args, **kwargs):
+    return partial_skip(func_, 1, *args, **kwargs)
+
+def partial2(func_, *args, **kwargs):
+    return partial_skip(func_, 2, *args, **kwargs)
 
 
 def autocurrying(func): #, reverse=False):
@@ -245,7 +283,7 @@ def _istype(ann):
 def _check_type(val, typ, name=None, ret=False):
     name = repr(name) if name else 'return value' if ret else 'argument'
     if not isinstance(val, typ):
-        raise TypeError("{} must be of type {}, not {}".format(
+        raise TypeError('{} must be of type {}, not {}'.format(
             name, getattr(typ, '__name__', typ), type(val).__name__))
 
 
@@ -746,7 +784,7 @@ def count(start=0, stop=None, step=1):
 
 
 def powerset(iterable):
-    "powerset([1,2,3]) --> () (1,) (2,) (3,) (1,2) (1,3) (2,3) (1,2,3)"
+    """powerset([1,2,3]) --> () (1,) (2,) (3,) (1,2) (1,3) (2,3) (1,2,3)"""
     s = list(iterable)
     return chain.from_iterable(combinations(s, r) for r in range(len(s)+1))
 

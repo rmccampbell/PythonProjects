@@ -75,10 +75,10 @@ globals()[__name__] = sys.modules[__name__]
 
 # My imports
 import functools2
-from functools2 import autocurrying, chunk, comp, ncomp, ident, inv, supply,\
-     rpartial, trycall, trywrap, tryiter, iterfunc, unique, is_sorted, ilen,\
-     iindex, flatten, deepcopy, deepmap, first, last, unzip, take, pad,\
-     window, flatten2, map2
+from functools2 import autocurrying, chunk, comp, ncomp, ident, inv, supply, \
+     rpartial, partial1, partial2, trycall, trywrap, tryiter, iterfunc, \
+     unique, is_sorted, ilen, iindex, flatten, deepcopy, deepmap, first, last, \
+     unzip, take, pad, window, flatten2, map2, rename
 from functools2 import update_wrapper_signature as _update_wrapper
 if _PY3:
     import classes
@@ -190,7 +190,7 @@ class pipe(object):
 
 def pipe_alias(f, *names, __depth=0, **kwargs):
     if isinstance(f, str):
-        return rpartial(pipe_alias, f, *names, __depth=__depth+1, **kwargs)
+        return partial1(pipe_alias, f, *names, __depth=__depth+1, **kwargs)
     alias(pipe(f, **kwargs), *names, _depth=__depth+1)
     return f
 
@@ -246,21 +246,6 @@ def cblock(code, globs=None, locs=None):
     exec(code, globs, locs)
     return locs
 
-
-def rename(obj, name=None, qualname=None):
-    if name is None and qualname in (None, True, False):
-        return obj
-    if _PY3:
-        if qualname is None:
-            obj.__qualname__ = name
-        elif qualname is True:
-            pref = obj.__qualname__.rpartition('.')[0]
-            obj.__qualname__ = pref + '.' + name if pref else name
-        elif qualname is not False:
-            obj.__qualname__ = qualname
-    if name is not None:
-        obj.__name__ = name
-    return obj
 
 def method(cls):
     if not isinstance(cls, type):
@@ -379,8 +364,11 @@ def randstream(vals):
 
 @lwrap
 def schunk(s, size=2):
-    for i in range(0, len(s), size):
-        yield s[i : i+size]
+    # negative size aligns chunks to right
+    start = len(s) % size if size < 0 else 0
+    size = abs(size)
+    for i in range(start, len(s), size):
+        yield s[max(i, 0) : i+size]
 
 def sgroup(s, size=2, sep=' '):
     if isinstance(s, bytes) and isinstance(sep, str):
@@ -390,6 +378,8 @@ def sgroup(s, size=2, sep=' '):
 @alias('ssplit')
 @lwrap
 def sbreak(s, *inds):
+    if len(inds) == 1 and isinstance(inds[0], (list, tuple)):
+        inds = inds[0]
     prev = 0
     for ind in inds:
         yield s[prev:ind]
@@ -750,8 +740,8 @@ def printdict(dct, sort=False, maxkw=40):
     if sort and not _is_ordereddict(dct):
         try: items = sorted(items)
         except TypeError: pass
-    kwidth = max(len(str(k)) for k in dct.keys())
-    kwidth = min(kwidth, maxkw)
+    kwidth = max(l for l in (len(str(k)) for k in dct.keys())
+                 if l <= maxkw)
     for k, v in items:
         rep = repr(v)
         if '\n' in rep:
@@ -1276,6 +1266,12 @@ def _print_exec(s):
         exec(s, _main_globals())
     return s
 
+def _get_ipython():
+    m = sys.modules.get('IPython')
+    if m:
+        return m.get_ipython()
+    return None
+
 class lazy_loader(object):
     def __init__(self, func):
         self.func = func
@@ -1338,6 +1334,9 @@ def pyside6():
 def mpl(backend=None, interactive=True):
     if isinstance(backend, (bool, int)):
         backend, interactive = None, backend
+    # ipy = _get_ipython()
+    # if ipy:
+    #     ipy.run_line_magic('matplotlib', 'qt')
     import matplotlib
     _print_exec('import matplotlib, matplotlib as mpl\n'
                 + ('mpl.use({!r})\n'.format(backend) if backend else '') +
@@ -1395,7 +1394,7 @@ def sympy(all=False):
     _print_exec('import sympy, sympy as sp\n'
                 + ('from sympy import *\n' if all else '') +
                 'R = sympy.Rational\n'
-                'sympy.var("x, y, z, a, b, c, d, t", real=True)')
+                "sympy.var('x, y, z, a, b, c, d, t', real=True)")
     return sympy
 
 def scipy():
@@ -1702,6 +1701,17 @@ def compiles(s, mode=None, *args, **kwargs):
 def frexp2(x):
     m, e = math.frexp(x)
     return m*2, e-1
+
+
+def nextf(x, n=1):
+    d = math.copysign(inf, n)
+    for i in range(abs(n)):
+        x = math.nextafter(x, d)
+    return x
+
+def prevf(x, n=1):
+    return nextf(x, -n)
+
 
 ### Numpy utils ###
 
