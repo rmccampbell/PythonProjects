@@ -1,3 +1,4 @@
+#!/usr/bin/env python3
 import sys, math
 from fractions import Fraction
 from decimal import Decimal

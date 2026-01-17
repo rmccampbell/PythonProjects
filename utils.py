@@ -1401,9 +1401,8 @@ def scipy():
     import scipy
     _print_exec(
         'import scipy, scipy as sp\n'
-        'import scipy, scipy.special, scipy.ndimage, scipy.sparse, '
-        'scipy.integrate, scipy.signal, scipy.constants, scipy.datasets\n'
-        'from scipy import stats')
+        'import scipy.special, scipy.ndimage, scipy.sparse, scipy.stats, '
+        'scipy.integrate, scipy.signal, scipy.constants, scipy.datasets')
     return scipy
 
 @alias('pg')
