@@ -59,14 +59,14 @@ if _PY3:
     from itertools import zip_longest
     from importlib import reload
     import urllib.request
-    from urllib.request import urlopen
+    from urllib.request import urlopen, Request
     import urllib.parse as urlparse
     import collections.abc as cabc
     _try_import('enum', 'pathlib', 'typing', 'dataclasses', 'zoneinfo',
                 warn=False)
 else:
     from itertools import izip_longest as zip_longest
-    from urllib2 import urlopen
+    from urllib2 import urlopen, Request
     import urlparse
     import collections as cabc
 
@@ -497,6 +497,15 @@ def str_frombin(s, enc='utf-8'):
 
 def str_fromhex(s, enc='utf-8'):
     return bytes.fromhex(s).decode(enc)
+
+def str_fromhexl1(s):
+    return str_fromhex(s, 'latin-1')
+
+def str_fromhex16(s):
+    return str_fromhex(s, 'utf-16be')
+
+def str_fromhex32(s):
+    return str_fromhex(s, 'utf-32be')
 
 def mask(n):
     return (1 << n) - 1
@@ -1028,13 +1037,12 @@ def prod(x):
     return functools.reduce(operator.mul, x, 1)
 
 
+@lwrap_alias
 def cumsum(it, init=0):
-    l = []
     s = init
     for x in it:
         s += x
-        l.append(s)
-    return l
+        yield s
 
 @lwrap_alias
 def accum(func, it, init):
@@ -1703,13 +1711,29 @@ def frexp2(x):
 
 
 def nextf(x, n=1):
-    d = math.copysign(inf, n)
+    if type(x).__module__ == 'numpy':
+        from numpy import nextafter
+    else:
+        nextafter = math.nextafter
+    d = math.copysign(math.inf, n)
     for i in range(abs(n)):
-        x = math.nextafter(x, d)
+        x = nextafter(x, d)
     return x
 
 def prevf(x, n=1):
     return nextf(x, -n)
+
+def frange(x, y, inclusive=True):
+    if type(x).__module__ == 'numpy':
+        from numpy import nextafter
+    else:
+        nextafter = math.nextafter
+    d = math.copysign(math.inf, y - x)
+    while x != y:
+        yield x
+        x = nextafter(x, d)
+    if inclusive:
+        yield x
 
 
 ### Numpy utils ###
@@ -1900,3 +1924,9 @@ def hang_indent(s, indent=4, width=80):
     n = len(indent)
     lines = textwrap.wrap(s[n:], width=width-n)
     return s[:n] + ('\n' + indent).join(lines)
+
+
+def as_c_buffer(obj):
+    import ctypes
+    obj = memoryview(obj)
+    return (ctypes.c_char * obj.nbytes).from_buffer(obj)
