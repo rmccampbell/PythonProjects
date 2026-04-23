@@ -507,6 +507,13 @@ def str_fromhex16(s):
 def str_fromhex32(s):
     return str_fromhex(s, 'utf-32be')
 
+def oct_escape(s):
+    # Matches an even number of backslashes preceded by a non-backslash,
+    # followed by a hex escape
+    return re.sub(r'(?<!\\)((?:\\{2})*)\\x([0-9a-fA-F]{2})',
+                  lambda m: f'{m.group(1)}\\{int(m.group(2), 16):03o}',
+                  repr(s))
+
 def mask(n):
     return (1 << n) - 1
 
