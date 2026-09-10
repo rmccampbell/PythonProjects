@@ -10,12 +10,11 @@ args = p.parse_args()
 
 for s in args.input or (l.rstrip('\n') for l in sys.stdin):
     unescaped = s.encode('latin-1', 'backslashreplace').decode('unicode_escape')
+    if not (args.binary or args.nonewline):
+        unescaped += '\n'
     if args.binary:
         sys.stdout.buffer.write(unescaped.encode('latin-1'))
     elif args.utf8:
         sys.stdout.buffer.write(unescaped.encode('utf-8'))
     else:
         sys.stdout.write(unescaped)
-
-    if not (args.binary or args.nonewline):
-        print(flush=True)
