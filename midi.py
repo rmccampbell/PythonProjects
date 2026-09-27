@@ -2,7 +2,7 @@
 import os, struct, enum, time, re, math, warnings, builtins
 from collections.abc import ByteString, Callable, Collection, Iterable, Sequence
 from dataclasses import dataclass
-from typing import Any, BinaryIO, NamedTuple, TypeGuard
+from typing import Any, BinaryIO, Final, Generic, NamedTuple, NewType, TypeGuard, TypeVar, cast
 import numpy as np
 
 # Standard MIDI file spec: https://midi.org/standard-midi-files
@@ -37,17 +37,17 @@ class MidiStatus(HexInt, enum.Enum):
 
     NonMidi    = 0xf0
 
-NoteOff = MidiStatus.NoteOff
-NoteOn = MidiStatus.NoteOn
-KeyPress = MidiStatus.KeyPress
-CtrlChange = MidiStatus.CtrlChange
-ProgChange = MidiStatus.ProgChange
-ChannPress = MidiStatus.ChannPress
-PitchBend = MidiStatus.PitchBend
-SysEx = MidiStatus.SysEx
-SysExEsc = MidiStatus.SysExEsc
-Meta = MidiStatus.Meta
-NonMidi = MidiStatus.NonMidi
+NoteOff: Final = MidiStatus.NoteOff
+NoteOn: Final = MidiStatus.NoteOn
+KeyPress: Final = MidiStatus.KeyPress
+CtrlChange: Final = MidiStatus.CtrlChange
+ProgChange: Final = MidiStatus.ProgChange
+ChannPress: Final = MidiStatus.ChannPress
+PitchBend: Final = MidiStatus.PitchBend
+SysEx: Final = MidiStatus.SysEx
+SysExEsc: Final = MidiStatus.SysExEsc
+Meta: Final = MidiStatus.Meta
+NonMidi: Final = MidiStatus.NonMidi
 
 MIDI_EVENTS = {s for s in MidiStatus if s < NonMidi}
 
@@ -296,36 +296,37 @@ class MetaMessage(Message):
         return {}
 
 
-class Event(NamedTuple):
-    message: Message
-    time: float
+RelTicks = NewType('RelTicks', float)
+AbsTicks = NewType('AbsTicks', float)
+AbsTime = NewType('AbsTime', float)
+type AnyAbs = AbsTicks | AbsTime
 
-class RelEvent(Event):
-    pass
+T = TypeVar('T', bound=float, covariant=True)
+M = TypeVar('M', bound=Message, covariant=True, default=Message)
 
-class AbsEvent(Event):
-    pass
+class Event(NamedTuple, Generic[T, M]):
+    message: M
+    time: T
 
-class AbsTimeEvent(Event):
-    pass
+type RelEvent[M: Message = Message] = Event[RelTicks, M]
+type AbsEvent[M: Message = Message] = Event[AbsTicks, M]
+type AbsTimeEvent[M: Message = Message] = Event[AbsTime, M]
+type AnyAbsEvent[M: Message = Message] = Event[AnyAbs, M]
 
-type AnyAbsEvent = AbsEvent | AbsTimeEvent
-
-
-def rel_to_abs(events: list[RelEvent]) -> list[AbsEvent]:
+def rel_to_abs[M: Message](events: list[RelEvent[M]]) -> list[AbsEvent[M]]:
     abs_events = []
     tick = 0
     for evt in events:
         tick += evt.time
-        abs_events.append(AbsEvent(evt.message, tick))
+        abs_events.append(Event(evt.message, AbsTicks(tick)))
     return abs_events
 
 
-def abs_to_rel(events: list[AbsEvent]) -> list[RelEvent]:
+def abs_to_rel[M: Message](events: list[AbsEvent[M]]) -> list[RelEvent[M]]:
     rel_events = []
     lasttick = 0
     for evt in events:
-        rel_events.append(RelEvent(evt.message, evt.time - lasttick))
+        rel_events.append(Event(evt.message, RelTicks(evt.time - lasttick)))
         lasttick = evt.time
     return rel_events
 
@@ -384,7 +385,7 @@ class MidiFile:
             if (isinstance(msg, MidiMessage)
                     or sysex and isinstance(msg, SysExMessage)
                     or meta and isinstance(msg, MetaMessage)):
-                events.append(AbsTimeEvent(msg, ts))
+                events.append(Event(msg, AbsTime(ts)))
         return events
 
     def _read(self, file: BinaryIO | str):
@@ -469,7 +470,7 @@ def parse_track_data(buffer: bytes, offset=0, length=-1) -> list[RelEvent]:
                 i -= 1
             running_status = status
             msg, i = MidiMessage.from_buffer(status, buffer, i)
-        events.append(RelEvent(msg, dt))
+        events.append(Event(msg, RelTicks(dt)))
     return events
 
 
@@ -503,31 +504,26 @@ def end_time[E: AnyAbsEvent](events: list[E]) -> float:
     return events[-1].time if events else 0
 
 
-def _unreachable(*args):
-    assert False
-
-
 def shift_events[E: AnyAbsEvent](events: list[E], dt) -> list[E]:
-    typ = type(events[0]) if events else _unreachable
-    return [typ(msg, ts+dt) for msg, ts in events]
+    return [Event(msg, ts+dt) for msg, ts in events]
 
 
 def slice_events[E: AnyAbsEvent](events: list[E], start, end=None) -> list[E]:
-    typ = type(events[0]) if events else _unreachable
     if end is None:
         end = end_time(events)
-    return [typ(msg, ts-start) for msg, ts in events if start <= ts <= end]
+    return [Event(msg, ts-start) for msg, ts in events if start <= ts <= end]
 
 
 type _OneOrSet[T] = T | Collection[T]
-type _Types = type[Message] | MidiStatus | MetaEvent | int
 
-def filter_events[E: Event](
-        events: Iterable[E],
-        types: _OneOrSet[_Types] | None = None,
+
+def filter_events[T: float, M: Message, M2: Message = M](
+        events: Iterable[Event[T, M]],
+        cls: type[M2] | tuple[type[M2], ...] | None = None,
+        types: _OneOrSet[MidiStatus | MetaEvent | int] | None = None,
         channel: _OneOrSet[int] | None = None, *,
-        exclude: _OneOrSet[_Types] = (),
-        note_on=False, note_off=False) -> list[E]:
+        exclude: _OneOrSet[type[Message] | MidiStatus | MetaEvent | int] = (),
+        note_on=False, note_off=False) -> list[Event[T, M2]]:
     if types is not None and not isinstance(types, Collection):
         types = (types,)
     elif types is None and (note_on or note_off):
@@ -536,26 +532,27 @@ def filter_events[E: Event](
         channel = (channel,)
     if not isinstance(exclude, Collection):
         exclude = (exclude,)
-    include_classes = tuple([t for t in types or () if isinstance(t, type)])
     exclude_classes = tuple([t for t in exclude if isinstance(t, type)])
     typed_classes = (MidiMessage, MetaMessage)
 
     events = list(events)
-    evttype = type(events[0]) if events else _unreachable
-    ret = []
+    ret: list[Event[T, M2]] = []
     for msg, ts in events:
-        if (types is None
-                or isinstance(msg, include_classes)
-                or (isinstance(msg, typed_classes) and msg.type in types)
+        if cls is not None and not isinstance(msg, cls):
+            continue
+        if types is not None and not (
+                (isinstance(msg, typed_classes) and msg.type in types)
                 or (note_on and is_note_on(msg))
                 or (note_off and is_note_off(msg))):
-            if (exclude and
-                (isinstance(msg, exclude_classes)
-                 or (isinstance(msg, typed_classes) and msg.type in exclude))):
-                continue
-            if (channel is None or
-                    (isinstance(msg, MidiMessage) and msg.channel in channel)):
-                ret.append(evttype(msg, ts))
+            continue
+        if (exclude and (
+                isinstance(msg, exclude_classes)
+                or (isinstance(msg, typed_classes) and msg.type in exclude))):
+            continue
+        if (channel is not None and not (
+                isinstance(msg, MidiMessage) and msg.channel in channel)):
+            continue
+        ret.append(Event(cast(M2, msg), ts))
     return ret
 
 
@@ -1101,7 +1098,7 @@ def try_decode(bts: bytes) -> str:
 def dump_info(mf: MidiFile):
     events = mf.schedule_events(meta=True)
     time_fmt = fmt_time(end_time(events))
-    tempo_evts = filter_events(events, MetaEvent.SetTempo)
+    tempo_evts = filter_events(events, MetaMessage, MetaEvent.SetTempo)
     tempos = {m.value for m, _ in tempo_evts} or [DEFAULT_TEMPO]
     tempos_bpm = sorted(map(tempo_to_bpm, tempos))
     tempo_fmt = '/'.join(str(round(t)) for t in tempos_bpm[:3])
@@ -1115,15 +1112,16 @@ def dump_info(mf: MidiFile):
     info_types = {MetaEvent.TextEvent: 'Text',
                   MetaEvent.Copyright: 'Copyright'}
     first_track = (mf.tracks or [[]])[0]
-    for msg, dt in filter_events(first_track, info_types):
-        print(f'{info_types[msg.type]}: {msg.text.rstrip()}')
+    for msg, dt in filter_events(first_track, MetaMessage, info_types):
+        print(f'{info_types[MetaEvent(msg.type)]}: {msg.text.rstrip()}')
 
     for i, track in enumerate(mf.tracks):
-        name_evts = filter_events(track, MetaEvent.TrackName)
+        name_evts = filter_events(track, MetaMessage, MetaEvent.TrackName)
         name = name_evts[0].message.text if name_evts else ''
-        prog_evts = filter_events(track, ProgChange, NON_PERC_CHANNELS)
+        prog_evts = filter_events(
+            track, MidiMessage, ProgChange, NON_PERC_CHANNELS)
         instrs = [*{INSTRUMENT_NAMES[m.program]: None for m, _ in prog_evts}]
-        note_evts = filter_events(track, note_on=True)
+        note_evts = filter_events(track, MidiMessage, note_on=True)
         channels = {m.channel for m, _ in note_evts}
         if PERCUSSION_CHANNEL in channels:
             instrs.append('Percussion')
