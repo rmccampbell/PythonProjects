@@ -1,13 +1,15 @@
 #!/usr/bin/env python3
-import sys, os, struct, enum, time, re, math, collections, warnings
-import collections.abc as cabc
+import os, struct, enum, time, re, math, warnings, builtins
+from collections.abc import ByteString, Callable, Collection, Iterable, Sequence
+from dataclasses import dataclass
+from typing import Any, BinaryIO, NamedTuple, TypeGuard
 import numpy as np
 
 # Standard MIDI file spec: https://midi.org/standard-midi-files
 
-#######################
-# MIDI File Constants #
-#######################
+########################
+# MIDI Enums/Constants #
+########################
 
 STATUS_MASK = 0xf0
 CHANNEL_MASK = 0x0f
@@ -48,11 +50,6 @@ Meta = MidiStatus.Meta
 NonMidi = MidiStatus.NonMidi
 
 MIDI_EVENTS = {s for s in MidiStatus if s < NonMidi}
-
-N_DATA_BYTES = {
-    NoteOff: 2, NoteOn: 2, KeyPress: 2, CtrlChange: 2, ProgChange: 1,
-    ChannPress: 1, PitchBend: 2,
-}
 
 class MetaEvent(HexInt, enum.Enum):
     SeqNumber   = 0x00
@@ -97,57 +94,260 @@ META_TEXT_EVENTS = {
 DEFAULT_TEMPO = 500_000
 
 
-############################
-# MIDI File Classes/Parser #
-############################
+######################
+# MIDI Message Types #
+######################
 
-class MidiStatusByte(int):
-    @property
-    def status(self):
-        return MidiStatus(self & STATUS_MASK)
-    @property
-    def channel(self):
-        return self & CHANNEL_MASK
+@dataclass
+class _StatusMeta:
+    fields: tuple[str, ...]
+    field_handler: Callable[..., dict[str, int]]
+
+def _pitchbend_args(pitch_lo, pitch_hi=None):
+    if pitch_hi is None:
+        pitch_lo, pitch_hi = pitch_bend_bytes(pitch_lo)
+    return {'pitch_lo': pitch_lo, 'pitch_hi': pitch_hi}
+
+_STATUS_TO_META = {
+    NoteOff: _StatusMeta(
+        ('note', 'velocity'),
+        lambda note, velocity: {'note': note, 'velocity': velocity}),
+    NoteOn: _StatusMeta(
+        ('note', 'velocity'),
+        lambda note, velocity: {'note': note, 'velocity': velocity}),
+    KeyPress: _StatusMeta(
+        ('note', 'value'), lambda note, value: {'note': note, 'value': value}),
+    CtrlChange: _StatusMeta(
+        ('control', 'value'),
+        lambda control, value: {'control': control, 'value': value}),
+    ProgChange: _StatusMeta(
+        ('program',), lambda program: {'program': program}),
+    ChannPress: _StatusMeta(('value',), lambda value: {'value': value}),
+    PitchBend: _StatusMeta(('pitch_lo', 'pitch_hi'), _pitchbend_args),
+}
+
+
+class Message:
+    pass
+
+
+class MidiMessage(Message):
+    bytes: builtins.bytes
+    type: MidiStatus
+    channel: int
+    data: tuple[int, ...]
+
+    # Type-specific fields
+    note: int  # NoteOn, NoteOff, KeyPress
+    velocity: int  # NoteOn, NoteOff
+    value: int  # KeyPress, CtrlChange
+    control: int  # CtrlChange
+    program: int  # ProgChange
+    pitch: int  # PitchBend
+    pitch_lo: int  # PitchBend
+    pitch_hi: int  # PitchBend
+
+    @classmethod
+    def from_buffer(cls, status: int, buff: ByteString, off=0) -> tuple['MidiMessage', int]:
+        buff = bytes(buff)
+        typ = MidiStatus(status & STATUS_MASK)
+        channel = status & CHANNEL_MASK
+        end = off + len(_STATUS_TO_META[typ].fields)
+        return cls(typ, channel, *buff[off: end]), end
+
+    def __init__(self, type_or_bytes: MidiStatus | int | ByteString,
+                 channel: int | None = None, *args, **kwargs):
+        if channel is not None:
+            self.type = MidiStatus(type_or_bytes)
+            self.channel = channel
+            fields = _STATUS_TO_META[self.type].field_handler(*args, **kwargs)
+            self.data = tuple(fields.values())
+            self.bytes = bytes([self.type | self.channel, *self.data])
+        else:
+            if isinstance(type_or_bytes, int):
+                raise TypeError('single argument must be bytes-like')
+            self.bytes = bts = bytes(type_or_bytes)
+            self.type = MidiStatus(bts[0] & STATUS_MASK)
+            self.channel = bts[0] & CHANNEL_MASK
+            self.data = tuple(bts[1:])
+            fields = _STATUS_TO_META[self.type].field_handler(*self.data)
+        vars(self).update(fields)
+        if self.type == PitchBend:
+            self.pitch = pitch_bend_value(*self.data)
+
+    def __eq__(self, other):
+        return isinstance(other, MidiMessage) and self.bytes == other.bytes
+
+    def __hash__(self):
+        return hash(self.bytes)
+
+    def __bytes__(self):
+        return self.bytes
+
     def __repr__(self):
-        return f'<{self.status.name}|{self.channel}: {self:#x}>'
-    def __str__(self):
-        return repr(self)
+        if self.type == PitchBend:
+            data = f'pitch={self.pitch}'
+        else:
+            fields = _STATUS_TO_META[self.type].fields
+            data = ', '.join(f'{k}={v!r}' for k, v in zip(fields, self.data))
+        tname = type(self).__name__
+        return f'{tname}({self.type}, channel={self.channel}, {data})'
 
-class RelMidiEvents(list):
+
+class SysExMessage(Message):
+    data: bytes
+    __slots__ = ('data',)
+
+    @classmethod
+    def from_buffer(cls, status: int, buff: ByteString, off=0) -> tuple['SysExMessage', int]:
+        assert status in (SysEx, SysExEsc)
+        length, off = parse_vlq(buff, off)
+        end = off + length
+        prefix = b'\xf0' if status == SysEx else b''
+        data = prefix + bytes(buff[off: end])
+        return cls(data), end
+
+    def __init__(self, data: ByteString):
+        self.data = bytes(data)
+
+    def __eq__(self, other):
+        return isinstance(other, SysExMessage) and self.data == other.data
+
+    def __hash__(self):
+        return hash(self.data)
+
+    def __bytes__(self):
+        return self.data
+
     def __repr__(self):
-        return f'RelMidiEvents({super().__repr__()})'
+        return f'{type(self).__name__}({self.data!r})'
 
-    def to_abs(self):
-        events = AbsMidiEvents()
-        tick = 0
-        for evt, dt in self:
-            tick += dt
-            events.append((evt, tick))
-        return events
 
-class AbsMidiEvents(list):
+class MetaMessage(Message):
+    type: int
+    data: bytes
+
+    # Type-specific fields
+    # Int-typed events
+    value: int
+    # Text-typed events
+    text: str
+    # SMPTEOff
+    hour: int
+    minute: int
+    second: int
+    frame: int
+    frac_frame: int
+    # TimeSig
+    num: int
+    denom: int
+    cc: int
+    bb: int
+    # KeySig
+    key: int
+    is_minor: bool
+
+    @classmethod
+    def from_buffer(cls, buff: ByteString, off=0) -> tuple['MetaMessage', int]:
+        typ = buff[off]
+        length, off = parse_vlq(buff, off + 1)
+        end = off + length
+        data = bytes(buff[off: end])
+        return cls(typ, data), end
+
+    def __init__(self, typ: int, data: ByteString):
+        try:
+            self.type = MetaEvent(typ)
+        except ValueError:
+            self.type = typ
+        self.data = bytes(data)
+        vars(self).update(self._parse_data(self.type, self.data))
+
+    def __eq__(self, other):
+        return (isinstance(other, MetaMessage)
+                and self.type == other.type and self.data == other.data)
+
+    def __hash__(self):
+        return hash((self.type, self.data))
+
     def __repr__(self):
-        return f'AbsMidiEvents({super().__repr__()})'
+        if len(vars(self)) > 2:
+            fields = ', '.join(f'{k}={v!r}' for k, v in vars(self).items()
+                               if k not in ('type', 'data'))
+            return f'<{type(self).__name__} type={self.type}, {fields}>'
+        elif self.data:
+            return f'<{type(self).__name__} type={self.type}, data={self.data!r}>'
+        return f'<{type(self).__name__} type={self.type}>'
 
-    def to_rel(self):
-        events = RelMidiEvents()
-        lasttick = 0
-        for evt, tick in self:
-            events.append((evt, tick - lasttick))
-            lasttick = tick
-        return events
+    @staticmethod
+    def _parse_data(typ, data) -> dict[str, Any]:
+        if typ in META_INT_EVENTS:
+            return {'value': int.from_bytes(data, 'big')}
+        elif typ in META_TEXT_EVENTS:
+            return {'text': try_decode(data.rstrip(b'\0'))}
+        elif typ == MetaEvent.SMPTEOff:
+            return dict(zip(
+                ('hour', 'minute', 'second', 'frame', 'frac_frame'), data))
+        elif typ == MetaEvent.TimeSig:
+            return {'num': data[0], 'denom': 2**data[1],
+                    'cc': data[2], 'bb': data[3]}
+        elif typ == MetaEvent.KeySig:
+            return dict(zip(('key', 'is_minor'), struct.unpack('b?', data)))
+        return {}
 
-class ScheduledMidiEvents(list):
-    def __repr__(self):
-        return f'ScheduledMidiEvents({super().__repr__()})'
 
-SmpteDivision = collections.namedtuple('SmpteDivision', ['fps', 'tpf'])
+class Event(NamedTuple):
+    message: Message
+    time: float
 
+class RelEvent(Event):
+    pass
+
+class AbsEvent(Event):
+    pass
+
+class AbsTimeEvent(Event):
+    pass
+
+type AnyAbsEvent = AbsEvent | AbsTimeEvent
+
+
+def rel_to_abs(events: list[RelEvent]) -> list[AbsEvent]:
+    abs_events = []
+    tick = 0
+    for evt in events:
+        tick += evt.time
+        abs_events.append(AbsEvent(evt.message, tick))
+    return abs_events
+
+
+def abs_to_rel(events: list[AbsEvent]) -> list[RelEvent]:
+    rel_events = []
+    lasttick = 0
+    for evt in events:
+        rel_events.append(RelEvent(evt.message, evt.time - lasttick))
+        lasttick = evt.time
+    return rel_events
+
+
+##########################
+# MIDI File Class/Parser #
+##########################
+
+@dataclass
+class SmpteDivision:
+    fps: int
+    tpf: int
 
 class MidiFile:
-    def __init__(self, file_or_tracks, division=480, format=1):
+    tracks: list[list[RelEvent]]
+    division: int | SmpteDivision
+    format: int
+
+    def __init__(self, file_or_tracks: str | BinaryIO | list[list[RelEvent]],
+                 division: int | SmpteDivision = 480, format=1):
         if isinstance(file_or_tracks, list):
-            self.tracks = [RelMidiEvents(track) for track in file_or_tracks]
+            self.tracks = [list(track) for track in file_or_tracks]
             self.division = division
             self.format = format
         else:
@@ -157,85 +357,95 @@ class MidiFile:
         return (f'<MidiFile ntracks={len(self.tracks)} '
                 f'division={self.division} format={self.format}>')
 
-    def merged_events(self):
-        events = AbsMidiEvents()
+    def merged_events(self) -> list[AbsEvent]:
+        events: list[AbsEvent] = []
         for track in self.tracks:
-            events.extend(track.to_abs())
-        events.sort(key=lambda evt: evt[1])
+            events.extend(rel_to_abs(track))
+        events.sort(key=lambda evt: evt.time)
         return events
 
-    def tick_duration(self, tempo):
+    def tick_duration(self, tempo: int) -> float:
         if isinstance(self.division, SmpteDivision):
             return 1 / (self.division.fps * self.division.tpf)
         else:
             return tempo / (self.division * 1000_000)
 
-    def schedule_events(self, sysex=False, meta=False):
+    def schedule_events(self, sysex=False, meta=False) -> list[AbsTimeEvent]:
         tempo = DEFAULT_TEMPO
         sec_per_tick = self.tick_duration(tempo)
-        midievents = ScheduledMidiEvents()
+        events: list[AbsTimeEvent] = []
         last_tick = last_ts = 0
-        for evt, tick in self.merged_events():
+        for msg, tick in self.merged_events():
             ts = last_ts + (tick - last_tick) * sec_per_tick
             last_tick, last_ts = tick, ts
-            if evt[0] == Meta and evt[1] == MetaEvent.SetTempo:
-                tempo = evt[2]
+            if isinstance(msg, MetaMessage) and msg.type == MetaEvent.SetTempo:
+                tempo = msg.value
                 sec_per_tick = self.tick_duration(tempo)
-            if (is_midi(evt)
-                    or sysex and is_sysex(evt)
-                    or meta and is_meta(evt)):
-                midievents.append((evt, ts))
-        return midievents
+            if (isinstance(msg, MidiMessage)
+                    or sysex and isinstance(msg, SysExMessage)
+                    or meta and isinstance(msg, MetaMessage)):
+                events.append(AbsTimeEvent(msg, ts))
+        return events
 
-    def _read(self, file):
+    def _read(self, file: BinaryIO | str):
         if isinstance(file, str):
             with open(file, 'rb') as file:
                 buffer = file.read()
         else:
             buffer = file.read()
-
-        self.tracks = []
-        ntracks = 0
-        header_found = False
-
-        if len(buffer) == 0:
-            raise ValueError('failed to parse midi file: file is empty')
+        fname = getattr(file, 'name', '<buffer>')
 
         chunk_head_fmt = struct.Struct('>4sI')
         header_data_fmt = struct.Struct('>HHh')
-        i = 0
-        while i < len(buffer):
-            typ, length = chunk_head_fmt.unpack_from(buffer, i)
-            i += chunk_head_fmt.size
-            if typ == b'MThd':
-                if header_found:
-                    raise ValueError('failed to parse midi file: multiple header chunks found')
-                header_found = True
-                fmt, ntracks, div = header_data_fmt.unpack_from(buffer, i)
-                if div & 0x8000:
-                    div = SmpteDivision(-(div >> 8), div & 0xff)
-                self.format, self.division = fmt, div
-            elif not header_found:
-                raise ValueError('failed to parse midi file: no header chunk found')
-            elif typ == b'MTrk':
-                self.tracks.append(parse_track_data(buffer, i, length))
-            else:
-                warnings.warn(f'unknown chunk type: {typ}')
-            i += length
+        fail_msg = f'failed to parse midi file {fname}'
+        warn_msg = f'while parsing midi file {fname}'
 
+        def read_chunk(buffer: bytes, offset=0) -> tuple[bytes, bytes, int]:
+            typ, length = chunk_head_fmt.unpack_from(buffer, offset)
+            offset += chunk_head_fmt.size
+            data = buffer[offset: offset + length]
+            return typ, data, offset + length
+
+        try:
+            # Header chunk
+            typ, data, i = read_chunk(buffer)
+            if typ != b'MThd':
+                raise ValueError(f'{fail_msg}: no header chunk found')
+            fmt, ntracks, div = header_data_fmt.unpack_from(data)
+            if div & 0x8000:
+                div = SmpteDivision(-(div >> 8), div & 0xff)
+            self.format, self.division = fmt, div
+            self.tracks = []
+
+            # Track chunks
+            while i < len(buffer) and len(self.tracks) < ntracks:
+                typ, data, i = read_chunk(buffer, i)
+                if typ == b'MTrk':
+                    self.tracks.append(parse_track_data(data))
+                elif typ == b'MThd':
+                    raise ValueError(f'{fail_msg}: multiple header chunks found')
+                else:
+                    warnings.warn(f'{warn_msg}: unknown chunk type: {typ}')
+        except (struct.error, IndexError) as e:
+            raise ValueError(f'{fail_msg}: unexpected end of file') from e
+
+        if i < len(buffer):
+            warnings.warn(f'{warn_msg}: extra {len(buffer) - i} bytes found at end of file')
         if len(self.tracks) != ntracks:
-            warnings.warn(f'found {len(self.tracks)} tracks, expected {ntracks}')
+            warnings.warn(f'{warn_msg}: found {len(self.tracks)} tracks, expected {ntracks}')
 
-def _as_midi_file(file):
+type _MidiFileParam = str | BinaryIO | MidiFile
+
+def _as_midi_file(file: _MidiFileParam) -> MidiFile:
     if isinstance(file, MidiFile):
         return file
     return MidiFile(file)
 
 
-def parse_track_data(buffer, offset=0, length=None):
+def parse_track_data(buffer: bytes, offset=0, length=-1) -> list[RelEvent]:
     i = offset
-    end = offset + length if length is not None else len(buffer)
-    events = RelMidiEvents()
+    end = offset + length if length >= 0 else len(buffer)
+    events: list[RelEvent] = []
     running_status = None
     while i < end:
         dt, i = parse_vlq(buffer, i)
@@ -243,19 +453,12 @@ def parse_track_data(buffer, offset=0, length=None):
         i += 1
         # Sysex Event
         if status in (SysEx, SysExEsc):
-            length, i = parse_vlq(buffer, i)
-            event = (MidiStatus(status), buffer[i: i+length])
-            i += length
+            running_status = None
+            msg, i = SysExMessage.from_buffer(status, buffer, i)
         # Meta Event
         elif status == Meta:
-            try:
-                typ = MetaEvent(buffer[i])
-            except ValueError:
-                typ = HexInt(buffer[i])
-            length, i = parse_vlq(buffer, i+1)
-            data = metaevent_data(typ, buffer[i: i+length])
-            event = (MidiStatus(status), typ, data)
-            i += length
+            running_status = None
+            msg, i = MetaMessage.from_buffer(buffer, i)
         # MIDI Event
         else:
             # Running status
@@ -265,13 +468,12 @@ def parse_track_data(buffer, offset=0, length=None):
                 status = running_status
                 i -= 1
             running_status = status
-            length = N_DATA_BYTES[status & STATUS_MASK]
-            event = (MidiStatusByte(status), *buffer[i: i+length])
-            i += length
-        events.append((event, dt))
+            msg, i = MidiMessage.from_buffer(status, buffer, i)
+        events.append(RelEvent(msg, dt))
     return events
 
-def parse_vlq(data, offset=0):
+
+def parse_vlq(data: ByteString, offset=0) -> tuple[int, int]:
     i = offset
     n = 0
     msb = 1
@@ -282,104 +484,101 @@ def parse_vlq(data, offset=0):
         i += 1
     return n, i
 
-def metaevent_data(typ, data):
-    if typ in META_INT_EVENTS:
-        data = int.from_bytes(data, 'big')
-    elif typ in META_TEXT_EVENTS:
-        data = try_decode(data.rstrip(b'\0'))
-    elif typ == MetaEvent.SMPTEOff:
-        data = tuple(data)
-    elif typ == MetaEvent.TimeSig:
-        data = (data[0], 2**data[1], data[2], data[3])
-    elif typ == MetaEvent.KeySig:
-        data = struct.unpack('bB', data)
-    elif typ == MetaEvent.EndOfTrack:
-        data = None
-    return data
-
 
 ########################
 # MIDI Event Utilities #
 ########################
 
-def get_status(evt):
-    return evt[0] & STATUS_MASK
+def is_note_on(msg: Message) -> TypeGuard[MidiMessage]:
+    return (isinstance(msg, MidiMessage)
+            and msg.type == NoteOn and msg.velocity > 0)
 
-def get_channel(evt):
-    return evt[0] & CHANNEL_MASK
-
-def is_midi(evt):
-    return evt[0] < NonMidi
-
-def is_meta(evt):
-    return evt[0] == Meta
-
-def is_sysex(evt):
-    return evt[0] in (SysEx, SysExEsc)
-
-def is_note_on(evt):
-    return get_status(evt) == NoteOn and evt[2] > 0
-
-def is_note_off(evt):
-    status = get_status(evt)
-    return status == NoteOff or (status == NoteOn and evt[2] == 0)
+def is_note_off(msg: Message) -> TypeGuard[MidiMessage]:
+    return (isinstance(msg, MidiMessage)
+            and (msg.type == NoteOff
+                 or (msg.type == NoteOn and msg.velocity == 0)))
 
 
-def shift(events, dt):
-    return [(evt, ts+dt) for evt, ts in events]
+def end_time[E: AnyAbsEvent](events: list[E]) -> float:
+    return events[-1].time if events else 0
 
 
-def slice(events, start, end=None):
+def _unreachable(*args):
+    assert False
+
+
+def shift_events[E: AnyAbsEvent](events: list[E], dt) -> list[E]:
+    typ = type(events[0]) if events else _unreachable
+    return [typ(msg, ts+dt) for msg, ts in events]
+
+
+def slice_events[E: AnyAbsEvent](events: list[E], start, end=None) -> list[E]:
+    typ = type(events[0]) if events else _unreachable
     if end is None:
-        end = events[-1][1]
-    return [(evt, ts-start) for evt, ts in events if start <= ts <= end]
+        end = end_time(events)
+    return [typ(msg, ts-start) for msg, ts in events if start <= ts <= end]
 
 
-def filter_events(events, type=None, channel=None, *, exclude=None,
-                  note_on=False, note_off=False):
-    if type is not None and not isinstance(type, cabc.Container):
-        type = (type,)
-    elif type is None and (note_on or note_off):
-        type = ()
-    if exclude is not None and not isinstance(exclude, cabc.Container):
-        exclude = (exclude,)
-    if channel is not None and not isinstance(channel, cabc.Container):
+type _OneOrSet[T] = T | Collection[T]
+type _Types = type[Message] | MidiStatus | MetaEvent | int
+
+def filter_events[E: Event](
+        events: Iterable[E],
+        types: _OneOrSet[_Types] | None = None,
+        channel: _OneOrSet[int] | None = None, *,
+        exclude: _OneOrSet[_Types] = (),
+        note_on=False, note_off=False) -> list[E]:
+    if types is not None and not isinstance(types, Collection):
+        types = (types,)
+    elif types is None and (note_on or note_off):
+        types = ()
+    if channel is not None and not isinstance(channel, Collection):
         channel = (channel,)
+    if not isinstance(exclude, Collection):
+        exclude = (exclude,)
+    include_classes = tuple([t for t in types or () if isinstance(t, type)])
+    exclude_classes = tuple([t for t in exclude if isinstance(t, type)])
+    typed_classes = (MidiMessage, MetaMessage)
+
+    events = list(events)
+    evttype = type(events[0]) if events else _unreachable
     ret = []
-    for evt, dt in events:
-        if (type is None
-                or evt[0] in type
-                or (is_midi(evt) and get_status(evt) in type)
-                or (is_meta(evt) and evt[1] in type)
-                or (note_on and is_note_on(evt))
-                or (note_off and is_note_off(evt))):
-            if (exclude is not None
-                    and (evt[0] in exclude
-                         or is_meta(evt) and evt[1] in exclude)):
+    for msg, ts in events:
+        if (types is None
+                or isinstance(msg, include_classes)
+                or (isinstance(msg, typed_classes) and msg.type in types)
+                or (note_on and is_note_on(msg))
+                or (note_off and is_note_off(msg))):
+            if (exclude and
+                (isinstance(msg, exclude_classes)
+                 or (isinstance(msg, typed_classes) and msg.type in exclude))):
                 continue
-            if (channel is None
-                    or (is_midi(evt) and get_channel(evt) in channel)):
-                ret.append((evt, dt))
+            if (channel is None or
+                    (isinstance(msg, MidiMessage) and msg.channel in channel)):
+                ret.append(evttype(msg, ts))
     return ret
 
 
-def get_notes(file=None, events=None, off=False, ticks=False):
+def get_notes(file: _MidiFileParam | None = None,
+              events: list[AbsEvent] | list[AbsTimeEvent] | None = None,
+              off=False, ticks=False):
     if events is None:
+        assert file is not None
         file = _as_midi_file(file)
         events = file.merged_events() if ticks else file.schedule_events()
-    noteon = np.array([(t, e[1]) for e, t in events if is_note_on(e)])
-    if noteon.size == 0:
-        return tuple(np.array([], int) for i in range(3 if off else 2))
+    noteon = np.array(
+        [(t, m.note) for m, t in events if is_note_on(m)]).reshape(-1, 2)
     if not off:
         return noteon[:, 0], noteon[:, 1]
-    noteoff = np.array([(t, e[1]) for e, t in events if is_note_off(e)])
+    noteoff = np.array(
+        [(t, m.note) for m, t in events if is_note_off(m)]).reshape(-1, 2)
     indon = np.argsort(noteon[:, 1], kind='mergesort')
     indoff = np.argsort(noteoff[:, 1], kind='mergesort')
     noteoff[indon] = noteoff[indoff]
     return noteon[:, 0], noteoff[:, 0], noteon[:, 1]
 
 
-def get_notes_mido(midofile=None, off=False, ticks=False):
+def get_notes_mido(midofile, off=False, ticks=False):
     import mido
     msgs = mido.merge_tracks(midofile.tracks) if ticks else list(midofile)
     msgs = list(mido.midifiles.tracks._to_abstime(msgs))
@@ -411,41 +610,43 @@ NOTE_MAP = {
 
 NOTE_NAMES = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B']
 
-def parse_note(note):
+type _Note = int | str
+
+def parse_note(note: _Note) -> int:
     if isinstance(note, int):
         return note
     match = re.fullmatch(r'([A-Ga-g][#b♯♭]?)(-?[0-9])?', note)
     if not match:
         raise ValueError(f'invalid note: {note}')
-    note, num = match.groups()
-    note = note[0].upper() + note[1:].replace('♯', '#').replace('♭', 'b')
+    name, num = match.groups()
+    name = name[0].upper() + name[1:].replace('♯', '#').replace('♭', 'b')
     num = int(num) if num else 4
-    return NOTE_MAP[note] + 12*(num + 1)
+    return NOTE_MAP[name] + 12*(num + 1)
 
-def note_name(note):
+def note_name(note: int) -> str:
     return NOTE_NAMES[note % 12] + str(note // 12 - 1)
 
-def note_frequency(note):
+def note_frequency(note: _Note) -> float:
     if isinstance(note, str):
         note = parse_note(note)
     return 440.0 * 2**((note - 69) / 12)
 
-def frequency_to_note(freq):
+def frequency_to_note(freq: float | np.ndarray) -> int | np.ndarray:
     if isinstance(freq, np.ndarray):
         return (np.round(np.log2(freq / 440.0) * 12) + 69).astype(int)
     return round(math.log2(freq / 440.0) * 12) + 69
 
 
-def tempo_to_bpm(tempo):
+def tempo_to_bpm(tempo: float) -> float:
     return 1000_000 * 60 / tempo
 
-def tempo_from_bpm(bpm):
+def tempo_from_bpm(bpm: float) -> float:
     return 1000_000 * 60 / bpm
 
 
-def scale(start, end, intervals):
+def scale(start: _Note, end: _Note | None, intervals: list[int]) -> list[int]:
     start = parse_note(start)
-    end = parse_note(end)
+    end = parse_note(end) if end is not None else start + 12
     forward = start <= end
     if not forward:
         intervals = [-x for x in intervals[::-1]]
@@ -461,27 +662,46 @@ MAJOR_SCALE = [2, 2, 1, 2, 2, 2, 1]
 NATURAL_MINOR_SCALE = [2, 1, 2, 2, 1, 2, 2]
 HARMONIC_MINOR_SCALE = [2, 1, 2, 2, 1, 3, 1]
 
-def major_scale(start, end):
+def chromatic_scale(start: _Note, end: _Note | None = None):
+    return scale(start, end, [1])
+
+def major_scale(start: _Note, end: _Note | None = None):
     return scale(start, end, MAJOR_SCALE)
 
-def natural_minor_scale(start, end):
+def natural_minor_scale(start: _Note, end: _Note | None = None):
     return scale(start, end, NATURAL_MINOR_SCALE)
 
-def harmonic_minor_scale(start, end):
+def harmonic_minor_scale(start: _Note, end: _Note | None = None):
     return scale(start, end, HARMONIC_MINOR_SCALE)
 
 
-def pitch_bend_bytes(p):
+def chord(root: _Note, intervals: list[int], inversion: int = 0) -> list[int]:
+    root = parse_note(root)
+    nnotes = len(intervals)
+    return [root + interval + ((inversion + nnotes - i - 1) // nnotes * 12)
+            for i, interval in enumerate(intervals)]
+
+MAJOR = [0, 4, 7]
+MINOR = [0, 3, 7]
+DIMINISHED = [0, 3, 6]
+AUGMENTED = [0, 4, 8]
+DOM_7TH = [0, 4, 7, 10]
+MAJOR_7TH = [0, 4, 7, 11]
+MINOR_7TH = [0, 3, 7, 10]
+MIN_MAJ_7TH = [0, 3, 7, 11]
+
+
+def pitch_bend_bytes(p: int | float) -> tuple[int, int]:
     if isinstance(p, float):
         p = round(p * 8192)
     x = min(max(p + 8192, 0), 16383)
     return x & 127, x >> 7
 
-def pitch_bend_value(lowb, highb):
+def pitch_bend_value(lowb: int, highb: int) -> int:
     x = highb << 7 | lowb
     return x - 8192
 
-def pitch_bend_float(lowb, highb):
+def pitch_bend_float(lowb: int, highb: int) -> float:
     return pitch_bend_value(lowb, highb) / 8192
 
 
@@ -548,6 +768,7 @@ PERCUSSION_CHANNEL = 9
 
 NON_PERC_CHANNELS = set(range(16)) - {PERCUSSION_CHANNEL}
 
+type _Instr = int | str
 
 ###############
 # MIDI Player #
@@ -557,32 +778,37 @@ class MidiPlayer:
     def __new__(cls, output=None, instrument=None):
         if cls is MidiPlayer:
             cls = get_player_class()
-        return super().__new__(cls)
+        return super(MidiPlayer, cls).__new__(cls)
 
-    def __init__(self, output=None, instrument=None):
-        if instrument is not None:
-            try:
+    def __init__(self, output=None, instrument: _Instr | None = None):
+        try:
+            if instrument is not None:
                 self.set_instrument(instrument)
-            except:
-                self.close()
-                raise
+        except:
+            self.close()
+            raise
 
-    def send_message(self, message):
+    @staticmethod
+    def list_outputs() -> list[str]:
         raise NotImplementedError
 
-    def send_sysex(self, message):
+    def send_message(
+            self, message: MidiMessage | SysExMessage | Sequence[int]):
+        raise NotImplementedError
+
+    def send_sysex(self, message: SysExMessage | Sequence[int]):
         self.send_message(message)
 
-    def note_on(self, note, velocity=127, channel=0):
+    def note_on(self, note: _Note, velocity=127, channel=0):
         self.send_message([NoteOn + channel, parse_note(note), velocity])
 
-    def note_off(self, note, velocity=0, channel=0):
+    def note_off(self, note: _Note, velocity=0, channel=0):
         self.send_message([NoteOff + channel, parse_note(note), velocity])
 
-    def pitch_bend(self, bend, channel=0):
+    def pitch_bend(self, bend: int | float, channel=0):
         self.send_message([PitchBend + channel, *pitch_bend_bytes(bend)])
 
-    def all_notes_off(self, channel=None, fallback=True):
+    def all_notes_off(self, channel: int | None = None, fallback=True):
         channels = [channel] if channel is not None else range(16)
         for ch in channels:
             # Channel Mode 120: All Sound Off
@@ -591,7 +817,7 @@ class MidiPlayer:
                 for note in range(128):
                     self.note_off(note, channel=ch)
 
-    def set_instrument(self, instrument, channel=0):
+    def set_instrument(self, instrument: _Instr, channel=0):
         if isinstance(instrument, str):
             instrument = INSTRUMENTS[instrument.lower()]
         self.send_message([ProgChange + channel, instrument])
@@ -603,43 +829,47 @@ class MidiPlayer:
     def time(self):
         return time.perf_counter()
 
-    def play_midi(self, file=None, events=None, volume=1, tempo_scale=1,
-                  start=0, loop=False, sysex=False, print_progress=True,
-                  print_events=False):
+    def play_midi(self, file: _MidiFileParam | None = None,
+                  events: list[AbsTimeEvent] | None = None, volume=1,
+                  tempo_scale=1, start=0, loop=False, sysex=False,
+                  print_progress=True, print_events=False):
         if events is None:
+            assert file is not None
             events = _as_midi_file(file).schedule_events(sysex=True, meta=True)
         if print_events:
             print_progress = False
-        tottime = events[-1][1] / tempo_scale
+        tottime = end_time(events) / tempo_scale
         notes_on = set()
+        last_ts = 0
         try:
             do_loop = True
             while do_loop:
                 last_ts = 0
                 t0 = self.time() - start
-                for evt, ts in events:
+                for msg, ts in events:
                     ts /= tempo_scale
-                    if ts < start and get_status(evt) in (NoteOn, NoteOff):
+                    if (ts < start and isinstance(msg, MidiMessage)
+                        and msg.type in (NoteOn, NoteOff)):
                         continue
                     # Print before waiting to hide delay
                     if print_progress and last_ts != ts and last_ts >= start:
                         print(f'\r{fmt_time(last_ts)}/{fmt_time(tottime)}',
                               end='', flush=True)
                     elif print_events:
-                        print(evt)
+                        print(msg)
                     self.wait(ts + t0 - self.time())
-                    if sysex and evt[0] == SysEx:
-                        self.send_sysex(b'\xf0' + evt[1])
-                    elif sysex and evt[0] == SysExEsc:
-                        self.send_sysex(evt[1])
-                    elif is_midi(evt):
-                        if is_note_on(evt):
+                    if sysex and isinstance(msg, SysExMessage):
+                        self.send_sysex(msg)
+                    elif isinstance(msg, MidiMessage):
+                        if is_note_on(msg):
                             if volume != 1:
-                                evt = (*evt[:2], min(int(evt[2]*volume), 127))
-                            notes_on.add((get_channel(evt), evt[1]))
-                        elif is_note_off(evt):
-                            notes_on.discard((get_channel(evt), evt[1]))
-                        self.send_message(bytes(evt))
+                                velocity = min(int(msg.velocity*volume), 127)
+                                msg = MidiMessage(msg.type, msg.channel,
+                                                  msg.note, velocity)
+                            notes_on.add((msg.channel, msg.note))
+                        elif is_note_off(msg):
+                            notes_on.discard((msg.channel, msg.note))
+                        self.send_message(msg)
                     last_ts = ts
                 do_loop = loop
                 start=0
@@ -652,8 +882,8 @@ class MidiPlayer:
         if print_progress:
             print(f'\r{fmt_time(last_ts)}/{fmt_time(tottime)}')
 
-    def play_note(self, note, duration=1.0, velocity=127, channel=0,
-                  instrument=None):
+    def play_note(self, note: _Note | None, duration=1.0, velocity=127,
+                  channel=0, instrument: _Instr | None = None):
         if instrument is not None:
             self.set_instrument(instrument, channel)
         if isinstance(note, str):
@@ -668,7 +898,7 @@ class MidiPlayer:
             self.note_off(note, channel=channel)
 
     def play_notes(self, notes, duration=0.5, delay=0.0, velocity=127,
-                   time_scale=1.0, channel=0, instrument=None):
+                   time_scale=1.0, channel=0, instrument: _Instr | None = None):
         if instrument is not None:
             self.set_instrument(instrument, channel)
         for note in notes:
@@ -682,6 +912,18 @@ class MidiPlayer:
                     note_del, note, note_dur = note
             self.wait(note_del * time_scale)
             self.play_note(note, note_dur * time_scale, velocity, channel)
+
+    def play_chord(self, notes, duration=1.0, velocity=127, channel=0,
+                   instrument: _Instr | None = None):
+        if instrument is not None:
+            self.set_instrument(instrument, channel)
+        try:
+            for note in notes:
+                self.note_on(note, velocity, channel)
+            self.wait(duration)
+        finally:
+            for note in notes:
+                self.note_off(note, channel=channel)
 
     def close(self):
         pass
@@ -700,17 +942,17 @@ class MidiPlayer:
 # MIDI Backends #
 #################
 
-_backend = None
+_backend: str | None = None
 
 DEFAULT_BACKEND = 'rtmidi'
 
-def set_backend(backend):
+def set_backend(backend: str | None):
     global _backend
     if backend and backend not in _PLAYER_CLASSES:
         raise ValueError(f'unknown backend: {backend}')
     _backend = backend
 
-def get_backend():
+def get_backend() -> str:
     global _backend
     if not _backend:
         _backend = os.environ.get('MIDI_BACKEND', DEFAULT_BACKEND)
@@ -724,7 +966,7 @@ def get_backend():
             raise ValueError(f'unknown backend: {_backend}')
     return _backend
 
-def get_player_class():
+def get_player_class() -> type[MidiPlayer]:
     return _PLAYER_CLASSES[get_backend()]
 
 
@@ -739,13 +981,13 @@ class RtMidiPlayer(MidiPlayer):
         super().__init__(output, instrument)
 
     @staticmethod
-    def list_outputs():
+    def list_outputs() -> list[str]:
         import rtmidi
         output = rtmidi.MidiOut()
         return output.get_ports()
 
     def send_message(self, message):
-        self.output.send_message(message)
+        self.output.send_message(bytes(message))
 
     def close(self):
         if hasattr(self, 'output'):
@@ -767,7 +1009,7 @@ class PygameMidiPlayer(MidiPlayer):
         super().__init__(output, instrument)
 
     @staticmethod
-    def list_outputs():
+    def list_outputs() -> list[str]:
         import pygame.midi
         pygame.midi.init()
         infos = []
@@ -778,10 +1020,14 @@ class PygameMidiPlayer(MidiPlayer):
         return infos
 
     def send_message(self, message):
-        self.output.write_short(*message)
+        bts = bytes(message)
+        if len(bts) > 3:
+            self.send_sysex(bts)
+        else:
+            self.output.write_short(*bts)
 
     def send_sysex(self, message):
-        self.output.write_sys_ex(0, message)
+        self.output.write_sys_ex(0, bytes(message))
 
     def wait(self, duration=1.0):
         pygame.time.delay(int(duration * 1000))
@@ -817,9 +1063,10 @@ def parse_time(string):
     return float(string)
 
 
-def play_midi(file=None, events=None, volume=1, tempo_scale=1, start=0,
-              loop=False, sysex=False, print_progress=True, print_events=False,
-              output=None):
+def play_midi(file: _MidiFileParam | None = None,
+              events: list[AbsTimeEvent] | None = None, volume=1, tempo_scale=1,
+              start=0, loop=False, sysex=False, print_progress=True,
+              print_events=False, output=None):
     with MidiPlayer(output) as player:
         player.play_midi(
             file=file, events=events, volume=volume, tempo_scale=tempo_scale,
@@ -828,7 +1075,7 @@ def play_midi(file=None, events=None, volume=1, tempo_scale=1, start=0,
 
 
 def play_notes(notes, duration=0.5, delay=0.0, velocity=127, time_scale=1,
-               channel=0, instrument=None, output=None):
+               channel=0, instrument: _Instr | None = None, output=None):
     with MidiPlayer(output) as player:
         player.play_notes(notes, duration, delay, velocity, time_scale,
                           channel, instrument)
@@ -840,11 +1087,11 @@ def all_notes_off(output=None):
         player.all_notes_off(fallback=True)
 
 
-def list_outputs():
+def list_outputs() -> list[str]:
     return get_player_class().list_outputs()
 
 
-def try_decode(bts):
+def try_decode(bts: bytes) -> str:
     try:
         return bts.decode('utf-8')
     except UnicodeDecodeError:
@@ -853,36 +1100,35 @@ def try_decode(bts):
 
 def dump_info(mf: MidiFile):
     events = mf.schedule_events(meta=True)
-    time = fmt_time(events[-1][1])
+    time_fmt = fmt_time(end_time(events))
     tempo_evts = filter_events(events, MetaEvent.SetTempo)
-    tempos = {e[2] for e, _ in tempo_evts} or [DEFAULT_TEMPO]
+    tempos = {m.value for m, _ in tempo_evts} or [DEFAULT_TEMPO]
     tempos_bpm = sorted(map(tempo_to_bpm, tempos))
     tempo_fmt = '/'.join(str(round(t)) for t in tempos_bpm[:3])
     tempo_fmt += '…' * (len(tempos_bpm) > 3)
     nnotes = len(filter_events(events, note_on=True))
     format_fmt = f'format: {mf.format}, ' if mf.format != 1 else ''
-    print(f'# Tracks: {len(mf.tracks)}, {format_fmt}duration: {time}, '
+    print(f'# Tracks: {len(mf.tracks)}, {format_fmt}duration: {time_fmt}, '
           f'division: {mf.division}, tempo: {tempo_fmt} bpm, notes: {nnotes}, '
           f'events: {len(events)}')
 
     info_types = {MetaEvent.TextEvent: 'Text',
                   MetaEvent.Copyright: 'Copyright'}
-    for evt, dt in filter_events(mf.tracks[0], info_types):
-        print(f'{info_types[evt[1]]}: {evt[2].rstrip()}')
+    first_track = (mf.tracks or [[]])[0]
+    for msg, dt in filter_events(first_track, info_types):
+        print(f'{info_types[msg.type]}: {msg.text.rstrip()}')
 
     for i, track in enumerate(mf.tracks):
-        name = ''
-        if name_evts := filter_events(track, MetaEvent.TrackName):
-            name = name_evts[0][0][2]
-        notes = filter_events(track, note_on=True)
-        channels = {get_channel(e) for e, _ in notes}
-        instrs = []
+        name_evts = filter_events(track, MetaEvent.TrackName)
+        name = name_evts[0].message.text if name_evts else ''
+        prog_evts = filter_events(track, ProgChange, NON_PERC_CHANNELS)
+        instrs = [*{INSTRUMENT_NAMES[m.program]: None for m, _ in prog_evts}]
+        note_evts = filter_events(track, note_on=True)
+        channels = {m.channel for m, _ in note_evts}
         if PERCUSSION_CHANNEL in channels:
             instrs.append('Percussion')
-        if prog_evts := filter_events(track, ProgChange, NON_PERC_CHANNELS):
-            instrs.extend({INSTRUMENT_NAMES[e[1]]: None for e, _ in prog_evts})
         instr_lbl = ', '.join(instrs)
-        nnotes = len(notes)
+        nnotes = len(note_evts)
 
         name_fmt = name and f' ({name})'
         instr_fmt = instr_lbl and f'{instr_lbl}, '
@@ -923,7 +1169,7 @@ def main():
         p.error('midi file is required')
     if args.length:
         events = MidiFile(args.file).schedule_events(meta=True)
-        print(fmt_time(events[-1][1]))
+        print(fmt_time(end_time(events)))
     elif args.info:
         dump_info(MidiFile(args.file))
     else:

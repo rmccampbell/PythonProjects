@@ -33,21 +33,20 @@ BADCOLOR = colors.HexColor(0xDD0000)
 def midi2points(file, tracks=None, octaves=0, mode='drop', scale=1, delay=0):
     assert mode in ['drop', 'shift', 'middle']
     midifile = midi.MidiFile(file)
+    assert isinstance(midifile.division, int)
     tracks = [midifile.tracks[i] for i in tracks] if tracks else midifile.tracks
     points = []
     if isinstance(octaves, int):
         octaves = [octaves] * len(tracks)
     assert len(octaves) == len(tracks)
     for tnum, (octave, track) in enumerate(zip(octaves, tracks)):
-        track = track.to_abs()
+        track = midi.rel_to_abs(track)
         for event, tick in track:
             if midi.is_note_on(event):
-                chan = midi.get_channel(event)
-                note = event[1]
-                x, good = resolve_note(note, octave, mode)
+                x, good = resolve_note(event.note, octave, mode)
                 if x is not None:
                     y = tick * scale / midifile.division + delay
-                    points.append((y, x, chan, good))
+                    points.append((y, x, event.channel, good))
     return points
 
 def resolve_note(note, octave=0, mode='drop'):
