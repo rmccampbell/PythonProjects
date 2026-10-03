@@ -22,72 +22,72 @@ class HexInt(int):
     def __str__(self):
         return repr(self)
 
-class MidiStatus(HexInt, enum.Enum):
-    NoteOff    = 0x80
-    NoteOn     = 0x90
-    KeyPress   = 0xa0
-    CtrlChange = 0xb0
-    ProgChange = 0xc0
-    ChannPress = 0xd0
-    PitchBend  = 0xe0
+class Status(HexInt, enum.Enum):
+    NOTE_OFF      = 0x80
+    NOTE_ON       = 0x90
+    KEY_PRESSURE  = 0xa0
+    CTRL_CHANGE   = 0xb0
+    PROG_CHANGE   = 0xc0
+    CHAN_PRESSURE = 0xd0
+    PITCH_BEND    = 0xe0
 
-    SysEx      = 0xf0
-    SysExEsc   = 0xf7
-    Meta       = 0xff
+    SYS_EX        = 0xf0
+    SYS_EX_ESC    = 0xf7
+    META          = 0xff
 
-    NonMidi    = 0xf0
+    NON_MIDI      = 0xf0
 
-NoteOff: Final = MidiStatus.NoteOff
-NoteOn: Final = MidiStatus.NoteOn
-KeyPress: Final = MidiStatus.KeyPress
-CtrlChange: Final = MidiStatus.CtrlChange
-ProgChange: Final = MidiStatus.ProgChange
-ChannPress: Final = MidiStatus.ChannPress
-PitchBend: Final = MidiStatus.PitchBend
-SysEx: Final = MidiStatus.SysEx
-SysExEsc: Final = MidiStatus.SysExEsc
-Meta: Final = MidiStatus.Meta
-NonMidi: Final = MidiStatus.NonMidi
+NOTE_OFF: Final = Status.NOTE_OFF
+NOTE_ON: Final = Status.NOTE_ON
+KEY_PRESSURE: Final = Status.KEY_PRESSURE
+CTRL_CHANGE: Final = Status.CTRL_CHANGE
+PROG_CHANGE: Final = Status.PROG_CHANGE
+CHAN_PRESSURE: Final = Status.CHAN_PRESSURE
+PITCH_BEND: Final = Status.PITCH_BEND
+SYS_EX: Final = Status.SYS_EX
+SYS_EX_ESC: Final = Status.SYS_EX_ESC
+META: Final = Status.META
+NON_MIDI: Final = Status.NON_MIDI
 
-MIDI_EVENTS = {s for s in MidiStatus if s < NonMidi}
+MIDI_EVENTS = {s for s in Status if s < NON_MIDI}
 
-class MetaEvent(HexInt, enum.Enum):
-    SeqNumber   = 0x00
-    TextEvent   = 0x01
-    Copyright   = 0x02
-    TrackName   = 0x03
-    InstrName   = 0x04
-    Lyric       = 0x05
-    Marker      = 0x06
-    CuePoint    = 0x07
-    ProgramName = 0x08
-    DeviceName  = 0x09
-    ChannPrefix = 0x20
-    MIDIPort    = 0x21
-    EndOfTrack  = 0x2f
-    SetTempo    = 0x51
-    SMPTEOff    = 0x54
-    TimeSig     = 0x58
-    KeySig      = 0x59
-    SecSpecific = 0x7f
+class Meta(HexInt, enum.Enum):
+    SEQ_NUMBER   = 0x00
+    TEXT_EVENT   = 0x01
+    COPYRIGHT    = 0x02
+    TRACK_NAME   = 0x03
+    INSTR_NAME   = 0x04
+    LYRIC        = 0x05
+    MARKER       = 0x06
+    CUE_POINT    = 0x07
+    PROGRAM_NAME = 0x08
+    DEVICE_NAME  = 0x09
+    CHANN_PREFIX = 0x20
+    MIDI_PORT    = 0x21
+    END_OF_TRACK = 0x2f
+    SET_TEMPO    = 0x51
+    SMPTE_OFF    = 0x54
+    TIME_SIG     = 0x58
+    KEY_SIG      = 0x59
+    SEC_SPECIFIC = 0x7f
 
 META_INT_EVENTS = {
-    MetaEvent.SeqNumber,
-    MetaEvent.ChannPrefix,
-    MetaEvent.MIDIPort,
-    MetaEvent.SetTempo
+    Meta.SEQ_NUMBER,
+    Meta.CHANN_PREFIX,
+    Meta.MIDI_PORT,
+    Meta.SET_TEMPO
 }
 
 META_TEXT_EVENTS = {
-    MetaEvent.TextEvent,
-    MetaEvent.Copyright,
-    MetaEvent.TrackName,
-    MetaEvent.InstrName,
-    MetaEvent.Lyric,
-    MetaEvent.Marker,
-    MetaEvent.CuePoint,
-    MetaEvent.ProgramName,
-    MetaEvent.DeviceName,
+    Meta.TEXT_EVENT,
+    Meta.COPYRIGHT,
+    Meta.TRACK_NAME,
+    Meta.INSTR_NAME,
+    Meta.LYRIC,
+    Meta.MARKER,
+    Meta.CUE_POINT,
+    Meta.PROGRAM_NAME,
+    Meta.DEVICE_NAME,
 }
 
 
@@ -109,21 +109,21 @@ def _pitchbend_args(pitch_lo, pitch_hi=None):
     return {'pitch_lo': pitch_lo, 'pitch_hi': pitch_hi}
 
 _STATUS_TO_META = {
-    NoteOff: _StatusMeta(
+    NOTE_OFF: _StatusMeta(
         ('note', 'velocity'),
         lambda note, velocity: {'note': note, 'velocity': velocity}),
-    NoteOn: _StatusMeta(
+    NOTE_ON: _StatusMeta(
         ('note', 'velocity'),
         lambda note, velocity: {'note': note, 'velocity': velocity}),
-    KeyPress: _StatusMeta(
+    KEY_PRESSURE: _StatusMeta(
         ('note', 'value'), lambda note, value: {'note': note, 'value': value}),
-    CtrlChange: _StatusMeta(
+    CTRL_CHANGE: _StatusMeta(
         ('control', 'value'),
         lambda control, value: {'control': control, 'value': value}),
-    ProgChange: _StatusMeta(
+    PROG_CHANGE: _StatusMeta(
         ('program',), lambda program: {'program': program}),
-    ChannPress: _StatusMeta(('value',), lambda value: {'value': value}),
-    PitchBend: _StatusMeta(('pitch_lo', 'pitch_hi'), _pitchbend_args),
+    CHAN_PRESSURE: _StatusMeta(('value',), lambda value: {'value': value}),
+    PITCH_BEND: _StatusMeta(('pitch_lo', 'pitch_hi'), _pitchbend_args),
 }
 
 
@@ -133,32 +133,32 @@ class Message:
 
 class MidiMessage(Message):
     bytes: builtins.bytes
-    type: MidiStatus
+    type: Status
     channel: int
     data: tuple[int, ...]
 
     # Type-specific fields
-    note: int  # NoteOn, NoteOff, KeyPress
-    velocity: int  # NoteOn, NoteOff
-    value: int  # KeyPress, CtrlChange
-    control: int  # CtrlChange
-    program: int  # ProgChange
-    pitch: int  # PitchBend
-    pitch_lo: int  # PitchBend
-    pitch_hi: int  # PitchBend
+    note: int  # NOTE_ON, NOTE_OFF, KEY_PRESSURE
+    velocity: int  # NOTE_ON, NOTE_OFF
+    value: int  # KEY_PRESSURE, CTRL_CHANGE, CHAN_PRESSURE
+    control: int  # CTRL_CHANGE
+    program: int  # PROG_CHANGE
+    pitch: int  # PITCH_BEND
+    pitch_lo: int  # PITCH_BEND
+    pitch_hi: int  # PITCH_BEND
 
     @classmethod
     def from_buffer(cls, status: int, buff: ByteString, off=0) -> tuple['MidiMessage', int]:
         buff = bytes(buff)
-        typ = MidiStatus(status & STATUS_MASK)
+        typ = Status(status & STATUS_MASK)
         channel = status & CHANNEL_MASK
         end = off + len(_STATUS_TO_META[typ].fields)
         return cls(typ, channel, *buff[off: end]), end
 
-    def __init__(self, type_or_bytes: MidiStatus | int | ByteString,
+    def __init__(self, type_or_bytes: Status | int | ByteString,
                  channel: int | None = None, *args, **kwargs):
         if channel is not None:
-            self.type = MidiStatus(type_or_bytes)
+            self.type = Status(type_or_bytes)
             self.channel = channel
             fields = _STATUS_TO_META[self.type].field_handler(*args, **kwargs)
             self.data = tuple(fields.values())
@@ -167,12 +167,12 @@ class MidiMessage(Message):
             if isinstance(type_or_bytes, int):
                 raise TypeError('single argument must be bytes-like')
             self.bytes = bts = bytes(type_or_bytes)
-            self.type = MidiStatus(bts[0] & STATUS_MASK)
+            self.type = Status(bts[0] & STATUS_MASK)
             self.channel = bts[0] & CHANNEL_MASK
             self.data = tuple(bts[1:])
             fields = _STATUS_TO_META[self.type].field_handler(*self.data)
         vars(self).update(fields)
-        if self.type == PitchBend:
+        if self.type == PITCH_BEND:
             self.pitch = pitch_bend_value(*self.data)
 
     def __eq__(self, other):
@@ -185,7 +185,7 @@ class MidiMessage(Message):
         return self.bytes
 
     def __repr__(self):
-        if self.type == PitchBend:
+        if self.type == PITCH_BEND:
             data = f'pitch={self.pitch}'
         else:
             fields = _STATUS_TO_META[self.type].fields
@@ -200,10 +200,10 @@ class SysExMessage(Message):
 
     @classmethod
     def from_buffer(cls, status: int, buff: ByteString, off=0) -> tuple['SysExMessage', int]:
-        assert status in (SysEx, SysExEsc)
+        assert status in (SYS_EX, SYS_EX_ESC)
         length, off = parse_vlq(buff, off)
         end = off + length
-        prefix = b'\xf0' if status == SysEx else b''
+        prefix = b'\xf0' if status == SYS_EX else b''
         data = prefix + bytes(buff[off: end])
         return cls(data), end
 
@@ -232,18 +232,18 @@ class MetaMessage(Message):
     value: int
     # Text-typed events
     text: str
-    # SMPTEOff
+    # SMPTE_OFF
     hour: int
     minute: int
     second: int
     frame: int
     frac_frame: int
-    # TimeSig
+    # TIME_SIG
     num: int
     denom: int
     cc: int
     bb: int
-    # KeySig
+    # KEY_SIG
     key: int
     is_minor: bool
 
@@ -257,7 +257,7 @@ class MetaMessage(Message):
 
     def __init__(self, typ: int, data: ByteString):
         try:
-            self.type = MetaEvent(typ)
+            self.type = Meta(typ)
         except ValueError:
             self.type = typ
         self.data = bytes(data)
@@ -285,13 +285,13 @@ class MetaMessage(Message):
             return {'value': int.from_bytes(data, 'big')}
         elif typ in META_TEXT_EVENTS:
             return {'text': try_decode(data.rstrip(b'\0'))}
-        elif typ == MetaEvent.SMPTEOff:
+        elif typ == Meta.SMPTE_OFF:
             return dict(zip(
                 ('hour', 'minute', 'second', 'frame', 'frac_frame'), data))
-        elif typ == MetaEvent.TimeSig:
+        elif typ == Meta.TIME_SIG:
             return {'num': data[0], 'denom': 2**data[1],
                     'cc': data[2], 'bb': data[3]}
-        elif typ == MetaEvent.KeySig:
+        elif typ == Meta.KEY_SIG:
             return dict(zip(('key', 'is_minor'), struct.unpack('b?', data)))
         return {}
 
@@ -379,7 +379,7 @@ class MidiFile:
         for msg, tick in self.merged_events():
             ts = last_ts + (tick - last_tick) * sec_per_tick
             last_tick, last_ts = tick, ts
-            if isinstance(msg, MetaMessage) and msg.type == MetaEvent.SetTempo:
+            if isinstance(msg, MetaMessage) and msg.type == Meta.SET_TEMPO:
                 tempo = msg.value
                 sec_per_tick = self.tick_duration(tempo)
             if (isinstance(msg, MidiMessage)
@@ -453,11 +453,11 @@ def parse_track_data(buffer: bytes, offset=0, length=-1) -> list[RelEvent]:
         status = buffer[i]
         i += 1
         # Sysex Event
-        if status in (SysEx, SysExEsc):
+        if status in (SYS_EX, SYS_EX_ESC):
             running_status = None
             msg, i = SysExMessage.from_buffer(status, buffer, i)
         # Meta Event
-        elif status == Meta:
+        elif status == META:
             running_status = None
             msg, i = MetaMessage.from_buffer(buffer, i)
         # MIDI Event
@@ -492,12 +492,12 @@ def parse_vlq(data: ByteString, offset=0) -> tuple[int, int]:
 
 def is_note_on(msg: Message) -> TypeGuard[MidiMessage]:
     return (isinstance(msg, MidiMessage)
-            and msg.type == NoteOn and msg.velocity > 0)
+            and msg.type == NOTE_ON and msg.velocity > 0)
 
 def is_note_off(msg: Message) -> TypeGuard[MidiMessage]:
     return (isinstance(msg, MidiMessage)
-            and (msg.type == NoteOff
-                 or (msg.type == NoteOn and msg.velocity == 0)))
+            and (msg.type == NOTE_OFF
+                 or (msg.type == NOTE_ON and msg.velocity == 0)))
 
 
 def end_time[E: AnyAbsEvent](events: list[E]) -> float:
@@ -520,10 +520,18 @@ type _OneOrSet[T] = T | Collection[T]
 def filter_events[T: float, M: Message, M2: Message = M](
         events: Iterable[Event[T, M]],
         cls: type[M2] | tuple[type[M2], ...] | None = None,
-        types: _OneOrSet[MidiStatus | MetaEvent | int] | None = None,
+        types: _OneOrSet[Status | Meta | int] | None = None,
         channel: _OneOrSet[int] | None = None, *,
-        exclude: _OneOrSet[type[Message] | MidiStatus | MetaEvent | int] = (),
+        exclude: _OneOrSet[type[Message] | Status | Meta | int] = (),
         note_on=False, note_off=False) -> list[Event[T, M2]]:
+    # Allow passing types as the first argument but not for type checking
+    if (types is None and cls
+        and not isinstance(cls, type)
+        and not (isinstance(cls, Collection) and
+                 all(isinstance(c, type) for c in cls))):
+        types = cls  # type: ignore
+        cls = None
+
     if types is not None and not isinstance(types, Collection):
         types = (types,)
     elif types is None and (note_on or note_off):
@@ -535,7 +543,6 @@ def filter_events[T: float, M: Message, M2: Message = M](
     exclude_classes = tuple([t for t in exclude if isinstance(t, type)])
     typed_classes = (MidiMessage, MetaMessage)
 
-    events = list(events)
     ret: list[Event[T, M2]] = []
     for msg, ts in events:
         if cls is not None and not isinstance(msg, cls):
@@ -567,12 +574,12 @@ def get_notes(file: _MidiFileParam | None = None,
         [(t, m.note) for m, t in events if is_note_on(m)]).reshape(-1, 2)
     if not off:
         return noteon[:, 0], noteon[:, 1]
-    noteoff = np.array(
+    NOTE_OFF = np.array(
         [(t, m.note) for m, t in events if is_note_off(m)]).reshape(-1, 2)
     indon = np.argsort(noteon[:, 1], kind='mergesort')
-    indoff = np.argsort(noteoff[:, 1], kind='mergesort')
-    noteoff[indon] = noteoff[indoff]
-    return noteon[:, 0], noteoff[:, 0], noteon[:, 1]
+    indoff = np.argsort(NOTE_OFF[:, 1], kind='mergesort')
+    NOTE_OFF[indon] = NOTE_OFF[indoff]
+    return noteon[:, 0], NOTE_OFF[:, 0], noteon[:, 1]
 
 
 def get_notes_mido(midofile, off=False, ticks=False):
@@ -585,13 +592,13 @@ def get_notes_mido(midofile, off=False, ticks=False):
         return tuple(np.array([], int) for i in range(3 if off else 2))
     if not off:
         return noteon[:, 0], noteon[:, 1]
-    noteoff = np.array([(m.time, m.note) for m in msgs
+    NOTE_OFF = np.array([(m.time, m.note) for m in msgs
                         if m.type == 'note_off' or
                            m.type == 'note_on' and m.velocity == 0])
     indon = np.argsort(noteon[:, 1], kind='mergesort')
-    indoff = np.argsort(noteoff[:, 1], kind='mergesort')
-    noteoff[indon] = noteoff[indoff]
-    return noteon[:, 0], noteoff[:, 0], noteon[:, 1]
+    indoff = np.argsort(NOTE_OFF[:, 1], kind='mergesort')
+    NOTE_OFF[indon] = NOTE_OFF[indoff]
+    return noteon[:, 0], NOTE_OFF[:, 0], noteon[:, 1]
 
 
 #########################
@@ -637,8 +644,8 @@ def frequency_to_note(freq: float | np.ndarray) -> int | np.ndarray:
 def tempo_to_bpm(tempo: float) -> float:
     return 1000_000 * 60 / tempo
 
-def tempo_from_bpm(bpm: float) -> float:
-    return 1000_000 * 60 / bpm
+def tempo_from_bpm(bpm: float) -> int:
+    return int(1000_000 * 60 / bpm)
 
 
 def scale(start: _Note, end: _Note | None, intervals: list[int]) -> list[int]:
@@ -678,14 +685,14 @@ def chord(root: _Note, intervals: list[int], inversion: int = 0) -> list[int]:
     return [root + interval + ((inversion + nnotes - i - 1) // nnotes * 12)
             for i, interval in enumerate(intervals)]
 
-MAJOR = [0, 4, 7]
-MINOR = [0, 3, 7]
-DIMINISHED = [0, 3, 6]
-AUGMENTED = [0, 4, 8]
-DOM_7TH = [0, 4, 7, 10]
-MAJOR_7TH = [0, 4, 7, 11]
-MINOR_7TH = [0, 3, 7, 10]
-MIN_MAJ_7TH = [0, 3, 7, 11]
+MAJOR_TRIAD = [0, 4, 7]
+MINOR_TRIAD = [0, 3, 7]
+DIMINISHED_TRIAD = [0, 3, 6]
+AUGMENTED_TRIAD = [0, 4, 8]
+DOMINANT_SEVENTH = MAJOR_MINOR_SEVENTH = [0, 4, 7, 10]
+MAJOR_SEVENTH = [0, 4, 7, 11]
+MINOR_SEVENTH = [0, 3, 7, 10]
+MINOR_MAJOR_SEVENTH = [0, 3, 7, 11]
 
 
 def pitch_bend_bytes(p: int | float) -> tuple[int, int]:
@@ -797,19 +804,19 @@ class MidiPlayer:
         self.send_message(message)
 
     def note_on(self, note: _Note, velocity=127, channel=0):
-        self.send_message([NoteOn + channel, parse_note(note), velocity])
+        self.send_message([NOTE_ON + channel, parse_note(note), velocity])
 
     def note_off(self, note: _Note, velocity=0, channel=0):
-        self.send_message([NoteOff + channel, parse_note(note), velocity])
+        self.send_message([NOTE_OFF + channel, parse_note(note), velocity])
 
     def pitch_bend(self, bend: int | float, channel=0):
-        self.send_message([PitchBend + channel, *pitch_bend_bytes(bend)])
+        self.send_message([PITCH_BEND + channel, *pitch_bend_bytes(bend)])
 
     def all_notes_off(self, channel: int | None = None, fallback=True):
         channels = [channel] if channel is not None else range(16)
         for ch in channels:
             # Channel Mode 120: All Sound Off
-            self.send_message([CtrlChange + ch, 120, 0])
+            self.send_message([CTRL_CHANGE + ch, 120, 0])
             if fallback:
                 for note in range(128):
                     self.note_off(note, channel=ch)
@@ -817,7 +824,7 @@ class MidiPlayer:
     def set_instrument(self, instrument: _Instr, channel=0):
         if isinstance(instrument, str):
             instrument = INSTRUMENTS[instrument.lower()]
-        self.send_message([ProgChange + channel, instrument])
+        self.send_message([PROG_CHANGE + channel, instrument])
 
     def wait(self, duration=1.0):
         if duration > 0:
@@ -846,7 +853,7 @@ class MidiPlayer:
                 for msg, ts in events:
                     ts /= tempo_scale
                     if (ts < start and isinstance(msg, MidiMessage)
-                        and msg.type in (NoteOn, NoteOff)):
+                        and msg.type in (NOTE_ON, NOTE_OFF)):
                         continue
                     # Print before waiting to hide delay
                     if print_progress and last_ts != ts and last_ts >= start:
@@ -1098,7 +1105,7 @@ def try_decode(bts: bytes) -> str:
 def dump_info(mf: MidiFile):
     events = mf.schedule_events(meta=True)
     time_fmt = fmt_time(end_time(events))
-    tempo_evts = filter_events(events, MetaMessage, MetaEvent.SetTempo)
+    tempo_evts = filter_events(events, MetaMessage, Meta.SET_TEMPO)
     tempos = {m.value for m, _ in tempo_evts} or [DEFAULT_TEMPO]
     tempos_bpm = sorted(map(tempo_to_bpm, tempos))
     tempo_fmt = '/'.join(str(round(t)) for t in tempos_bpm[:3])
@@ -1109,17 +1116,17 @@ def dump_info(mf: MidiFile):
           f'division: {mf.division}, tempo: {tempo_fmt} bpm, notes: {nnotes}, '
           f'events: {len(events)}')
 
-    info_types = {MetaEvent.TextEvent: 'Text',
-                  MetaEvent.Copyright: 'Copyright'}
+    info_types = {Meta.TEXT_EVENT: 'Text',
+                  Meta.COPYRIGHT: 'Copyright'}
     first_track = (mf.tracks or [[]])[0]
     for msg, dt in filter_events(first_track, MetaMessage, info_types):
-        print(f'{info_types[MetaEvent(msg.type)]}: {msg.text.rstrip()}')
+        print(f'{info_types[Meta(msg.type)]}: {msg.text.rstrip()}')
 
     for i, track in enumerate(mf.tracks):
-        name_evts = filter_events(track, MetaMessage, MetaEvent.TrackName)
+        name_evts = filter_events(track, MetaMessage, Meta.TRACK_NAME)
         name = name_evts[0].message.text if name_evts else ''
         prog_evts = filter_events(
-            track, MidiMessage, ProgChange, NON_PERC_CHANNELS)
+            track, MidiMessage, PROG_CHANGE, NON_PERC_CHANNELS)
         instrs = [*{INSTRUMENT_NAMES[m.program]: None for m, _ in prog_evts}]
         note_evts = filter_events(track, MidiMessage, note_on=True)
         channels = {m.channel for m, _ in note_evts}
